@@ -51,8 +51,3 @@ export function cuesToPromptText(cues: TranscriptCue[]): string {
     .map((c) => `[${formatTimecode(c.start)}-${formatTimecode(c.end)}] ${c.text}`)
     .join('\n')
 }
-
-/** 자유 텍스트를 한 줄씩 타임코드 없는 cue로 변환 (자막 파일이 없을 때 fallback) */
-export function plainTextToPromptText(text: string): string {
-  return text.trim()
-}

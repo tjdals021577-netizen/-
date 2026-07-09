@@ -1,16 +1,14 @@
 import { callClaudeJson } from '../lib/claude'
 import { buildSystemPrompt, buildUserPrompt } from './prompts'
 import { RUBRICS } from './rubric'
-import {
-  PASS_THRESHOLD,
-  type AgentReview,
-  type AgentRole,
-  type CriterionScore,
-  type CutAction,
-  type CutSuggestion,
-  type EmphasisSuggestion,
-  type EmphasisType,
-  type ReviewResult,
+import type {
+  AgentReview,
+  AgentRole,
+  CriterionScore,
+  CutAction,
+  CutSuggestion,
+  EmphasisSuggestion,
+  EmphasisType,
 } from '../types/domain'
 
 const CUT_ACTIONS: CutAction[] = ['cut', 'keep_tight', 'keep']
@@ -126,57 +124,4 @@ export async function runAgentReview(params: {
     user: buildUserPrompt({ planSummary, transcriptText }),
   })
   return parseAgentReview(role, raw)
-}
-
-export async function runCommittee(params: {
-  apiKey: string
-  planSummary: string
-  transcriptText: string
-  onRoleSettled?: (role: AgentRole, review: AgentReview | Error) => void
-}): Promise<ReviewResult> {
-  const { apiKey, planSummary, transcriptText, onRoleSettled } = params
-  const roles: AgentRole[] = ['planning', 'editing', 'strategy']
-
-  const settled = await Promise.allSettled(
-    roles.map(async (role) => {
-      try {
-        const review = await runAgentReview({
-          apiKey,
-          role,
-          planSummary,
-          transcriptText,
-        })
-        onRoleSettled?.(role, review)
-        return review
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err))
-        onRoleSettled?.(role, error)
-        throw error
-      }
-    }),
-  )
-
-  const reviews: AgentReview[] = []
-  const errors: string[] = []
-  settled.forEach((result, i) => {
-    if (result.status === 'fulfilled') {
-      reviews.push(result.value)
-    } else {
-      errors.push(`${roles[i]}: ${result.reason?.message ?? result.reason}`)
-    }
-  })
-
-  if (reviews.length === 0) {
-    throw new Error(`모든 에이전트 심사가 실패했습니다.\n${errors.join('\n')}`)
-  }
-
-  const averageScore =
-    reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length
-
-  return {
-    reviews,
-    averageScore,
-    passed: reviews.length === roles.length && averageScore >= PASS_THRESHOLD,
-    generatedAt: new Date().toISOString(),
-  }
 }
