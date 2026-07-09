@@ -1,11 +1,54 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
+  --bg: #f6f4ef;
+  --surface: #ffffff;
+  --surface-2: #efece4;
+  --surface-3: #e6e2d8;
+  --border: rgba(24, 22, 18, 0.11);
+  --text: #201d19;
+  --text-dim: #63605a;
+  --text-faint: #96928a;
+  --accent: #2f7a78;
+  --accent-soft: rgba(47, 122, 120, 0.12);
+  --accent-strong: #1f5654;
+  --done: #4c8a55;
+  --done-soft: rgba(76, 138, 85, 0.13);
+  --planned: #b1791f;
+  --planned-soft: rgba(177, 121, 31, 0.14);
+  --open: #ab5039;
+  --open-soft: rgba(171, 80, 57, 0.13);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #13161a;
+    --surface: #1a1e23;
+    --surface-2: #20242a;
+    --surface-3: #262b32;
+    --border: rgba(255, 255, 255, 0.09);
+    --text: #e9e6e0;
+    --text-dim: #a3a099;
+    --text-faint: #6d6a64;
+    --accent: #63b7b3;
+    --accent-soft: rgba(99, 183, 179, 0.15);
+    --accent-strong: #8fd0cc;
+    --done: #7cbf82;
+    --done-soft: rgba(124, 191, 130, 0.14);
+    --planned: #e0a94a;
+    --planned-soft: rgba(224, 169, 74, 0.14);
+    --open: #e08268;
+    --open-soft: rgba(224, 130, 104, 0.14);
+    color-scheme: dark;
+  }
 }
 
 body {
   margin: 0;
-  background: #0b0c10;
-  color: #e5e7eb;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, "Apple SD Gothic Neo", "Pretendard Variable", Pretendard,
+    "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
 }

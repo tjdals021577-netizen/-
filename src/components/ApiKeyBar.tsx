@@ -10,7 +10,7 @@ export function ApiKeyBar({ apiKey, onChange }: Props) {
   const [draft, setDraft] = useState(apiKey)
 
   return (
-    <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-3 text-xs text-amber-200">
+    <div className="rounded-xl border border-[var(--planned)] bg-[var(--planned-soft)] p-3 text-xs text-[var(--text)]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -24,7 +24,7 @@ export function ApiKeyBar({ apiKey, onChange }: Props) {
 
       {open && (
         <div className="mt-2 space-y-2">
-          <p className="text-amber-300/80">
+          <p className="text-[var(--text-dim)]">
             이 앱은 백엔드 서버가 없습니다. 입력한 키는{' '}
             <b>브라우저 localStorage에만</b> 저장되고, Claude API 호출도
             브라우저에서 직접 이루어집니다. 공용 PC에서는 사용 후 키를
@@ -36,12 +36,12 @@ export function ApiKeyBar({ apiKey, onChange }: Props) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="sk-ant-..."
-              className="flex-1 rounded-lg border border-amber-900/50 bg-neutral-950 px-2 py-1.5 text-neutral-200 placeholder:text-neutral-600 focus:border-violet-500 focus:outline-none"
+              className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
             />
             <button
               type="button"
               onClick={() => onChange(draft)}
-              className="rounded-lg bg-violet-600 px-3 py-1.5 font-medium text-white hover:bg-violet-500"
+              className="rounded-lg bg-[var(--accent)] px-3 py-1.5 font-medium text-white hover:opacity-90"
             >
               저장
             </button>
@@ -52,7 +52,7 @@ export function ApiKeyBar({ apiKey, onChange }: Props) {
                   setDraft('')
                   onChange('')
                 }}
-                className="rounded-lg bg-neutral-800 px-3 py-1.5 text-neutral-300 hover:bg-neutral-700"
+                className="rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[var(--text-dim)] hover:bg-[var(--surface-3)]"
               >
                 삭제
               </button>

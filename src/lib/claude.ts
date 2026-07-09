@@ -20,8 +20,9 @@ export async function callClaudeJson(params: {
   system: string
   user: string
   maxTokens?: number
+  onUsage?: (usage: { input_tokens: number; output_tokens: number }) => void
 }): Promise<unknown> {
-  const { apiKey, system, user, maxTokens = 4096 } = params
+  const { apiKey, system, user, maxTokens = 4096, onUsage } = params
   if (!apiKey) {
     throw new ClaudeCallError('Anthropic API 키가 설정되지 않았습니다.')
   }
@@ -36,6 +37,11 @@ export async function callClaudeJson(params: {
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
+  })
+
+  onUsage?.({
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
   })
 
   const textBlock = response.content.find((b) => b.type === 'text')
