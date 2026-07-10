@@ -20,7 +20,7 @@ interface AgentMeta {
 
 const AGENTS: AgentMeta[] = [
   { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '전건 결재', colorVar: '--agent-h', initial: '모', cadence: '매일 08:00 (예정 — 스케줄러 미연동)', limit: '10분', dispatchable: false },
-  { key: 'brain', name: '브레인', primaryTag: '콘텐츠 전략팀', secondaryTag: '시장 벤치마킹', colorVar: '--agent-a', initial: '브', cadence: '매월 1일 (예정 — 스케줄러 미연동)', limit: '30분', dispatchable: false },
+  { key: 'brain', name: '브레인', primaryTag: '콘텐츠 전략팀', secondaryTag: '시장 벤치마킹', colorVar: '--agent-a', initial: '브', cadence: '요청 시 즉시 실행 (자동 매월 1일은 스케줄러 미연동)', limit: '10분', dispatchable: true },
   { key: 'calen', name: '캘린', primaryTag: '콘텐츠 기획팀', secondaryTag: '캘린더 갱신', colorVar: '--accent', initial: '캘', cadence: '매일 08:05 (예정 — 스케줄러 미연동)', limit: '15분', dispatchable: false },
   { key: 'writer', name: '라이터', primaryTag: '블로그 SEO 위원회', secondaryTag: '3인 채점', colorVar: '--agent-c', initial: '라', cadence: '요청 시 즉시 실행', limit: '20분', dispatchable: true },
   { key: 'buzz', name: '버즈', primaryTag: '스레드 위원회', secondaryTag: '대행 포함', colorVar: '--ch-thread', initial: '버', cadence: '요청 시 즉시 실행', limit: '15분', dispatchable: true },
@@ -141,7 +141,7 @@ export function TeamChatScreen() {
 
   return (
     <div>
-      <PreviewBanner message="라이터·버즈·리믹서는 실제로 실행됩니다. 나머지(모닝·브레인·캘린·코치·레이더)는 스케줄러(Phase 4)가 붙기 전까지 화면만 준비돼 있습니다." />
+      <PreviewBanner message="라이터·버즈·리믹서·브레인은 실제로 실행됩니다. 나머지(모닝·캘린·코치·레이더)는 스케줄러(Phase 4)가 붙기 전까지 화면만 준비돼 있습니다(코치는 운영실 옆 대시보드에서 수동 실행 가능)." />
 
       <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
 

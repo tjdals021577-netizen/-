@@ -2,14 +2,16 @@ import { useState } from 'react'
 import { BlogComposer } from '../BlogComposer'
 import { ThreadComposer } from '../ThreadComposer'
 import { RemixComposer } from '../RemixComposer'
+import { BrainPanel } from '../BrainPanel'
 import { PreviewBanner } from './PreviewBanner'
 
-type ToolId = 'blog' | 'thread' | 'remix'
+type ToolId = 'blog' | 'thread' | 'remix' | 'brain'
 
 const TOOLS: { id: ToolId; label: string }[] = [
   { id: 'blog', label: '블로그' },
   { id: 'thread', label: '스레드' },
   { id: 'remix', label: '유튜브 기획' },
+  { id: 'brain', label: '브레인' },
 ]
 
 export function OpsScreen() {
@@ -39,6 +41,7 @@ export function OpsScreen() {
       {tool === 'blog' && <BlogComposer />}
       {tool === 'thread' && <ThreadComposer />}
       {tool === 'remix' && <RemixComposer />}
+      {tool === 'brain' && <BrainPanel />}
     </div>
   )
 }
