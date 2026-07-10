@@ -18,11 +18,19 @@ import {
   pausedDaysSoFar,
 } from '../../lib/agencyStore'
 import { startWorkLog, finishWorkLog } from '../../lib/workLog'
+import { submitForApproval } from '../../lib/approvalStore'
+import { createEntry } from '../../lib/calendarStore'
 import { getTodaySpendUsd, isOverDailyBudget, DAILY_BUDGET_USD } from '../../lib/budgetGuard'
 import { PASS_THRESHOLD } from '../../types/domain'
 import type { AgencyClient, DraftAttempt } from '../../types/agency'
 
 const DRAFT_COUNT = 5
+
+function buildDraftsHtml(attempts: DraftAttempt[]): string {
+  return attempts
+    .map((a, i) => `<b>${i + 1}. ${a.review.totalScore}점</b><br/>${a.draft.text.replace(/\n/g, '<br/>')}`)
+    .join('<br/><br/>')
+}
 
 function statusLabel(client: AgencyClient): { text: string; tone: 'done' | 'planned' | 'muted' } {
   if (client.status === 'paused') return { text: '일시중단', tone: 'muted' }
@@ -141,6 +149,27 @@ export function AgencyScreen() {
         detailHtml: `<b>${client.name} 오늘 초안 5건</b><br/>${attempts
           .map((a, i) => `${i + 1}. ${a.review.totalScore}점`)
           .join(' · ')}`,
+      })
+      const title = `${client.name} — 오늘 초안 ${DRAFT_COUNT}건`
+      const contentHtml = buildDraftsHtml(attempts)
+      submitForApproval({
+        agent: 'buzz',
+        brand: '마잘남',
+        title,
+        contentHtml,
+        passed: passCount > 0,
+        scoreLabel: `${passCount}/${DRAFT_COUNT}건 통과`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand: '마잘남',
+        channel: 'agency',
+        title,
+        status: passCount > 0 ? 'planned' : 'open',
+        note: `${passCount}/${DRAFT_COUNT}건 통과`,
+        contentHtml,
+        sourceWorkLogId: logId,
       })
       refresh()
     } catch (err) {
