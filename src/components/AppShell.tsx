@@ -3,15 +3,17 @@ import { OpsScreen } from './screens/OpsScreen'
 import { TeamChatScreen } from './screens/TeamChatScreen'
 import { DashboardScreen } from './screens/DashboardScreen'
 import { AgencyScreen } from './screens/AgencyScreen'
+import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 
-type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'settings'
+type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'calendar' | 'settings'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'ops', label: '운영실' },
   { id: 'team', label: '팀 채팅' },
   { id: 'dash', label: '대시보드' },
   { id: 'agency', label: '대행 관리' },
+  { id: 'calendar', label: '캘린더' },
   { id: 'settings', label: '설정' },
 ]
 
@@ -69,6 +71,7 @@ export function AppShell() {
         {activeTab === 'team' && <TeamChatScreen />}
         {activeTab === 'dash' && <DashboardScreen />}
         {activeTab === 'agency' && <AgencyScreen />}
+        {activeTab === 'calendar' && <CalendarScreen />}
         {activeTab === 'settings' && <SettingsScreen />}
       </main>
     </div>
