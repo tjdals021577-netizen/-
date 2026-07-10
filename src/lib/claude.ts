@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resources/messages'
 
 export const CLAUDE_MODEL = 'claude-sonnet-5'
 
@@ -6,6 +7,11 @@ export const CLAUDE_MODEL = 'claude-sonnet-5'
 const DEFAULT_TIMEOUT_MS = 120_000
 
 export class ClaudeCallError extends Error {}
+
+export type UsageCallback = (usage: {
+  input_tokens: number
+  output_tokens: number
+}) => void
 
 function extractJson(raw: string): string {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
@@ -18,13 +24,55 @@ function extractJson(raw: string): string {
   return candidate.slice(start, end + 1)
 }
 
+async function createMessage(
+  apiKey: string,
+  body: MessageCreateParamsNonStreaming,
+  timeoutMs: number,
+) {
+  if (!apiKey) {
+    throw new ClaudeCallError('Anthropic API 키가 설정되지 않았습니다.')
+  }
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+  try {
+    return await client.messages.create(body, { timeout: timeoutMs })
+  } catch (err) {
+    if (err instanceof Anthropic.APIConnectionTimeoutError) {
+      throw new ClaudeCallError(
+        `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
+      )
+    }
+    throw err
+  }
+}
+
+// 웹서치 등 서버사이드 도구를 쓰면 응답에 tool_use/tool_result 블록이 텍스트 블록
+// 사이에 섞여 나올 수 있어, "마지막" 텍스트 블록을 최종 답으로 취급한다.
+function lastTextBlock(content: { type: string; text?: string }[]): string {
+  for (let i = content.length - 1; i >= 0; i--) {
+    const block = content[i]
+    if (block.type === 'text' && typeof block.text === 'string') {
+      return block.text
+    }
+  }
+  throw new ClaudeCallError('모델 응답에 텍스트가 없습니다.')
+}
+
+function parseJsonResponse(text: string): unknown {
+  const jsonText = extractJson(text)
+  try {
+    return JSON.parse(jsonText)
+  } catch {
+    throw new ClaudeCallError('모델 응답 JSON 파싱에 실패했습니다.')
+  }
+}
+
 export async function callClaudeJson(params: {
   apiKey: string
   system: string
   user: string
   maxTokens?: number
   timeoutMs?: number
-  onUsage?: (usage: { input_tokens: number; output_tokens: number }) => void
+  onUsage?: UsageCallback
 }): Promise<unknown> {
   const {
     apiKey,
@@ -34,49 +82,125 @@ export async function callClaudeJson(params: {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
   } = params
-  if (!apiKey) {
-    throw new ClaudeCallError('Anthropic API 키가 설정되지 않았습니다.')
-  }
 
-  const client = new Anthropic({
+  const response = await createMessage(
     apiKey,
-    dangerouslyAllowBrowser: true,
-  })
-
-  let response
-  try {
-    response = await client.messages.create(
-      {
-        model: CLAUDE_MODEL,
-        max_tokens: maxTokens,
-        system,
-        messages: [{ role: 'user', content: user }],
-      },
-      { timeout: timeoutMs },
-    )
-  } catch (err) {
-    if (err instanceof Anthropic.APIConnectionTimeoutError) {
-      throw new ClaudeCallError(
-        `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
-      )
-    }
-    throw err
-  }
+    {
+      model: CLAUDE_MODEL,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: user }],
+    },
+    timeoutMs,
+  )
 
   onUsage?.({
     input_tokens: response.usage.input_tokens,
     output_tokens: response.usage.output_tokens,
   })
 
-  const textBlock = response.content.find((b) => b.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new ClaudeCallError('모델 응답에 텍스트가 없습니다.')
-  }
+  return parseJsonResponse(lastTextBlock(response.content))
+}
 
-  const jsonText = extractJson(textBlock.text)
-  try {
-    return JSON.parse(jsonText)
-  } catch {
-    throw new ClaudeCallError('모델 응답 JSON 파싱에 실패했습니다.')
-  }
+// 브레인처럼 최신 정보를 리서치해야 하는 에이전트용 — Claude의 서버사이드
+// 웹서치 도구를 붙여서 호출한다(클라이언트에서 별도 검색 루프를 구현할 필요 없음).
+export async function callClaudeJsonWithWebSearch(params: {
+  apiKey: string
+  system: string
+  user: string
+  maxTokens?: number
+  maxSearches?: number
+  timeoutMs?: number
+  onUsage?: UsageCallback
+}): Promise<unknown> {
+  const {
+    apiKey,
+    system,
+    user,
+    maxTokens = 4096,
+    maxSearches = 5,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    onUsage,
+  } = params
+
+  const response = await createMessage(
+    apiKey,
+    {
+      model: CLAUDE_MODEL,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: user }],
+      tools: [
+        {
+          name: 'web_search',
+          type: 'web_search_20260318',
+          max_uses: maxSearches,
+        },
+      ],
+    },
+    timeoutMs,
+  )
+
+  onUsage?.({
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+  })
+
+  return parseJsonResponse(lastTextBlock(response.content))
+}
+
+// 코치의 네이버 통계 스크린샷 분석처럼 이미지를 읽어야 하는 호출용.
+export async function callClaudeVisionJson(params: {
+  apiKey: string
+  system: string
+  user: string
+  imageBase64: string
+  imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+  maxTokens?: number
+  timeoutMs?: number
+  onUsage?: UsageCallback
+}): Promise<unknown> {
+  const {
+    apiKey,
+    system,
+    user,
+    imageBase64,
+    imageMediaType,
+    maxTokens = 2048,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    onUsage,
+  } = params
+
+  const response = await createMessage(
+    apiKey,
+    {
+      model: CLAUDE_MODEL,
+      max_tokens: maxTokens,
+      system,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: imageMediaType,
+                data: imageBase64,
+              },
+            },
+            { type: 'text', text: user },
+          ],
+        },
+      ],
+    },
+    timeoutMs,
+  )
+
+  onUsage?.({
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+  })
+
+  return parseJsonResponse(lastTextBlock(response.content))
 }

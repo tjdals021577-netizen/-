@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
+import { CoachPanel } from '../CoachPanel'
 
 export function DashboardScreen() {
   const [todaySpend] = useState(() => getTodaySpendUsd())
@@ -34,6 +35,10 @@ export function DashboardScreen() {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="mt-4">
+        <CoachPanel />
       </div>
     </div>
   )
