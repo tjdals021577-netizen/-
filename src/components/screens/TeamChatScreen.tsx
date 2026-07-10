@@ -19,13 +19,13 @@ interface AgentMeta {
 }
 
 const AGENTS: AgentMeta[] = [
-  { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '전건 결재', colorVar: '--agent-h', initial: '모', cadence: '매일 08:00 (예정 — 스케줄러 미연동)', limit: '10분', dispatchable: false },
+  { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '전건 결재', colorVar: '--agent-h', initial: '모', cadence: '대시보드에서 수동 실행 (자동 매일 08:00은 스케줄러 미연동)', limit: '10분', dispatchable: false },
   { key: 'brain', name: '브레인', primaryTag: '콘텐츠 전략팀', secondaryTag: '시장 벤치마킹', colorVar: '--agent-a', initial: '브', cadence: '요청 시 즉시 실행 (자동 매월 1일은 스케줄러 미연동)', limit: '10분', dispatchable: true },
   { key: 'calen', name: '캘린', primaryTag: '콘텐츠 기획팀', secondaryTag: '캘린더 갱신', colorVar: '--accent', initial: '캘', cadence: '매일 08:05 (예정 — 스케줄러 미연동)', limit: '15분', dispatchable: false },
   { key: 'writer', name: '라이터', primaryTag: '블로그 SEO 위원회', secondaryTag: '3인 채점', colorVar: '--agent-c', initial: '라', cadence: '요청 시 즉시 실행', limit: '20분', dispatchable: true },
   { key: 'buzz', name: '버즈', primaryTag: '스레드 위원회', secondaryTag: '대행 포함', colorVar: '--ch-thread', initial: '버', cadence: '요청 시 즉시 실행', limit: '15분', dispatchable: true },
   { key: 'remix', name: '리믹서', primaryTag: '유튜브 대본 기획', secondaryTag: '벤치마킹 포함', colorVar: '--ch-yt', initial: '리', cadence: '요청 시 즉시 실행', limit: '20분', dispatchable: true },
-  { key: 'coach', name: '코치', primaryTag: '분석·피드백', secondaryTag: '선제 요청 가능', colorVar: '--agent-f', initial: '코', cadence: '매주 월요일 (예정 — 스케줄러 미연동)', limit: '15분', dispatchable: false },
+  { key: 'coach', name: '코치', primaryTag: '분석·피드백', secondaryTag: '선제 요청 가능', colorVar: '--agent-f', initial: '코', cadence: '대시보드에서 수동 실행 (자동 매주 월요일은 스케줄러 미연동)', limit: '15분', dispatchable: false },
   { key: 'radar', name: '레이더', primaryTag: '통합 대시보드', secondaryTag: '자동 수집', colorVar: '--agent-g', initial: '레', cadence: '매일 2회 (예정 — 스케줄러 미연동)', limit: '10분', dispatchable: false },
 ]
 
@@ -103,9 +103,11 @@ export function TeamChatScreen() {
   async function handleDispatch() {
     setDispatchMessage(null)
     if (!DISPATCHABLE_AGENTS.includes(selectedKey as DispatchableAgent)) {
-      setDispatchMessage(
-        `${selected.name}은(는) 아직 백엔드(스케줄러) 연동 전이라 팀 채팅에서 바로 실행할 수 없습니다.`,
-      )
+      const hint =
+        selectedKey === 'morning' || selectedKey === 'coach'
+          ? ' 대시보드 화면에서 직접 실행할 수 있습니다.'
+          : ' 아직 백엔드(스케줄러) 연동 전이라 팀 채팅에서 바로 실행할 수 없습니다.'
+      setDispatchMessage(`${selected.name}은(는) 팀 채팅의 자연어 지시로는 실행할 수 없습니다.${hint}`)
       return
     }
     if (!apiKey) {
@@ -141,7 +143,7 @@ export function TeamChatScreen() {
 
   return (
     <div>
-      <PreviewBanner message="라이터·버즈·리믹서·브레인은 실제로 실행됩니다. 나머지(모닝·캘린·코치·레이더)는 스케줄러(Phase 4)가 붙기 전까지 화면만 준비돼 있습니다(코치는 운영실 옆 대시보드에서 수동 실행 가능)." />
+      <PreviewBanner message="라이터·버즈·리믹서·브레인은 여기서 바로 실행됩니다. 모닝·코치는 자연어 지시 대신 대시보드 화면에서 직접 실행합니다. 캘린·레이더는 스케줄러(Phase 4)가 붙기 전까지 화면만 준비돼 있습니다." />
 
       <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
 
