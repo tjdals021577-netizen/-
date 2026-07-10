@@ -1,22 +1,26 @@
+import { useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-
-const STATS = [
-  { label: '어제 방문자', value: '—' },
-  { label: '1위 유입경로', value: '—' },
-  { label: '결제 전환', value: '—' },
-  { label: '오늘 API 사용액', value: '$0.00 / $5.00' },
-]
+import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 
 export function DashboardScreen() {
+  const [todaySpend] = useState(() => getTodaySpendUsd())
+
+  const stats = [
+    { label: '어제 방문자', value: '—' },
+    { label: '1위 유입경로', value: '—' },
+    { label: '결제 전환', value: '—' },
+    { label: '오늘 API 사용액', value: `$${todaySpend.toFixed(3)} / $${DAILY_BUDGET_USD}` },
+  ]
+
   return (
     <div>
-      <PreviewBanner message="일간·주간·월간 리포트와 월 정산(가계부)은 Phase 4에서 GA4·아임웹 연동 후 실제 숫자로 채워집니다." />
+      <PreviewBanner message="방문자·유입경로·결제 전환은 Phase 4에서 GA4·아임웹 연동 후 실제 숫자로 채워집니다. API 사용액만 지금도 실제 값입니다." />
       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">
           통합 대시보드
         </h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <div
               key={s.label}
               className="rounded-lg bg-[var(--surface-2)] p-3"
