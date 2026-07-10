@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { ApiKeyBar } from '../ApiKeyBar'
 import { getStoredApiKey, setStoredApiKey } from '../../lib/apiKey'
-import { getWorkLog, type WorkLogEntry } from '../../lib/workLog'
+import { getWorkLog, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
 import type { Brand } from '../../types/brand'
@@ -14,72 +14,89 @@ interface AgentMeta {
   secondaryTag: string
   colorVar: string
   initial: string
-  cadence: string
   limit: string
   dispatchable: boolean
 }
 
 const AGENTS: AgentMeta[] = [
-  { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '전건 결재', colorVar: '--agent-h', initial: '모', cadence: '대시보드에서 수동 실행 (자동 매일 08:00은 스케줄러 미연동)', limit: '10분', dispatchable: false },
-  { key: 'brain', name: '브레인', primaryTag: '콘텐츠 전략팀', secondaryTag: '시장 벤치마킹', colorVar: '--agent-a', initial: '브', cadence: '요청 시 즉시 실행 (자동 매월 1일은 스케줄러 미연동)', limit: '10분', dispatchable: true },
-  { key: 'calen', name: '캘린', primaryTag: '콘텐츠 기획팀', secondaryTag: '캘린더 갱신', colorVar: '--accent', initial: '캘', cadence: '캘린더 화면에서 수동 갱신 (자동 매일 08:05는 스케줄러 미연동)', limit: '15분', dispatchable: false },
-  { key: 'writer', name: '라이터', primaryTag: '블로그 SEO 위원회', secondaryTag: '3인 채점', colorVar: '--agent-c', initial: '라', cadence: '요청 시 즉시 실행', limit: '20분', dispatchable: true },
-  { key: 'buzz', name: '버즈', primaryTag: '스레드 위원회', secondaryTag: '대행 포함', colorVar: '--ch-thread', initial: '버', cadence: '요청 시 즉시 실행', limit: '15분', dispatchable: true },
-  { key: 'remix', name: '리믹서', primaryTag: '유튜브 대본 기획', secondaryTag: '벤치마킹 포함', colorVar: '--ch-yt', initial: '리', cadence: '요청 시 즉시 실행', limit: '20분', dispatchable: true },
-  { key: 'coach', name: '코치', primaryTag: '분석·피드백', secondaryTag: '선제 요청 가능', colorVar: '--agent-f', initial: '코', cadence: '대시보드에서 수동 실행 (자동 매주 월요일은 스케줄러 미연동)', limit: '15분', dispatchable: false },
-  { key: 'radar', name: '레이더', primaryTag: '통합 대시보드', secondaryTag: '자동 수집', colorVar: '--agent-g', initial: '레', cadence: '매일 2회 (예정 — 스케줄러 미연동)', limit: '10분', dispatchable: false },
+  { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '대시보드에서 실행', colorVar: '--agent-h', initial: '모', limit: '10분', dispatchable: false },
+  { key: 'brain', name: '브레인', primaryTag: '콘텐츠 전략팀', secondaryTag: '시장 벤치마킹', colorVar: '--agent-a', initial: '브', limit: '10분', dispatchable: true },
+  { key: 'calen', name: '캘린', primaryTag: '콘텐츠 기획팀', secondaryTag: '캘린더에서 실행', colorVar: '--accent', initial: '캘', limit: '15분', dispatchable: false },
+  { key: 'writer', name: '라이터', primaryTag: '블로그 SEO 위원회', secondaryTag: '3인 채점', colorVar: '--agent-c', initial: '라', limit: '20분', dispatchable: true },
+  { key: 'buzz', name: '버즈', primaryTag: '스레드 위원회', secondaryTag: '대행 포함', colorVar: '--ch-thread', initial: '버', limit: '15분', dispatchable: true },
+  { key: 'remix', name: '리믹서', primaryTag: '유튜브 대본 기획', secondaryTag: '벤치마킹 포함', colorVar: '--ch-yt', initial: '리', limit: '20분', dispatchable: true },
+  { key: 'coach', name: '코치', primaryTag: '분석·피드백', secondaryTag: '대시보드에서 실행', colorVar: '--agent-f', initial: '코', limit: '15분', dispatchable: false },
+  { key: 'radar', name: '레이더', primaryTag: '통합 대시보드', secondaryTag: '자동 수집(예정)', colorVar: '--agent-g', initial: '레', limit: '10분', dispatchable: false },
 ]
 
-const MODEL = 'claude-sonnet-5'
+const AGENT_BY_KEY = new Map(AGENTS.map((a) => [a.key, a]))
 
-const STATUS_CHIP: Record<string, string> = {
+const STATUS_ICON: Record<WorkLogStatus, string> = {
+  running: '⏳',
+  done: '✅',
+  attention: '⚠️',
+  error: '❌',
+}
+
+const STATUS_CHIP: Record<WorkLogStatus, string> = {
   done: 'bg-[var(--done-soft)] text-[var(--done)]',
   error: 'bg-[var(--open-soft)] text-[var(--open)]',
   attention: 'bg-[var(--planned-soft)] text-[var(--planned)]',
   running: 'bg-[var(--planned-soft)] text-[var(--planned)]',
 }
 
-function WorkLogRow({ entry }: { entry: WorkLogEntry }) {
-  const [open, setOpen] = useState(false)
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&')
+    .trim()
+}
+
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const min = Math.floor(diffMs / 60000)
+  if (min < 1) return '방금 전'
+  if (min < 60) return `${min}분 전`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}시간 전`
+  return `${Math.floor(hr / 24)}일 전`
+}
+
+function agentIsBusy(agentKey: string, brand: Brand): boolean {
+  return getWorkLog(agentKey, brand).some((e) => e.status === 'running')
+}
+
+function ChatBubbles({ entries, agentName }: { entries: WorkLogEntry[]; agentName: string }) {
+  const sorted = [...entries].sort(
+    (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
+  )
   return (
     <>
-      <tr
-        onClick={() => setOpen((o) => !o)}
-        className="cursor-pointer border-t border-[var(--border)] first:border-t-0 hover:bg-[var(--surface-2)]"
-      >
-        <td className="px-3.5 py-2.5 text-[var(--text-dim)]">
-          <span className={`mr-1 inline-block transition-transform ${open ? 'rotate-90 text-[var(--accent)]' : 'text-[var(--text-faint)]'}`}>▸</span>
-          {entry.kind}
-        </td>
-        <td className="px-3.5 py-2.5">
-          <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${STATUS_CHIP[entry.status] ?? ''}`}>
-            {entry.statusLabel}
-          </span>
-        </td>
-        <td className="px-3.5 py-2.5 font-mono text-[11.5px] text-[var(--text-dim)]">
-          {new Date(entry.startedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-        </td>
-        <td className="px-3.5 py-2.5 font-mono text-[11.5px] text-[var(--text-dim)]">
-          {entry.endedAt
-            ? new Date(entry.endedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-            : '—'}
-        </td>
-        <td className="px-3.5 py-2.5 font-mono text-[11.5px] text-[var(--text-dim)]">
-          {entry.costUsd !== undefined ? `$${entry.costUsd.toFixed(3)}` : '—'}
-        </td>
-        <td className="px-3.5 py-2.5 text-[var(--text-dim)]">{entry.note}</td>
-      </tr>
-      {open && (
-        <tr className="border-t border-[var(--border)] bg-[var(--bg)]">
-          <td colSpan={6} className="px-10 py-3.5 text-[12.5px] leading-relaxed text-[var(--text-dim)]">
-            {entry.detailHtml ? (
-              <div dangerouslySetInnerHTML={{ __html: entry.detailHtml }} />
-            ) : (
-              <span className="text-[var(--text-faint)]">아직 진행 중이라 상세 내용이 없습니다.</span>
-            )}
-          </td>
-        </tr>
-      )}
+      {sorted.map((entry) => (
+        <div key={entry.id} className="mb-3">
+          <div className="flex justify-end">
+            <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-[var(--accent)] px-3.5 py-2 text-[13px] text-white">
+              {entry.note}
+            </div>
+          </div>
+          <div className="mt-1.5 flex justify-start">
+            <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-[var(--surface-2)] px-3.5 py-2 text-[13px] text-[var(--text)]">
+              {entry.status === 'running'
+                ? `${STATUS_ICON.running} 처리 중이에요…`
+                : `${STATUS_ICON[entry.status]} ${stripHtml(entry.detailHtml) || entry.statusLabel}`}
+            </div>
+          </div>
+          {entry.status !== 'running' && (
+            <p className="mt-1 text-center text-[10.5px] text-[var(--text-faint)]">
+              {agentName}의 상태가 '{entry.statusLabel}'(으)로 변경되었습니다 · {formatRelativeTime(entry.endedAt ?? entry.startedAt)}
+            </p>
+          )}
+        </div>
+      ))}
     </>
   )
 }
@@ -91,10 +108,19 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   const [dispatching, setDispatching] = useState(false)
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null)
   const [logVersion, setLogVersion] = useState(0)
+  const feedEndRef = useRef<HTMLDivElement>(null)
 
-  const selected = AGENTS.find((a) => a.key === selectedKey) ?? AGENTS[0]
+  const selected = AGENT_BY_KEY.get(selectedKey) ?? AGENTS[0]
   const log = getWorkLog(selectedKey, brand)
+  const allTodayLog = getWorkLog(undefined, brand)
+  const recentAcrossTeam = [...allTodayLog]
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .slice(0, 4)
   void logVersion // 근무기록 재조회 트리거용
+
+  useEffect(() => {
+    feedEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [selectedKey, logVersion])
 
   function handleApiKeyChange(key: string) {
     setApiKey(key)
@@ -128,6 +154,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
       return
     }
     setDispatching(true)
+    setLogVersion((v) => v + 1) // 지시 직후 "진행중" 버블이 바로 보이도록
     try {
       await dispatchJob({
         agent: selectedKey as DispatchableAgent,
@@ -135,15 +162,25 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
         apiKey,
         instruction,
       })
-      setDispatchMessage('완료 — 아래 근무 기록에서 결과를 확인하세요.')
       setInstruction('')
-      setLogVersion((v) => v + 1)
     } catch (err) {
       setDispatchMessage(err instanceof Error ? err.message : String(err))
     } finally {
       setDispatching(false)
+      setLogVersion((v) => v + 1)
     }
   }
+
+  const todayCount = log.filter(
+    (e) => e.startedAt.slice(0, 10) === new Date().toISOString().slice(0, 10),
+  ).length
+  const todayCost = log
+    .filter((e) => e.startedAt.slice(0, 10) === new Date().toISOString().slice(0, 10))
+    .reduce((s, e) => s + (e.costUsd ?? 0), 0)
+  const lastRun = [...log].sort(
+    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+  )[0]
+  const busy = agentIsBusy(selectedKey, brand)
 
   return (
     <div>
@@ -151,110 +188,78 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
       <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[230px_1fr]">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr_240px]">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
           <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
             AI 팀원 · {AGENTS.length}
           </p>
-          {AGENTS.map((a) => (
-            <button
-              key={a.key}
-              type="button"
-              onClick={() => setSelectedKey(a.key)}
-              className={`flex w-full items-center gap-2.5 rounded-lg border p-2 text-left ${
-                selectedKey === a.key
-                  ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
-                  : 'border-transparent hover:bg-[var(--surface-2)]'
-              }`}
-            >
-              <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[12.5px] font-bold text-white"
-                style={{ background: `var(${a.colorVar})` }}
-              >
-                {a.initial}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-bold text-[var(--text)]">{a.name}</span>
-                <span className="block truncate text-[10.5px] text-[var(--text-faint)]">{a.primaryTag}</span>
-              </span>
-              <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  a.dispatchable ? 'bg-[var(--done)]' : 'bg-[var(--text-faint)]'
+          {AGENTS.map((a) => {
+            const isBusy = agentIsBusy(a.key, brand)
+            return (
+              <button
+                key={a.key}
+                type="button"
+                onClick={() => setSelectedKey(a.key)}
+                className={`flex w-full items-center gap-2.5 rounded-lg border p-2 text-left ${
+                  selectedKey === a.key
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
+                    : 'border-transparent hover:bg-[var(--surface-2)]'
                 }`}
-              />
-            </button>
-          ))}
+              >
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[12.5px] font-bold text-white"
+                  style={{ background: `var(${a.colorVar})` }}
+                >
+                  {a.initial}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-bold text-[var(--text)]">{a.name}</span>
+                  <span className="flex items-center gap-1 text-[10.5px] text-[var(--text-faint)]">
+                    <span className={`h-1.5 w-1.5 rounded-full ${isBusy ? 'bg-[var(--done)]' : 'bg-[var(--text-faint)]'}`} />
+                    {isBusy ? '업무중' : '휴식중'}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
         </div>
 
-        <div>
-          <div className="mb-4 flex items-center gap-3">
+        <div className="flex min-h-[520px] flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+          <div className="flex items-center gap-2.5 border-b border-[var(--border)] p-3.5">
             <span
-              className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[13px] font-bold text-white"
               style={{ background: `var(${selected.colorVar})` }}
             >
               {selected.initial}
             </span>
-            <div>
-              <p className="mb-1 text-lg font-bold text-[var(--text)]">{selected.name}</p>
-              <div className="flex gap-1.5">
-                <span className="rounded-full bg-[var(--open-soft)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--open)]">
-                  {selected.primaryTag}
+            <div className="min-w-0 flex-1">
+              <p className="text-[14px] font-bold text-[var(--text)]">
+                {selected.name}{' '}
+                <span className={`ml-1 text-[10.5px] font-semibold ${busy ? 'text-[var(--done)]' : 'text-[var(--text-faint)]'}`}>
+                  {busy ? '● 업무중' : '● 휴식중'}
                 </span>
-                <span className="rounded-full bg-[var(--surface-2)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--text-dim)]">
-                  {selected.secondaryTag}
-                </span>
-              </div>
+              </p>
+              <p className="truncate text-[11px] text-[var(--text-faint)]">{selected.primaryTag} · {selected.secondaryTag}</p>
             </div>
           </div>
 
-          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
-              <p className="font-mono text-[15px] font-bold text-[var(--text)]">{selected.cadence}</p>
-              <p className="text-[11px] text-[var(--text-faint)]">실행 주기</p>
-            </div>
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
-              <p className="font-mono text-[15px] font-bold text-[var(--text)]">{MODEL}</p>
-              <p className="text-[11px] text-[var(--text-faint)]">모델 (고정)</p>
-            </div>
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
-              <p className="font-mono text-[15px] font-bold text-[var(--text)]">{selected.limit}</p>
-              <p className="text-[11px] text-[var(--text-faint)]">업무 제한 시간</p>
-            </div>
-          </div>
-
-          <div className="mb-2 flex items-baseline justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">근무 기록</p>
-            <p className="text-[11px] text-[var(--text-faint)]">행을 클릭하면 정확히 어떤 작업을 했는지 펼쳐집니다</p>
-          </div>
-          <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+          <div className="flex-1 overflow-y-auto p-3.5">
+            <p className="mb-3 text-center text-[11px] text-[var(--text-faint)]">
+              {brand} 팀 채팅 — 모든 팀원이 업무를 시작했습니다. 무엇을 도와드릴까요?
+            </p>
             {log.length === 0 ? (
-              <p className="p-6 text-center text-sm text-[var(--text-faint)]">아직 실행 기록이 없습니다.</p>
+              <p className="py-10 text-center text-sm text-[var(--text-faint)]">아직 대화 기록이 없습니다.</p>
             ) : (
-              <table className="w-full min-w-[560px] text-[12.5px]">
-                <thead>
-                  <tr className="bg-[var(--surface-2)] text-left text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
-                    <th className="px-3.5 py-2.5">구분</th>
-                    <th className="px-3.5 py-2.5">상태</th>
-                    <th className="px-3.5 py-2.5">시작</th>
-                    <th className="px-3.5 py-2.5">종료</th>
-                    <th className="px-3.5 py-2.5">예상 사용료</th>
-                    <th className="px-3.5 py-2.5">비고</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {log.map((entry) => (
-                    <WorkLogRow key={entry.id} entry={entry} />
-                  ))}
-                </tbody>
-              </table>
+              <ChatBubbles entries={log} agentName={selected.name} />
             )}
+            <div ref={feedEndRef} />
           </div>
 
-          <div className="sticky bottom-3 mt-4 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5 shadow-sm">
+          <div className="flex items-center gap-2 border-t border-[var(--border)] p-2.5">
             <select
               value={selectedKey}
               onChange={(e) => setSelectedKey(e.target.value)}
-              className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[12.5px] font-bold text-[var(--accent)] focus:outline-none"
+              className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-[12px] font-bold text-[var(--accent)] focus:outline-none"
             >
               {AGENTS.map((a) => (
                 <option key={a.key} value={a.key}>
@@ -266,8 +271,11 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               type="text"
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
-              placeholder="시킬 일을 자연어로 적어주세요 (예: 타로 궁합 후기 블로그 써줘)"
-              className="min-w-0 flex-1 border-none bg-transparent px-1 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !dispatching) void handleDispatch()
+              }}
+              placeholder="메시지를 입력하세요… (예: 타로 궁합 후기 블로그 써줘)"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
             />
             <button
               type="button"
@@ -275,12 +283,85 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               onClick={() => void handleDispatch()}
               className="shrink-0 rounded-lg bg-[var(--accent)] px-4 py-2 text-[12.5px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {dispatching ? '실행 중…' : '▶ 일 시키기'}
+              {dispatching ? '실행 중…' : '전송'}
             </button>
           </div>
           {dispatchMessage && (
-            <p className="mt-2 text-[11.5px] text-[var(--text-dim)]">{dispatchMessage}</p>
+            <p className="px-3.5 pb-2.5 text-[11.5px] text-[var(--text-dim)]">{dispatchMessage}</p>
           )}
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
+            <div className="mb-3 flex items-center gap-2.5">
+              <span
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[15px] font-bold text-white"
+                style={{ background: `var(${selected.colorVar})` }}
+              >
+                {selected.initial}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-bold text-[var(--text)]">{selected.name}</p>
+                <p className={`text-[10.5px] font-semibold ${busy ? 'text-[var(--done)]' : 'text-[var(--text-faint)]'}`}>
+                  {busy ? '● 업무중' : '● 휴식중'}
+                </p>
+              </div>
+            </div>
+            <p className="mb-3 text-[11px] leading-relaxed text-[var(--text-dim)]">
+              {selected.primaryTag} · {selected.secondaryTag}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-[var(--surface-2)] p-2">
+                <p className="text-[15px] font-bold text-[var(--text)]">{todayCount}</p>
+                <p className="text-[10px] text-[var(--text-faint)]">오늘 처리 건수</p>
+              </div>
+              <div className="rounded-lg bg-[var(--surface-2)] p-2">
+                <p className="text-[15px] font-bold text-[var(--text)]">${todayCost.toFixed(3)}</p>
+                <p className="text-[10px] text-[var(--text-faint)]">오늘 사용액</p>
+              </div>
+              <div className="rounded-lg bg-[var(--surface-2)] p-2">
+                <p className="text-[13px] font-bold text-[var(--text)]">
+                  {lastRun ? formatRelativeTime(lastRun.startedAt) : '—'}
+                </p>
+                <p className="text-[10px] text-[var(--text-faint)]">마지막 실행</p>
+              </div>
+              <div className="rounded-lg bg-[var(--surface-2)] p-2">
+                <p className="text-[13px] font-bold text-[var(--text)]">{selected.limit}</p>
+                <p className="text-[10px] text-[var(--text-faint)]">업무 제한 시간</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+              최근 대화
+            </p>
+            {recentAcrossTeam.length === 0 ? (
+              <p className="text-[11px] text-[var(--text-faint)]">아직 없습니다.</p>
+            ) : (
+              <div className="space-y-2">
+                {recentAcrossTeam.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => setSelectedKey(entry.agent)}
+                    className="block w-full rounded-lg p-1.5 text-left hover:bg-[var(--surface-2)]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[12px] font-semibold text-[var(--text)]">
+                        {AGENT_BY_KEY.get(entry.agent)?.name ?? entry.agent}
+                      </span>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9.5px] font-bold ${STATUS_CHIP[entry.status]}`}>
+                        {entry.statusLabel}
+                      </span>
+                    </div>
+                    <p className="truncate text-[10.5px] text-[var(--text-faint)]">{entry.note}</p>
+                    <p className="text-[10px] text-[var(--text-faint)]">{formatRelativeTime(entry.startedAt)}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
