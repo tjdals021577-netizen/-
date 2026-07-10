@@ -77,7 +77,7 @@ export function AppShell() {
       <main>
         {activeTab === 'ops' && <OpsScreen brand={brand} />}
         {activeTab === 'team' && <TeamChatScreen brand={brand} />}
-        {activeTab === 'dash' && <DashboardScreen brand={brand} />}
+        {activeTab === 'dash' && <DashboardScreen />}
         {activeTab === 'agency' && <AgencyScreen />}
         {activeTab === 'calendar' && <CalendarScreen brand={brand} />}
         {activeTab === 'approval' && <ApprovalScreen brand={brand} />}
