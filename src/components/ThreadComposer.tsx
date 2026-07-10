@@ -11,6 +11,7 @@ import {
   isOverDailyBudget,
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
+import { submitForApproval } from '../lib/approvalStore'
 
 const SEVERITY_LABEL: Record<string, string> = {
   risk: '반드시 확인',
@@ -31,6 +32,15 @@ function buildDetailHtml(draft: ThreadDraft, review: ThreadReview): string {
     ? `<br/><b>${topFlag.severity === 'risk' ? '반드시 확인' : '확인 필요'}:</b> ${topFlag.reason}`
     : ''
   return `<b>${draft.text.slice(0, 40)}${draft.text.length > 40 ? '…' : ''}</b><br/>${review.totalScore}/100${flagLine}`
+}
+
+function buildApprovalHtml(draft: ThreadDraft, review: ThreadReview): string {
+  const body = draft.text.replace(/\n/g, '<br/>')
+  const flags = review.flags
+    .map((f) => `- (${f.severity}) ${f.quote ? `"${f.quote}" — ` : ''}${f.reason}`)
+    .join('<br/>')
+  const flagsBlock = flags ? `<br/><br/><b>수정 포인트</b><br/>${flags}` : ''
+  return `<span style="opacity:.7">${review.summary}</span><br/><br/>${body}${flagsBlock}`
 }
 
 export function ThreadComposer() {
@@ -91,6 +101,14 @@ export function ThreadComposer() {
         costUsd: cycleCost,
         note: `${newReview.totalScore}점 ${isPassed ? '통과' : '미달'}`,
         detailHtml: buildDetailHtml(newDraft, newReview),
+      })
+      submitForApproval({
+        agent: 'buzz',
+        title: newDraft.text.slice(0, 40) + (newDraft.text.length > 40 ? '…' : ''),
+        contentHtml: buildApprovalHtml(newDraft, newReview),
+        passed: isPassed,
+        scoreLabel: `${newReview.totalScore}/100`,
+        sourceWorkLogId: logId,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

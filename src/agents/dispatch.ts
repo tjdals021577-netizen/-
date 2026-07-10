@@ -4,6 +4,7 @@ import { generateRemixPlan } from './runRemix'
 import { researchMarket } from './runBrain'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { getTodaySpendUsd } from '../lib/budgetGuard'
+import { submitForApproval } from '../lib/approvalStore'
 import { PASS_THRESHOLD } from '../types/domain'
 import type { BlogRole } from '../types/blog'
 
@@ -49,6 +50,14 @@ export async function dispatchJob(params: {
         note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`,
         detailHtml: `<b>${draft.title}</b><br/>운영실 &gt; 블로그 탭에서 전체 내용을 확인하세요.`,
       })
+      submitForApproval({
+        agent: 'writer',
+        title: draft.title,
+        contentHtml: `${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`,
+        passed,
+        scoreLabel: `${avg.toFixed(1)}/100`,
+        sourceWorkLogId: logId,
+      })
       return
     }
 
@@ -63,6 +72,14 @@ export async function dispatchJob(params: {
         note: `${review.totalScore}점 ${passed ? '통과' : '미달'}`,
         detailHtml: `${draft.text.slice(0, 60)}${draft.text.length > 60 ? '…' : ''}`,
       })
+      submitForApproval({
+        agent: 'buzz',
+        title: draft.text.slice(0, 40) + (draft.text.length > 40 ? '…' : ''),
+        contentHtml: draft.text.replace(/\n/g, '<br/>'),
+        passed,
+        scoreLabel: `${review.totalScore}/100`,
+        sourceWorkLogId: logId,
+      })
       return
     }
 
@@ -74,6 +91,14 @@ export async function dispatchJob(params: {
         costUsd: Math.max(0, getTodaySpendUsd() - spendBefore),
         note: `훅 후보 ${plan.hooks.length}개`,
         detailHtml: `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}`,
+      })
+      submitForApproval({
+        agent: 'remix',
+        title: topic,
+        contentHtml: `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`,
+        passed: true,
+        scoreLabel: '채점 없음',
+        sourceWorkLogId: logId,
       })
       return
     }

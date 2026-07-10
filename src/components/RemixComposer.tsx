@@ -9,10 +9,20 @@ import {
   isOverDailyBudget,
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
+import { submitForApproval } from '../lib/approvalStore'
 
 function buildDetailHtml(plan: RemixPlan): string {
   const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
   return `<b>훅 후보 ${plan.hooks.length}개</b><br/>${hooksList}`
+}
+
+function buildApprovalHtml(plan: RemixPlan): string {
+  const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
+  const outline = plan.outline.replace(/\n/g, '<br/>')
+  const notes = plan.benchmarkNotes.length > 0
+    ? `<br/><br/><b>벤치마킹 근거</b><br/>${plan.benchmarkNotes.map((n) => `- ${n}`).join('<br/>')}`
+    : ''
+  return `<b>훅 후보</b><br/>${hooksList}<br/><br/><b>대본 구성안</b><br/>${outline}${notes}`
 }
 
 export function RemixComposer() {
@@ -58,6 +68,14 @@ export function RemixComposer() {
         costUsd: cycleCost,
         note: `훅 후보 ${newPlan.hooks.length}개`,
         detailHtml: buildDetailHtml(newPlan),
+      })
+      submitForApproval({
+        agent: 'remix',
+        title: topic,
+        contentHtml: buildApprovalHtml(newPlan),
+        passed: true,
+        scoreLabel: '채점 없음',
+        sourceWorkLogId: logId,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

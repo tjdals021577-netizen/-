@@ -4,9 +4,11 @@ import { TeamChatScreen } from './screens/TeamChatScreen'
 import { DashboardScreen } from './screens/DashboardScreen'
 import { AgencyScreen } from './screens/AgencyScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
+import { ApprovalScreen } from './screens/ApprovalScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { getApprovalQueue } from '../lib/approvalStore'
 
-type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'calendar' | 'settings'
+type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'calendar' | 'approval' | 'settings'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'ops', label: '운영실' },
@@ -14,6 +16,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'dash', label: '대시보드' },
   { id: 'agency', label: '대행 관리' },
   { id: 'calendar', label: '캘린더' },
+  { id: 'approval', label: '결재함' },
   { id: 'settings', label: '설정' },
 ]
 
@@ -22,6 +25,7 @@ const BRANDS = ['업메리', '마잘남'] as const
 export function AppShell() {
   const [activeTab, setActiveTab] = useState<TabId>('ops')
   const [brand, setBrand] = useState<(typeof BRANDS)[number]>('마잘남')
+  const pendingApprovalCount = getApprovalQueue('pending').length
 
   return (
     <div className="mx-auto min-h-screen max-w-5xl px-4 py-5">
@@ -37,13 +41,18 @@ export function AppShell() {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-md px-3 py-1.5 text-[13px] font-semibold transition ${
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-semibold transition ${
                 activeTab === tab.id
                   ? 'bg-[var(--surface)] text-[var(--accent)] shadow-sm'
                   : 'text-[var(--text-faint)] hover:text-[var(--text)]'
               }`}
             >
               {tab.label}
+              {tab.id === 'approval' && pendingApprovalCount > 0 && (
+                <span className="rounded-full bg-[var(--open)] px-1.5 text-[10px] font-bold text-white">
+                  {pendingApprovalCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -72,6 +81,7 @@ export function AppShell() {
         {activeTab === 'dash' && <DashboardScreen />}
         {activeTab === 'agency' && <AgencyScreen />}
         {activeTab === 'calendar' && <CalendarScreen />}
+        {activeTab === 'approval' && <ApprovalScreen />}
         {activeTab === 'settings' && <SettingsScreen />}
       </main>
     </div>

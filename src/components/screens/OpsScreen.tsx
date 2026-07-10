@@ -19,7 +19,7 @@ export function OpsScreen() {
 
   return (
     <div>
-      <PreviewBanner message="콘텐츠 캘린더·결재함·지시 입력창은 Phase 4(백엔드) 이후에 실제 데이터와 연결됩니다. 지금은 아래 제작 도구들이 실제로 동작합니다." />
+      <PreviewBanner message="아래에서 만든 결과물은 자동으로 결재함에 올라갑니다. 자연어 지시 입력창(캘린더 연동)은 Phase 4(백엔드) 이후에 지원됩니다." />
 
       <div className="mb-4 flex gap-1 rounded-lg bg-[var(--surface-2)] p-1 w-fit">
         {TOOLS.map((t) => (

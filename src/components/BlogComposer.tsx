@@ -11,6 +11,7 @@ import {
   isOverDailyBudget,
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
+import { submitForApproval } from '../lib/approvalStore'
 
 const ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -43,6 +44,23 @@ function buildDetailHtml(draft: BlogDraft, reviews: BlogReview[]): string {
     ? `<br/><b>${topFlag.severity === 'risk' ? '반드시 확인' : '확인 필요'}:</b> ${topFlag.reason}`
     : ''
   return `<b>${draft.title}</b><br/>${scores}${flagLine}`
+}
+
+function buildApprovalHtml(draft: BlogDraft, reviews: BlogReview[]): string {
+  const scores = reviews
+    .map((r) => `${ROLE_LABEL_KO[r.role]} ${r.totalScore}/100`)
+    .join(' · ')
+  const body = draft.body.replace(/\n/g, '<br/>')
+  const photos =
+    draft.photoPlacements.length > 0
+      ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}`
+      : ''
+  const flags = reviews
+    .flatMap((r) => r.flags)
+    .map((f) => `- (${f.severity}) ${f.quote ? `"${f.quote}" — ` : ''}${f.reason}`)
+    .join('<br/>')
+  const flagsBlock = flags ? `<br/><br/><b>수정 포인트</b><br/>${flags}` : ''
+  return `<span style="opacity:.7">${scores}</span><br/><br/>${body}${photos}${flagsBlock}`
 }
 
 export function BlogComposer() {
@@ -173,6 +191,14 @@ export function BlogComposer() {
         costUsd: cycleCost,
         note: `${avg.toFixed(1)}점 ${isPassed ? '통과' : '미달'}`,
         detailHtml: buildDetailHtml(newDraft, finishedReviews),
+      })
+      submitForApproval({
+        agent: 'writer',
+        title: newDraft.title,
+        contentHtml: buildApprovalHtml(newDraft, finishedReviews),
+        passed: isPassed,
+        scoreLabel: `${avg.toFixed(1)}/100`,
+        sourceWorkLogId: logId,
       })
     }
   }
