@@ -1,14 +1,6 @@
-import type { CriterionScore } from './domain'
+import type { CriterionScore, RevisionFlag } from './domain'
 
 export type BlogRole = 'seo' | 'copywriting' | 'experience'
-
-export type FlagSeverity = 'info' | 'check' | 'risk'
-
-export interface RevisionFlag {
-  quote: string
-  reason: string
-  severity: FlagSeverity
-}
 
 export interface BlogReview {
   role: BlogRole

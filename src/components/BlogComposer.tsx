@@ -10,6 +10,7 @@ import {
   getTodaySpendUsd,
   isOverDailyBudget,
 } from '../lib/budgetGuard'
+import { startWorkLog, finishWorkLog } from '../lib/workLog'
 
 const ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -25,6 +26,23 @@ function initialRoleStates(): Record<BlogRole, RoleState> {
     copywriting: { status: 'idle' },
     experience: { status: 'idle' },
   }
+}
+
+const ROLE_LABEL_KO: Record<BlogRole, string> = {
+  seo: 'SEO',
+  copywriting: '카피/후킹',
+  experience: '고객경험',
+}
+
+function buildDetailHtml(draft: BlogDraft, reviews: BlogReview[]): string {
+  const scores = reviews
+    .map((r) => `${ROLE_LABEL_KO[r.role]} <b>${r.totalScore}</b>/100`)
+    .join(' &nbsp;·&nbsp; ')
+  const topFlag = reviews.flatMap((r) => r.flags).find((f) => f.severity !== 'info')
+  const flagLine = topFlag
+    ? `<br/><b>${topFlag.severity === 'risk' ? '반드시 확인' : '확인 필요'}:</b> ${topFlag.reason}`
+    : ''
+  return `<b>${draft.title}</b><br/>${scores}${flagLine}`
 }
 
 export function BlogComposer() {
@@ -74,6 +92,13 @@ export function BlogComposer() {
       experience: { status: 'loading' },
     })
 
+    const spendBefore = getTodaySpendUsd()
+    const logId = startWorkLog({
+      agent: 'writer',
+      kind: feedback ? '재생성' : '수동 지시',
+      note: topic,
+    })
+
     let newDraft: BlogDraft
     try {
       newDraft = await generateBlogDraft({
@@ -86,13 +111,21 @@ export function BlogComposer() {
       })
       setDraft(newDraft)
     } catch (err) {
-      setDraftError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      setDraftError(message)
       setRoleStates(initialRoleStates())
       setRunning(false)
       setTodaySpend(getTodaySpendUsd())
+      finishWorkLog(logId, {
+        status: 'error',
+        statusLabel: '오류',
+        note: '초안 생성 실패',
+        detailHtml: message,
+      })
       return
     }
 
+    const finishedReviews: BlogReview[] = []
     await Promise.allSettled(
       ROLES.map(async (role) => {
         try {
@@ -101,6 +134,7 @@ export function BlogComposer() {
             role,
             draft: newDraft,
           })
+          finishedReviews.push(review)
           setRoleStates((prev) => ({
             ...prev,
             [role]: { status: 'done', review },
@@ -118,6 +152,29 @@ export function BlogComposer() {
     )
     setRunning(false)
     setTodaySpend(getTodaySpendUsd())
+
+    const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
+    if (finishedReviews.length < ROLES.length) {
+      finishWorkLog(logId, {
+        status: 'error',
+        statusLabel: '오류',
+        costUsd: cycleCost,
+        note: '일부 채점 실패',
+        detailHtml: buildDetailHtml(newDraft, finishedReviews),
+      })
+    } else {
+      const avg =
+        finishedReviews.reduce((s, r) => s + r.totalScore, 0) /
+        finishedReviews.length
+      const isPassed = avg >= PASS_THRESHOLD
+      finishWorkLog(logId, {
+        status: isPassed ? 'done' : 'attention',
+        statusLabel: isPassed ? '완료' : '보류',
+        costUsd: cycleCost,
+        note: `${avg.toFixed(1)}점 ${isPassed ? '통과' : '미달'}`,
+        detailHtml: buildDetailHtml(newDraft, finishedReviews),
+      })
+    }
   }
 
   function handleRegenerate() {

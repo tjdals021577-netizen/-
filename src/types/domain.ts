@@ -19,6 +19,15 @@ export interface CriterionScore {
   comment: string
 }
 
+// 텍스트 산출물(블로그·스레드 등)에서 "다시 확인해야 할 부분"을 표시하는 공용 타입.
+export type FlagSeverity = 'info' | 'check' | 'risk'
+
+export interface RevisionFlag {
+  quote: string
+  reason: string
+  severity: FlagSeverity
+}
+
 export type CutAction = 'cut' | 'keep_tight' | 'keep'
 
 export interface CutSuggestion {
