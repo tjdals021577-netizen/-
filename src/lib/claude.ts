@@ -2,6 +2,9 @@ import Anthropic from '@anthropic-ai/sdk'
 
 export const CLAUDE_MODEL = 'claude-sonnet-5'
 
+// 호출 1건이 걸려서 무한정 응답을 기다리는 상황을 막기 위한 기본 타임아웃.
+const DEFAULT_TIMEOUT_MS = 120_000
+
 export class ClaudeCallError extends Error {}
 
 function extractJson(raw: string): string {
@@ -20,9 +23,17 @@ export async function callClaudeJson(params: {
   system: string
   user: string
   maxTokens?: number
+  timeoutMs?: number
   onUsage?: (usage: { input_tokens: number; output_tokens: number }) => void
 }): Promise<unknown> {
-  const { apiKey, system, user, maxTokens = 4096, onUsage } = params
+  const {
+    apiKey,
+    system,
+    user,
+    maxTokens = 4096,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    onUsage,
+  } = params
   if (!apiKey) {
     throw new ClaudeCallError('Anthropic API 키가 설정되지 않았습니다.')
   }
@@ -32,12 +43,25 @@ export async function callClaudeJson(params: {
     dangerouslyAllowBrowser: true,
   })
 
-  const response = await client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: 'user', content: user }],
-  })
+  let response
+  try {
+    response = await client.messages.create(
+      {
+        model: CLAUDE_MODEL,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: user }],
+      },
+      { timeout: timeoutMs },
+    )
+  } catch (err) {
+    if (err instanceof Anthropic.APIConnectionTimeoutError) {
+      throw new ClaudeCallError(
+        `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
+      )
+    }
+    throw err
+  }
 
   onUsage?.({
     input_tokens: response.usage.input_tokens,
