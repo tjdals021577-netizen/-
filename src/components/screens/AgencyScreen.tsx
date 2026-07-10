@@ -111,6 +111,7 @@ export function AgencyScreen() {
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
       agent: 'buzz',
+      brand: '마잘남', // 대행 서비스는 마잘남 사업의 일부라 항상 마잘남으로 기록
       kind: `대행 — ${client.name}`,
       note: '오늘 초안 5건 생성',
     })

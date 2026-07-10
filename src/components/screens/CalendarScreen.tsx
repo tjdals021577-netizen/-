@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import {
   getEntries,
@@ -7,7 +7,8 @@ import {
   deleteEntry,
   importTodayFromWorkLog,
 } from '../../lib/calendarStore'
-import type { CalendarChannel, CalendarStatus } from '../../types/calendar'
+import type { CalendarChannel, CalendarEntry, CalendarStatus } from '../../types/calendar'
+import type { Brand } from '../../types/brand'
 
 const CHANNEL_LABEL: Record<CalendarChannel, string> = {
   blog: '블로그',
@@ -48,20 +49,84 @@ function todayKey(): string {
   return dateKey(t.getFullYear(), t.getMonth(), t.getDate())
 }
 
-export function CalendarScreen() {
+function CalendarEntryRow({
+  entry,
+  onCycleStatus,
+  onDelete,
+}: {
+  entry: CalendarEntry
+  onCycleStatus: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <li className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2.5">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-faint)]">
+          {CHANNEL_LABEL[entry.channel]}
+        </span>
+        <button
+          type="button"
+          onClick={onCycleStatus}
+          className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${STATUS_CHIP[entry.status]}`}
+        >
+          {STATUS_LABEL[entry.status]}
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="block w-full text-left"
+      >
+        <p className="text-[13px] font-semibold text-[var(--text)]">
+          <span className={`mr-1 inline-block transition-transform ${open ? 'rotate-90' : ''} text-[var(--text-faint)]`}>▸</span>
+          {entry.title}
+        </p>
+        {entry.note && (
+          <p className="mt-0.5 pl-3 text-[11.5px] text-[var(--text-dim)]">{entry.note}</p>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2.5 text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+          {entry.contentHtml ? (
+            <div dangerouslySetInnerHTML={{ __html: entry.contentHtml }} />
+          ) : (
+            <span className="text-[var(--text-faint)]">상세 내용이 없습니다.</span>
+          )}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onDelete}
+        className="mt-1.5 text-[11px] text-[var(--open)] hover:underline"
+      >
+        삭제
+      </button>
+    </li>
+  )
+}
+
+export function CalendarScreen({ brand }: { brand: Brand }) {
   const today = new Date()
   const [cursorYear, setCursorYear] = useState(today.getFullYear())
   const [cursorMonth, setCursorMonth] = useState(today.getMonth()) // 0-based
   const [selectedDate, setSelectedDate] = useState(todayKey())
   const [version, setVersion] = useState(0)
-  const [importMessage, setImportMessage] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [channel, setChannel] = useState<CalendarChannel>('blog')
   const [note, setNote] = useState('')
 
-  const entries = getEntries()
+  const entries = getEntries(brand)
   void version // 저장소 변경 후 재조회 트리거용
+
+  // 캘린더 화면을 열 때마다 근무기록에서 아직 등록 안 된 오늘 완료분을
+  // 자동으로 가져온다 — 버튼을 안 눌러도 항상 최신 상태로 보인다.
+  useEffect(() => {
+    importTodayFromWorkLog(brand)
+    setVersion((v) => v + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand])
 
   const entriesByDate = new Map<string, typeof entries>()
   for (const e of entries) {
@@ -94,19 +159,14 @@ export function CalendarScreen() {
     }
   }
 
-  function handleImport() {
-    const count = importTodayFromWorkLog()
-    setImportMessage(
-      count > 0
-        ? `오늘 완료된 콘텐츠 ${count}건을 캘린더에 등록했습니다.`
-        : '새로 등록할 완료 콘텐츠가 없습니다.',
-    )
+  function handleRefresh() {
+    importTodayFromWorkLog(brand)
     setVersion((v) => v + 1)
   }
 
   function handleAdd() {
     if (title.trim().length === 0) return
-    createEntry({ date: selectedDate, channel, title: title.trim(), note: note.trim() })
+    createEntry({ date: selectedDate, brand, channel, title: title.trim(), note: note.trim() })
     setTitle('')
     setNote('')
     setVersion((v) => v + 1)
@@ -126,19 +186,16 @@ export function CalendarScreen() {
 
   return (
     <div>
-      <PreviewBanner message="자동 매일 08:05 갱신은 스케줄러(Phase 4) 연동 후 지원됩니다. 지금은 직접 일정을 추가하거나, 아래 버튼으로 오늘 완료된 콘텐츠를 근무기록에서 가져올 수 있습니다." />
+      <PreviewBanner message="라이터·버즈·리믹서가 콘텐츠를 만들면 자동으로 오늘 날짜에 등록됩니다. 일정을 클릭하면 전체 내용을 볼 수 있어요. 자동 매일 08:05 갱신(스케줄러 없이도 날짜가 바뀔 때 실행)은 Phase 4 이후 지원됩니다." />
 
       <div className="mb-4 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => void handleImport()}
-          className="rounded-lg bg-[var(--accent)] px-3.5 py-2 text-[12.5px] font-bold text-white transition hover:opacity-90"
+          onClick={handleRefresh}
+          className="rounded-lg bg-[var(--surface-2)] px-3.5 py-2 text-[12.5px] font-bold text-[var(--text-dim)] transition hover:opacity-90"
         >
-          근무기록에서 가져오기
+          새로고침
         </button>
-        {importMessage && (
-          <p className="text-[11.5px] text-[var(--text-dim)]">{importMessage}</p>
-        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
@@ -223,34 +280,12 @@ export function CalendarScreen() {
           ) : (
             <ul className="mb-3 space-y-2">
               {selectedEntries.map((e) => (
-                <li
+                <CalendarEntryRow
                   key={e.id}
-                  className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2.5"
-                >
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-faint)]">
-                      {CHANNEL_LABEL[e.channel]}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleCycleStatus(e.id, e.status)}
-                      className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${STATUS_CHIP[e.status]}`}
-                    >
-                      {STATUS_LABEL[e.status]}
-                    </button>
-                  </div>
-                  <p className="text-[13px] font-semibold text-[var(--text)]">{e.title}</p>
-                  {e.note && (
-                    <p className="mt-0.5 text-[11.5px] text-[var(--text-dim)]">{e.note}</p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(e.id)}
-                    className="mt-1.5 text-[11px] text-[var(--open)] hover:underline"
-                  >
-                    삭제
-                  </button>
-                </li>
+                  entry={e}
+                  onCycleStatus={() => handleCycleStatus(e.id, e.status)}
+                  onDelete={() => handleDelete(e.id)}
+                />
               ))}
             </ul>
           )}

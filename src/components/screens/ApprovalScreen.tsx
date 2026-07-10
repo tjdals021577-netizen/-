@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { getApprovalQueue, reviewItem } from '../../lib/approvalStore'
 import type { ApprovalAgent, ApprovalItem, ApprovalStatus } from '../../types/approval'
+import type { Brand } from '../../types/brand'
 
 const AGENT_LABEL: Record<ApprovalAgent, string> = {
   writer: '라이터 · 블로그',
@@ -139,12 +140,12 @@ function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => v
   )
 }
 
-export function ApprovalScreen() {
+export function ApprovalScreen({ brand }: { brand: Brand }) {
   const [tab, setTab] = useState<ApprovalStatus>('pending')
   const [version, setVersion] = useState(0)
 
-  const items = getApprovalQueue(tab)
-  const pendingCount = getApprovalQueue('pending').length
+  const items = getApprovalQueue(tab, brand)
+  const pendingCount = getApprovalQueue('pending', brand).length
   void version // 승인/반려 후 재조회 트리거용
 
   return (

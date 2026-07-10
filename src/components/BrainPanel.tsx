@@ -9,6 +9,7 @@ import {
   isOverDailyBudget,
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
+import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
 
 function buildDetailHtml(report: BrainReport): string {
   const findingsList = report.findings
@@ -17,7 +18,7 @@ function buildDetailHtml(report: BrainReport): string {
   return `<b>발견 사항</b><br/>${findingsList}<br/><br/><b>요약</b><br/>${report.summary}`
 }
 
-export function BrainPanel() {
+export function BrainPanel({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [topic, setTopic] = useState('')
   const [context, setContext] = useState('')
@@ -47,10 +48,14 @@ export function BrainPanel() {
     setReport(null)
 
     const spendBefore = getTodaySpendUsd()
-    const logId = startWorkLog({ agent: 'brain', kind: '수동 리서치', note: topic })
+    const logId = startWorkLog({ agent: 'brain', brand, kind: '수동 리서치', note: topic })
 
     try {
-      const newReport = await researchMarket({ apiKey, topic, context })
+      const newReport = await researchMarket({
+        apiKey,
+        topic,
+        context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}\n\n${context}`,
+      })
       setReport(newReport)
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
       finishWorkLog(logId, {

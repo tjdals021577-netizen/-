@@ -52,14 +52,16 @@ function buildLogText(entries: WorkLogEntry[]): string {
 
 export async function generateMorningBriefing(params: {
   apiKey: string
+  brand: string
   entries: WorkLogEntry[]
   todaySpendUsd: number
 }): Promise<MorningBriefing> {
-  const { apiKey, entries, todaySpendUsd } = params
+  const { apiKey, brand, entries, todaySpendUsd } = params
   const raw = await callClaudeJson({
     apiKey,
     system: buildMorningSystemPrompt(),
     user: buildMorningUserPrompt({
+      brand,
       logText: buildLogText(entries),
       spendText: `$${todaySpendUsd.toFixed(3)} / $5`,
     }),

@@ -5,7 +5,9 @@ import { researchMarket } from './runBrain'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { getTodaySpendUsd } from '../lib/budgetGuard'
 import { submitForApproval } from '../lib/approvalStore'
+import { createEntry } from '../lib/calendarStore'
 import { PASS_THRESHOLD } from '../types/domain'
+import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
 import type { BlogRole } from '../types/blog'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
@@ -18,14 +20,17 @@ export const DISPATCHABLE_AGENTS: DispatchableAgent[] = ['writer', 'buzz', 'remi
 // 건드리지 않고, 같은 생성·채점 로직만 재사용해 근무기록에 결과를 남긴다.
 export async function dispatchJob(params: {
   agent: DispatchableAgent
+  brand: Brand
   apiKey: string
   instruction: string
 }): Promise<void> {
-  const { agent, apiKey, instruction } = params
+  const { agent, brand, apiKey, instruction } = params
   const topic = instruction.trim()
+  const today = new Date().toISOString().slice(0, 10)
   const spendBefore = getTodaySpendUsd()
   const logId = startWorkLog({
     agent,
+    brand,
     kind: '수동 지시(팀 채팅)',
     note: topic,
   })
@@ -37,6 +42,7 @@ export async function dispatchJob(params: {
         topic,
         keyPoints: '',
         photoDescriptions: '',
+        brandContext: BRAND_CONTEXT[brand],
       })
       const reviews = await Promise.all(
         BLOG_ROLES.map((role) => runBlogAgentReview({ apiKey, role, draft })),
@@ -50,19 +56,38 @@ export async function dispatchJob(params: {
         note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`,
         detailHtml: `<b>${draft.title}</b><br/>운영실 &gt; 블로그 탭에서 전체 내용을 확인하세요.`,
       })
+      const contentHtml = `${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`
       submitForApproval({
         agent: 'writer',
+        brand,
         title: draft.title,
-        contentHtml: `${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`,
+        contentHtml,
         passed,
         scoreLabel: `${avg.toFixed(1)}/100`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: today,
+        brand,
+        channel: 'blog',
+        title: draft.title,
+        status: passed ? 'planned' : 'open',
+        note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`,
+        contentHtml,
         sourceWorkLogId: logId,
       })
       return
     }
 
     if (agent === 'buzz') {
-      const draft = await generateThreadDraft({ apiKey, topic })
+      if (!BRAND_CHANNELS[brand].includes('스레드')) {
+        throw new Error(`${brand}는 스레드 채널을 운영하지 않습니다.`)
+      }
+      const draft = await generateThreadDraft({
+        apiKey,
+        topic,
+        brandVoice: BRAND_CONTEXT[brand],
+      })
       const review = await runThreadReview({ apiKey, draft })
       const passed = review.totalScore >= PASS_THRESHOLD
       finishWorkLog(logId, {
@@ -72,19 +97,40 @@ export async function dispatchJob(params: {
         note: `${review.totalScore}점 ${passed ? '통과' : '미달'}`,
         detailHtml: `${draft.text.slice(0, 60)}${draft.text.length > 60 ? '…' : ''}`,
       })
+      const title = draft.text.slice(0, 40) + (draft.text.length > 40 ? '…' : '')
+      const contentHtml = draft.text.replace(/\n/g, '<br/>')
       submitForApproval({
         agent: 'buzz',
-        title: draft.text.slice(0, 40) + (draft.text.length > 40 ? '…' : ''),
-        contentHtml: draft.text.replace(/\n/g, '<br/>'),
+        brand,
+        title,
+        contentHtml,
         passed,
         scoreLabel: `${review.totalScore}/100`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: today,
+        brand,
+        channel: 'thread',
+        title,
+        status: passed ? 'planned' : 'open',
+        note: `${review.totalScore}점 ${passed ? '통과' : '미달'}`,
+        contentHtml,
         sourceWorkLogId: logId,
       })
       return
     }
 
     if (agent === 'remix') {
-      const plan = await generateRemixPlan({ apiKey, topic, referenceText: '' })
+      if (!BRAND_CHANNELS[brand].includes('유튜브')) {
+        throw new Error(`${brand}는 유튜브 채널을 운영하지 않습니다.`)
+      }
+      const plan = await generateRemixPlan({
+        apiKey,
+        topic,
+        referenceText: '',
+        brandContext: BRAND_CONTEXT[brand],
+      })
       finishWorkLog(logId, {
         status: 'done',
         statusLabel: '완료',
@@ -92,19 +138,35 @@ export async function dispatchJob(params: {
         note: `훅 후보 ${plan.hooks.length}개`,
         detailHtml: `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}`,
       })
+      const contentHtml = `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`
       submitForApproval({
         agent: 'remix',
+        brand,
         title: topic,
-        contentHtml: `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`,
+        contentHtml,
         passed: true,
         scoreLabel: '채점 없음',
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: today,
+        brand,
+        channel: 'youtube',
+        title: topic,
+        status: 'planned',
+        note: `훅 후보 ${plan.hooks.length}개`,
+        contentHtml,
         sourceWorkLogId: logId,
       })
       return
     }
 
     // brain
-    const report = await researchMarket({ apiKey, topic, context: '' })
+    const report = await researchMarket({
+      apiKey,
+      topic,
+      context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
+    })
     finishWorkLog(logId, {
       status: 'done',
       statusLabel: '완료',

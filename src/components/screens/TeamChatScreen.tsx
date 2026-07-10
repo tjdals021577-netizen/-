@@ -5,6 +5,7 @@ import { getStoredApiKey, setStoredApiKey } from '../../lib/apiKey'
 import { getWorkLog, type WorkLogEntry } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
+import type { Brand } from '../../types/brand'
 
 interface AgentMeta {
   key: string
@@ -83,7 +84,7 @@ function WorkLogRow({ entry }: { entry: WorkLogEntry }) {
   )
 }
 
-export function TeamChatScreen() {
+export function TeamChatScreen({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [selectedKey, setSelectedKey] = useState<string>('morning')
   const [instruction, setInstruction] = useState('')
@@ -92,7 +93,7 @@ export function TeamChatScreen() {
   const [logVersion, setLogVersion] = useState(0)
 
   const selected = AGENTS.find((a) => a.key === selectedKey) ?? AGENTS[0]
-  const log = getWorkLog(selectedKey)
+  const log = getWorkLog(selectedKey, brand)
   void logVersion // 근무기록 재조회 트리거용
 
   function handleApiKeyChange(key: string) {
@@ -130,6 +131,7 @@ export function TeamChatScreen() {
     try {
       await dispatchJob({
         agent: selectedKey as DispatchableAgent,
+        brand,
         apiKey,
         instruction,
       })

@@ -6,9 +6,10 @@ const YOUTUBE_KNOWLEDGE = `[유튜브 대본 기획 지식 베이스]
 - 제목·썸네일 체크: 제목은 내용이 다 추측되면 안 되고(의문형 + 혜택 제시), 썸네일은 기대심리·증거제시·의문형성·공감형성 중 하나의 범주로 무게중심을 명확히 한다.
 - 판매 콘텐츠: 조회수 콘텐츠(콘텐츠 안에서 답을 줌)와 판매 콘텐츠(제품·서비스에서 답을 줌 — 원고를 의도적으로 미완성으로 두고 고정댓글로 CTA 연결)를 구분해서 기획한다.`
 
-export function buildRemixSystemPrompt(): string {
-  return `당신은 마잘남의 유튜브 대본 기획자입니다.
-
+export function buildRemixSystemPrompt(brandContext?: string): string {
+  const brandBlock = brandContext ? `\n[브랜드]\n${brandContext}\n` : ''
+  return `당신은 유튜브 대본 기획자입니다.
+${brandBlock}
 ${YOUTUBE_KNOWLEDGE}
 
 주어진 자료(주제, 참고 텍스트)를 바탕으로 유튜브 영상 기획안을 만드세요. 촬영·편집은 하지 않고 기획안까지만 작성합니다.

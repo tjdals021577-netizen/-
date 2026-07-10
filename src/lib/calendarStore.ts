@@ -1,4 +1,5 @@
 import type { CalendarEntry, CalendarChannel, CalendarStatus } from '../types/calendar'
+import type { Brand } from '../types/brand'
 import { getWorkLog } from './workLog'
 
 const STORAGE_KEY = 'ai-ops:content-calendar'
@@ -26,33 +27,42 @@ function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-export function getEntries(): CalendarEntry[] {
-  return readAll().sort((a, b) => a.date.localeCompare(b.date))
+export function getEntries(brand?: Brand): CalendarEntry[] {
+  const all = readAll().sort((a, b) => a.date.localeCompare(b.date))
+  return brand ? all.filter((e) => e.brand === brand) : all
 }
 
-export function getEntriesForDate(date: string): CalendarEntry[] {
-  return getEntries().filter((e) => e.date === date)
+export function getEntriesForDate(date: string, brand?: Brand): CalendarEntry[] {
+  return getEntries(brand).filter((e) => e.date === date)
 }
 
 export function createEntry(params: {
   date: string
+  brand: Brand
   channel: CalendarChannel
   title: string
   status?: CalendarStatus
   note?: string
+  contentHtml?: string
   sourceWorkLogId?: string
 }): CalendarEntry {
+  const entries = readAll()
+  if (params.sourceWorkLogId) {
+    const existing = entries.find((e) => e.sourceWorkLogId === params.sourceWorkLogId)
+    if (existing) return existing
+  }
   const entry: CalendarEntry = {
     id: makeId(),
     date: params.date,
+    brand: params.brand,
     channel: params.channel,
     title: params.title,
     status: params.status ?? 'planned',
     note: params.note ?? '',
+    contentHtml: params.contentHtml,
     createdAt: new Date().toISOString(),
     sourceWorkLogId: params.sourceWorkLogId,
   }
-  const entries = readAll()
   entries.push(entry)
   writeAll(entries)
   return entry
@@ -80,34 +90,34 @@ const AGENT_TO_CHANNEL: Record<string, CalendarChannel> = {
 }
 
 // 캘린더가 근무기록에서 오늘 완료된 콘텐츠를 찾아 아직 캘린더에 없는 것만
-// "발행 예정(planned)" 항목으로 자동 등록한다 — 자동 스케줄러 없이도 동작.
-export function importTodayFromWorkLog(): number {
+// "발행 예정(planned)" 항목으로 등록한다 — 각 컴포저가 생성 직후 바로
+// createEntry를 호출하지만, 그걸 놓친 경로(팀 채팅 등)를 위한 안전망으로
+// 캘린더 화면 진입 시 자동으로 한 번 더 돌린다(중복은 createEntry가 막아줌).
+export function importTodayFromWorkLog(brand: Brand): number {
   const today = new Date().toISOString().slice(0, 10)
   const existingSourceIds = new Set(
     readAll()
       .map((e) => e.sourceWorkLogId)
       .filter((id): id is string => !!id),
   )
-  const candidates = getWorkLog().filter(
+  const candidates = getWorkLog(undefined, brand).filter(
     (e) =>
       e.status === 'done' &&
       e.startedAt.slice(0, 10) === today &&
       AGENT_TO_CHANNEL[e.agent] &&
       !existingSourceIds.has(e.id),
   )
-  const entries = readAll()
   for (const c of candidates) {
-    entries.push({
-      id: makeId(),
+    createEntry({
       date: today,
+      brand,
       channel: AGENT_TO_CHANNEL[c.agent],
       title: c.note || c.kind,
       status: 'planned',
       note: '근무기록에서 자동 등록됨 — 검토 후 발행하세요.',
-      createdAt: new Date().toISOString(),
+      contentHtml: c.detailHtml,
       sourceWorkLogId: c.id,
     })
   }
-  if (candidates.length > 0) writeAll(entries)
   return candidates.length
 }

@@ -12,6 +12,8 @@ import {
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { submitForApproval } from '../lib/approvalStore'
+import { createEntry } from '../lib/calendarStore'
+import { BRAND_CONTEXT, type Brand } from '../types/brand'
 
 const SEVERITY_LABEL: Record<string, string> = {
   risk: '반드시 확인',
@@ -43,7 +45,7 @@ function buildApprovalHtml(draft: ThreadDraft, review: ThreadReview): string {
   return `<span style="opacity:.7">${review.summary}</span><br/><br/>${body}${flagsBlock}`
 }
 
-export function ThreadComposer() {
+export function ThreadComposer({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [topic, setTopic] = useState('')
 
@@ -77,6 +79,7 @@ export function ThreadComposer() {
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
       agent: 'buzz',
+      brand,
       kind: feedback ? '재생성' : '수동 지시',
       note: topic,
     })
@@ -85,6 +88,7 @@ export function ThreadComposer() {
       const newDraft = await generateThreadDraft({
         apiKey,
         topic,
+        brandVoice: BRAND_CONTEXT[brand],
         previousDraft,
         feedback,
       })
@@ -102,12 +106,24 @@ export function ThreadComposer() {
         note: `${newReview.totalScore}점 ${isPassed ? '통과' : '미달'}`,
         detailHtml: buildDetailHtml(newDraft, newReview),
       })
+      const title = newDraft.text.slice(0, 40) + (newDraft.text.length > 40 ? '…' : '')
       submitForApproval({
         agent: 'buzz',
-        title: newDraft.text.slice(0, 40) + (newDraft.text.length > 40 ? '…' : ''),
+        brand,
+        title,
         contentHtml: buildApprovalHtml(newDraft, newReview),
         passed: isPassed,
         scoreLabel: `${newReview.totalScore}/100`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand,
+        channel: 'thread',
+        title,
+        status: isPassed ? 'planned' : 'open',
+        note: `${newReview.totalScore}점 ${isPassed ? '통과' : '미달'}`,
+        contentHtml: buildApprovalHtml(newDraft, newReview),
         sourceWorkLogId: logId,
       })
     } catch (err) {

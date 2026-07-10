@@ -9,6 +9,7 @@ import {
   isOverDailyBudget,
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
+import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,7 +37,7 @@ function buildDetailHtml(analysis: CoachAnalysis): string {
   return `${stats}<br/>${analysis.summary}`
 }
 
-export function CoachPanel() {
+export function CoachPanel({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [context, setContext] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -73,14 +74,16 @@ export function CoachPanel() {
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
       agent: 'coach',
+      brand,
       kind: '스크린샷 분석',
       note: context || file.name,
     })
     try {
       const imageBase64 = await fileToBase64(file)
+      const brandContext = `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}\n\n${context}`
       const result = await analyzeScreenshot({
         apiKey,
-        context,
+        context: brandContext,
         imageBase64,
         imageMediaType: mediaType,
       })

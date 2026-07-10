@@ -3,8 +3,9 @@ import { PreviewBanner } from './PreviewBanner'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { CoachPanel } from '../CoachPanel'
 import { MorningPanel } from '../MorningPanel'
+import type { Brand } from '../../types/brand'
 
-export function DashboardScreen() {
+export function DashboardScreen({ brand }: { brand: Brand }) {
   const [todaySpend] = useState(() => getTodaySpendUsd())
 
   const stats = [
@@ -39,11 +40,11 @@ export function DashboardScreen() {
       </div>
 
       <div className="mt-4">
-        <MorningPanel />
+        <MorningPanel brand={brand} />
       </div>
 
       <div className="mt-4">
-        <CoachPanel />
+        <CoachPanel brand={brand} />
       </div>
     </div>
   )

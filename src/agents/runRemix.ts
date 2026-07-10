@@ -23,11 +23,12 @@ export async function generateRemixPlan(params: {
   apiKey: string
   topic: string
   referenceText: string
+  brandContext?: string
 }): Promise<RemixPlan> {
-  const { apiKey, topic, referenceText } = params
+  const { apiKey, topic, referenceText, brandContext } = params
   const raw = await callClaudeJson({
     apiKey,
-    system: buildRemixSystemPrompt(),
+    system: buildRemixSystemPrompt(brandContext),
     user: buildRemixUserPrompt({ topic, referenceText }),
     maxTokens: 2048,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),

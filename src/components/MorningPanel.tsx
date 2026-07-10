@@ -5,10 +5,18 @@ import { generateMorningBriefing } from '../agents/runMorning'
 import type { MorningBriefing } from '../types/morning'
 import { getTodaySpendUsd, isOverDailyBudget, DAILY_BUDGET_USD } from '../lib/budgetGuard'
 import { getWorkLog, startWorkLog, finishWorkLog } from '../lib/workLog'
+import type { Brand } from '../types/brand'
 
-function todayEntries() {
+function todayEntries(brand: Brand) {
   const today = new Date().toISOString().slice(0, 10)
-  return getWorkLog().filter((e) => e.startedAt.slice(0, 10) === today)
+  return getWorkLog(undefined, brand).filter((e) => e.startedAt.slice(0, 10) === today)
+}
+
+function ranMorningToday(brand: Brand): boolean {
+  const today = new Date().toISOString().slice(0, 10)
+  return getWorkLog('morning', brand).some(
+    (e) => e.startedAt.slice(0, 10) === today && e.status !== 'running',
+  )
 }
 
 function buildDetailHtml(briefing: MorningBriefing): string {
@@ -18,12 +26,13 @@ function buildDetailHtml(briefing: MorningBriefing): string {
   return `<b>${briefing.headline}</b><br/>${summaries}`
 }
 
-export function MorningPanel() {
+export function MorningPanel({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [briefing, setBriefing] = useState<MorningBriefing | null>(null)
   const [running, setRunning] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
+  const doneToday = ranMorningToday(brand)
 
   function handleApiKeyChange(key: string) {
     setApiKey(key)
@@ -38,10 +47,11 @@ export function MorningPanel() {
     setErrorMessage(null)
     setBriefing(null)
 
-    const entries = todayEntries()
+    const entries = todayEntries(brand)
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
       agent: 'morning',
+      brand,
       kind: '데일리 브리핑',
       note: `오늘 실행 기록 ${entries.length}건 종합`,
     })
@@ -49,6 +59,7 @@ export function MorningPanel() {
     try {
       const result = await generateMorningBriefing({
         apiKey,
+        brand,
         entries,
         todaySpendUsd: spendBefore,
       })
@@ -89,6 +100,12 @@ export function MorningPanel() {
       </div>
 
       <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
+
+      {!doneToday && !briefing && (
+        <div className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] p-3 text-sm font-semibold text-[var(--accent)]">
+          오늘 아직 {brand} 브리핑을 만들지 않으셨어요 — 아래 버튼으로 지금 만들어보세요.
+        </div>
+      )}
 
       <button
         type="button"

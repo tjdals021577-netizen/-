@@ -12,6 +12,8 @@ import {
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { submitForApproval } from '../lib/approvalStore'
+import { createEntry } from '../lib/calendarStore'
+import { BRAND_CONTEXT, type Brand } from '../types/brand'
 
 const ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -63,7 +65,7 @@ function buildApprovalHtml(draft: BlogDraft, reviews: BlogReview[]): string {
   return `<span style="opacity:.7">${scores}</span><br/><br/>${body}${photos}${flagsBlock}`
 }
 
-export function BlogComposer() {
+export function BlogComposer({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
 
   const [topic, setTopic] = useState('')
@@ -113,6 +115,7 @@ export function BlogComposer() {
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
       agent: 'writer',
+      brand,
       kind: feedback ? '재생성' : '수동 지시',
       note: topic,
     })
@@ -124,6 +127,7 @@ export function BlogComposer() {
         topic,
         keyPoints,
         photoDescriptions,
+        brandContext: BRAND_CONTEXT[brand],
         previousDraft,
         feedback,
       })
@@ -194,10 +198,21 @@ export function BlogComposer() {
       })
       submitForApproval({
         agent: 'writer',
+        brand,
         title: newDraft.title,
         contentHtml: buildApprovalHtml(newDraft, finishedReviews),
         passed: isPassed,
         scoreLabel: `${avg.toFixed(1)}/100`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand,
+        channel: 'blog',
+        title: newDraft.title,
+        status: isPassed ? 'planned' : 'open',
+        note: `${avg.toFixed(1)}점 ${isPassed ? '통과' : '미달'}`,
+        contentHtml: buildApprovalHtml(newDraft, finishedReviews),
         sourceWorkLogId: logId,
       })
     }

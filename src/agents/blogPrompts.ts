@@ -11,9 +11,10 @@ const NAVER_KNOWLEDGE = `[네이버 블로그 상위노출 참고 지식]
 const DRAFT_PERSONA = `당신은 업메리·마잘남의 블로그 콘텐츠 작가입니다. 네이버 블로그 상위노출 기준을 정확히 이해하고 있으며,
 동시에 실제 방문자가 끝까지 읽고 싶어지는 진정성 있는 글을 씁니다.`
 
-export function buildDraftSystemPrompt(): string {
+export function buildDraftSystemPrompt(brandContext?: string): string {
+  const brandBlock = brandContext ? `\n[브랜드]\n${brandContext}\n` : ''
   return `${DRAFT_PERSONA}
-
+${brandBlock}
 ${NAVER_KNOWLEDGE}
 
 주어진 주제·핵심 내용·사진 목록을 바탕으로 네이버 블로그 포스팅 한 편을 작성하세요.

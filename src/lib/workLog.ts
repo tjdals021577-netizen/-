@@ -1,8 +1,11 @@
+import type { Brand } from '../types/brand'
+
 export type WorkLogStatus = 'running' | 'done' | 'error' | 'attention'
 
 export interface WorkLogEntry {
   id: string
   agent: string
+  brand: Brand
   kind: string
   status: WorkLogStatus
   statusLabel: string
@@ -41,6 +44,7 @@ function makeId(): string {
 
 export function startWorkLog(params: {
   agent: string
+  brand: Brand
   kind: string
   note?: string
 }): string {
@@ -49,6 +53,7 @@ export function startWorkLog(params: {
   entries.unshift({
     id,
     agent: params.agent,
+    brand: params.brand,
     kind: params.kind,
     status: 'running',
     statusLabel: '진행중',
@@ -93,7 +98,9 @@ export function finishWorkLog(
   writeAll(entries)
 }
 
-export function getWorkLog(agent?: string): WorkLogEntry[] {
-  const entries = readAll()
-  return agent ? entries.filter((e) => e.agent === agent) : entries
+export function getWorkLog(agent?: string, brand?: Brand): WorkLogEntry[] {
+  let entries = readAll()
+  if (agent) entries = entries.filter((e) => e.agent === agent)
+  if (brand) entries = entries.filter((e) => e.brand === brand)
+  return entries
 }

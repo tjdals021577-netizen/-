@@ -10,6 +10,8 @@ import {
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { submitForApproval } from '../lib/approvalStore'
+import { createEntry } from '../lib/calendarStore'
+import { BRAND_CONTEXT, type Brand } from '../types/brand'
 
 function buildDetailHtml(plan: RemixPlan): string {
   const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
@@ -25,7 +27,7 @@ function buildApprovalHtml(plan: RemixPlan): string {
   return `<b>훅 후보</b><br/>${hooksList}<br/><br/><b>대본 구성안</b><br/>${outline}${notes}`
 }
 
-export function RemixComposer() {
+export function RemixComposer({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [topic, setTopic] = useState('')
   const [referenceText, setReferenceText] = useState('')
@@ -56,10 +58,15 @@ export function RemixComposer() {
     setPlan(null)
 
     const spendBefore = getTodaySpendUsd()
-    const logId = startWorkLog({ agent: 'remix', kind: '수동 지시', note: topic })
+    const logId = startWorkLog({ agent: 'remix', brand, kind: '수동 지시', note: topic })
 
     try {
-      const newPlan = await generateRemixPlan({ apiKey, topic, referenceText })
+      const newPlan = await generateRemixPlan({
+        apiKey,
+        topic,
+        referenceText,
+        brandContext: BRAND_CONTEXT[brand],
+      })
       setPlan(newPlan)
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
       finishWorkLog(logId, {
@@ -71,10 +78,21 @@ export function RemixComposer() {
       })
       submitForApproval({
         agent: 'remix',
+        brand,
         title: topic,
         contentHtml: buildApprovalHtml(newPlan),
         passed: true,
         scoreLabel: '채점 없음',
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand,
+        channel: 'youtube',
+        title: topic,
+        status: 'planned',
+        note: `훅 후보 ${newPlan.hooks.length}개`,
+        contentHtml: buildApprovalHtml(newPlan),
         sourceWorkLogId: logId,
       })
     } catch (err) {

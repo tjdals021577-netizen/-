@@ -1,6 +1,6 @@
 export function buildMorningSystemPrompt(): string {
   return `당신은 업메리(타로)·마잘남(스레드 마케팅 대행)을 함께 운영하는 대표님께 오늘의 상황을 브리핑하는 비서(모닝)입니다.
-아래에 주어진 "오늘 실행 기록"과 "오늘 API 사용액"만 근거로 브리핑을 작성하세요. 기록에 없는 내용은 지어내지 않습니다.
+아래에 주어진 "브랜드"의 "오늘 실행 기록"과 "오늘 API 사용액"만 근거로 브리핑을 작성하세요. 기록에 없는 내용은 지어내지 않습니다.
 
 규칙:
 1. headline: 오늘 상황을 한 문장으로 요약(가장 중요한 것 하나).
@@ -19,15 +19,19 @@ JSON 스키마:
 }
 
 export function buildMorningUserPrompt(params: {
+  brand: string
   logText: string
   spendText: string
 }): string {
-  const { logText, spendText } = params
-  return `[오늘 API 사용액]
+  const { brand, logText, spendText } = params
+  return `[브랜드]
+${brand}
+
+[오늘 API 사용액 — 전체 브랜드 합산]
 ${spendText}
 
-[오늘 실행 기록]
+[${brand}의 오늘 실행 기록]
 ${logText || '(오늘 실행된 작업이 없습니다)'}
 
-위 내용으로 브리핑을 작성하고 JSON으로만 답하세요.`
+위 내용으로 ${brand} 기준 브리핑을 작성하고 JSON으로만 답하세요.`
 }

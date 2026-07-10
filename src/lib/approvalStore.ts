@@ -1,4 +1,5 @@
 import type { ApprovalItem, ApprovalAgent, ApprovalStatus } from '../types/approval'
+import type { Brand } from '../types/brand'
 
 const STORAGE_KEY = 'ai-ops:approval-queue'
 const MAX_ITEMS = 200
@@ -30,6 +31,7 @@ function makeId(): string {
 // 전부 모아 보고 승인/반려할 수 있게 결재함에 올린다.
 export function submitForApproval(params: {
   agent: ApprovalAgent
+  brand: Brand
   title: string
   contentHtml: string
   passed: boolean
@@ -39,6 +41,7 @@ export function submitForApproval(params: {
   const item: ApprovalItem = {
     id: makeId(),
     agent: params.agent,
+    brand: params.brand,
     title: params.title,
     contentHtml: params.contentHtml,
     passed: params.passed,
@@ -53,9 +56,11 @@ export function submitForApproval(params: {
   return item
 }
 
-export function getApprovalQueue(status?: ApprovalStatus): ApprovalItem[] {
-  const items = readAll()
-  return status ? items.filter((i) => i.status === status) : items
+export function getApprovalQueue(status?: ApprovalStatus, brand?: Brand): ApprovalItem[] {
+  let items = readAll()
+  if (status) items = items.filter((i) => i.status === status)
+  if (brand) items = items.filter((i) => i.brand === brand)
+  return items
 }
 
 export function reviewItem(

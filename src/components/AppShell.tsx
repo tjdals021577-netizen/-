@@ -7,6 +7,7 @@ import { CalendarScreen } from './screens/CalendarScreen'
 import { ApprovalScreen } from './screens/ApprovalScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { getApprovalQueue } from '../lib/approvalStore'
+import { BRANDS, type Brand } from '../types/brand'
 
 type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'calendar' | 'approval' | 'settings'
 
@@ -20,12 +21,10 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'settings', label: '설정' },
 ]
 
-const BRANDS = ['업메리', '마잘남'] as const
-
 export function AppShell() {
   const [activeTab, setActiveTab] = useState<TabId>('ops')
-  const [brand, setBrand] = useState<(typeof BRANDS)[number]>('마잘남')
-  const pendingApprovalCount = getApprovalQueue('pending').length
+  const [brand, setBrand] = useState<Brand>('마잘남')
+  const pendingApprovalCount = getApprovalQueue('pending', brand).length
 
   return (
     <div className="mx-auto min-h-screen max-w-5xl px-4 py-5">
@@ -76,12 +75,12 @@ export function AppShell() {
       </header>
 
       <main>
-        {activeTab === 'ops' && <OpsScreen />}
-        {activeTab === 'team' && <TeamChatScreen />}
-        {activeTab === 'dash' && <DashboardScreen />}
+        {activeTab === 'ops' && <OpsScreen brand={brand} />}
+        {activeTab === 'team' && <TeamChatScreen brand={brand} />}
+        {activeTab === 'dash' && <DashboardScreen brand={brand} />}
         {activeTab === 'agency' && <AgencyScreen />}
-        {activeTab === 'calendar' && <CalendarScreen />}
-        {activeTab === 'approval' && <ApprovalScreen />}
+        {activeTab === 'calendar' && <CalendarScreen brand={brand} />}
+        {activeTab === 'approval' && <ApprovalScreen brand={brand} />}
         {activeTab === 'settings' && <SettingsScreen />}
       </main>
     </div>
