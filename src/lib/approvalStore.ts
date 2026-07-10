@@ -1,5 +1,6 @@
 import type { ApprovalItem, ApprovalAgent, ApprovalStatus } from '../types/approval'
 import type { Brand } from '../types/brand'
+import { syncToSupabase } from './remoteSync'
 
 const STORAGE_KEY = 'ai-ops:approval-queue'
 const MAX_ITEMS = 200
@@ -53,6 +54,7 @@ export function submitForApproval(params: {
   const items = readAll()
   items.unshift(item)
   writeAll(items.slice(0, MAX_ITEMS))
+  syncToSupabase('approval_queue', item)
   return item
 }
 
@@ -78,4 +80,5 @@ export function reviewItem(
     reviewNote: note,
   }
   writeAll(items)
+  syncToSupabase('approval_queue', items[idx])
 }

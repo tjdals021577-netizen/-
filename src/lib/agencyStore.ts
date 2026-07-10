@@ -1,4 +1,5 @@
 import type { AgencyClient, DraftAttempt } from '../types/agency'
+import { syncToSupabase } from './remoteSync'
 
 const STORAGE_KEY = 'ai-ops:agency-clients'
 
@@ -82,6 +83,7 @@ export function createClient(params: {
     createdAt: now,
   }
   writeAll([...readAll(), client])
+  syncToSupabase('agency_clients', client)
   return client
 }
 

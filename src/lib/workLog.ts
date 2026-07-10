@@ -1,4 +1,5 @@
 import type { Brand } from '../types/brand'
+import { syncToSupabase } from './remoteSync'
 
 export type WorkLogStatus = 'running' | 'done' | 'error' | 'attention'
 
@@ -96,6 +97,7 @@ export function finishWorkLog(
     detailHtml: patch.detailHtml ?? entries[idx].detailHtml,
   }
   writeAll(entries)
+  syncToSupabase('work_log', entries[idx])
 }
 
 export function getWorkLog(agent?: string, brand?: Brand): WorkLogEntry[] {

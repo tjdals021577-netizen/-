@@ -1,6 +1,7 @@
 import type { CalendarEntry, CalendarChannel, CalendarStatus } from '../types/calendar'
 import type { Brand } from '../types/brand'
 import { getWorkLog } from './workLog'
+import { syncToSupabase } from './remoteSync'
 
 const STORAGE_KEY = 'ai-ops:content-calendar'
 
@@ -65,6 +66,7 @@ export function createEntry(params: {
   }
   entries.push(entry)
   writeAll(entries)
+  syncToSupabase('calendar_entries', entry)
   return entry
 }
 
@@ -77,6 +79,7 @@ export function updateEntry(
   if (idx === -1) return
   entries[idx] = { ...entries[idx], ...patch }
   writeAll(entries)
+  syncToSupabase('calendar_entries', entries[idx])
 }
 
 export function deleteEntry(id: string): void {

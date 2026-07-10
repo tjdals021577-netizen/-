@@ -25,14 +25,37 @@ function formatTime(iso: string): string {
   })
 }
 
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&')
+    .trim()
+}
+
 function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => void }) {
   const [open, setOpen] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
+  const [copied, setCopied] = useState(false)
 
   function handleApprove() {
     reviewItem(item.id, 'approved')
     onChange()
+  }
+
+  async function handleCopy() {
+    const text = `${item.title}\n\n${stripHtml(item.contentHtml)}`
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // 클립보드 권한이 없는 브라우저 환경 — 조용히 무시
+    }
   }
 
   function handleConfirmReject() {
@@ -131,10 +154,19 @@ function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => v
       )}
 
       {open && (
-        <div
-          className="mt-3 border-t border-[var(--border)] pt-3 text-[13px] leading-relaxed text-[var(--text-dim)]"
-          dangerouslySetInnerHTML={{ __html: item.contentHtml }}
-        />
+        <div className="mt-3 border-t border-[var(--border)] pt-3">
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            className="mb-2 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11.5px] font-bold text-[var(--text-dim)] transition hover:opacity-90"
+          >
+            {copied ? '복사됨 ✓' : '전체 내용 복사 (붙여넣기용)'}
+          </button>
+          <div
+            className="text-[13px] leading-relaxed text-[var(--text-dim)]"
+            dangerouslySetInnerHTML={{ __html: item.contentHtml }}
+          />
+        </div>
       )}
     </div>
   )
