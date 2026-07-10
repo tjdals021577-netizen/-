@@ -18,6 +18,13 @@
   --planned-soft: rgba(177, 121, 31, 0.14);
   --open: #ab5039;
   --open-soft: rgba(171, 80, 57, 0.13);
+  --ch-thread: #8b5fb0;
+  --ch-yt: #a85a24;
+  --agent-a: #3b6fa0;
+  --agent-c: #6f8a3a;
+  --agent-f: #5b6b7a;
+  --agent-g: #5a5fa0;
+  --agent-h: #b3862a;
   color-scheme: light;
 }
 
@@ -40,6 +47,13 @@
     --planned-soft: rgba(224, 169, 74, 0.14);
     --open: #e08268;
     --open-soft: rgba(224, 130, 104, 0.14);
+    --ch-thread: #c79ee6;
+    --ch-yt: #d99a5c;
+    --agent-a: #8fbbe0;
+    --agent-c: #a3c47a;
+    --agent-f: #a7b6c4;
+    --agent-g: #a3a6d9;
+    --agent-h: #e0b968;
     color-scheme: dark;
   }
 }
