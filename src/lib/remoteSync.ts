@@ -53,18 +53,20 @@ export async function testSupabaseConnection(): Promise<{ ok: boolean; message: 
       },
       body: JSON.stringify(testRecord),
     })
+    const debugLine = `[사용 중인 값] URL=${SUPABASE_URL} / KEY 앞 20자=${SUPABASE_ANON_KEY.slice(0, 20)}... (길이 ${SUPABASE_ANON_KEY.length}자)`
     if (res.ok) {
       return {
         ok: true,
-        message: `성공! (상태 코드 ${res.status}) Supabase work_log 테이블에 테스트 행이 추가됐습니다.`,
+        message: `성공! (상태 코드 ${res.status}) Supabase work_log 테이블에 테스트 행이 추가됐습니다.\n${debugLine}`,
       }
     }
     const bodyText = await res.text()
-    return { ok: false, message: `실패 — 상태 코드 ${res.status}\n${bodyText}` }
+    return { ok: false, message: `실패 — 상태 코드 ${res.status}\n${bodyText}\n${debugLine}` }
   } catch (err) {
+    const debugLine = `[사용 중인 값] URL=${SUPABASE_URL} / KEY 앞 20자=${SUPABASE_ANON_KEY.slice(0, 20)}... (길이 ${SUPABASE_ANON_KEY.length}자)`
     return {
       ok: false,
-      message: `네트워크 오류(요청 자체가 실패함): ${err instanceof Error ? err.message : String(err)}`,
+      message: `네트워크 오류(요청 자체가 실패함): ${err instanceof Error ? err.message : String(err)}\n${debugLine}`,
     }
   }
 }
