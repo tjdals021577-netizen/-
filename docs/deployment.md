@@ -64,3 +64,20 @@ Publishable/Secret 키 체계에서는 요청이 항상 legacy `anon` Postgres �
 포함하는 pseudo-role이라 새 키 체계와도 호환됨). 이미 만든 테이블이 있으면 SQL Editor에서
 기존 정책을 `drop policy`로 지우고 `db/schema.sql`의 새 버전으로 다시 만들어야 한다
 (파일을 갱신한다고 이미 살아있는 DB의 정책이 자동으로 바뀌진 않음).
+
+### 겪었던 문제 (2026-07-11) — 정책을 `to public`으로 바꿔도 여전히 같은 401 에러
+위 정책을 `to public`으로 바꾸고 SQL Editor에서 재실행까지 했는데도 연결 테스트가
+똑같이 `42501 / new row violates row-level security policy for table "work_log"`로
+실패했다.
+
+**진짜 원인**: RLS 정책 문제가 아니었다. `db/schema.sql`은 보안을 위해 일부러
+select 정책을 만들지 않았는데(공개 키가 유출돼도 데이터를 통째로 읽을 수 없게),
+PostgREST는 기본적으로 INSERT/UPDATE 후 **방금 쓴 행을 응답으로 돌려주려고
+내부적으로 그 행을 SELECT**한다. INSERT의 `with check(true)`는 통과하지만,
+그 직후 응답용 SELECT에서 걸리는 select 정책이 없어서 Postgres가 똑같은
+"new row violates row-level security policy" 에러를 낸다 — INSERT 자체는
+성공 직전까지 갔는데 응답 생성 단계에서 막히는 것.
+
+**해결**: `src/lib/remoteSync.ts`의 두 fetch 요청 헤더에 `Prefer: resolution=merge-duplicates,return=minimal`
+추가 — "쓴 행을 돌려줄 필요 없다"고 명시하면 select 정책 없이도 insert/update가
+끝까지 성공한다. select를 막아둔 보안 설계는 그대로 유지됨.
