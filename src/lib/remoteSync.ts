@@ -2,8 +2,19 @@
 // 서버에도 비동기로 복제해서 크론 작업이 읽을 수 있게 한다.
 // 연결 전(지금)에는 환경변수가 없어서 즉시 조용히 아무 것도 하지 않는다 —
 // 로컬 전용 동작에는 어떤 영향도 주지 않는다.
-const SUPABASE_URL: string | undefined = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_ANON_KEY: string | undefined = import.meta.env.VITE_SUPABASE_ANON_KEY
+// 사람이 Vercel 환경변수에 직접 복사/붙여넣기 하다 보면 눈에 안 보이는
+// 공백·특수문자가 섞여 들어올 수 있다(HTTP 헤더는 ISO-8859-1 범위 밖 문자를
+// 허용하지 않아 그런 문자가 하나만 있어도 fetch 자체가 즉시 실패한다).
+// 앞뒤 공백 제거 + 출력 가능한 ASCII 범위 밖 문자를 제거해서 방어한다.
+function sanitizeEnvValue(raw: string | undefined): string | undefined {
+  if (!raw) return raw
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.trim().replace(/[^\x20-\x7E]/g, '')
+  return cleaned || undefined
+}
+
+const SUPABASE_URL = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_URL)
+const SUPABASE_ANON_KEY = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
 export function syncToSupabase(table: string, record: object): void {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return
