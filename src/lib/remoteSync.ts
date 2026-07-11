@@ -13,7 +13,7 @@ export function syncToSupabase(table: string, record: object): void {
       'Content-Type': 'application/json',
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      Prefer: 'resolution=merge-duplicates',
+      Prefer: 'resolution=merge-duplicates,return=minimal',
     },
     body: JSON.stringify(record),
   }).catch(() => {
@@ -49,7 +49,7 @@ export async function testSupabaseConnection(): Promise<{ ok: boolean; message: 
         'Content-Type': 'application/json',
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: 'resolution=merge-duplicates',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
       },
       body: JSON.stringify(testRecord),
     })
