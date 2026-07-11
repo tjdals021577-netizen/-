@@ -72,22 +72,29 @@ create table if not exists agency_clients (
 );
 
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 다만 프론트엔드에
--- 박히는 anon key가 외부에 노출되므로, anon에게는 insert/update만 허용하고
--- select/delete는 막는다 — 크론 함수는 service role 키로 RLS를 우회해서
--- 자유롭게 읽고 쓴다.
+-- 박히는 publishable key가 외부에 노출되므로, insert/update만 허용하고
+-- select/delete는 막는다 — 크론 함수는 secret(service role) 키로 RLS를
+-- 우회해서 자유롭게 읽고 쓴다.
+--
+-- 정책 대상을 `anon`이 아니라 `public`으로 지정한다 — Supabase의 새
+-- Publishable/Secret 키 체계에서는 요청이 항상 legacy `anon` Postgres
+-- 역할로 매핑되는 게 아니어서, `to anon`으로 만들면 새 키로 들어오는
+-- 요청이 "new row violates row-level security policy" 에러로 막힐 수
+-- 있다(실제로 겪은 문제). `to public`은 이 프로젝트의 모든 역할을
+-- 포함하는 pseudo-role이라 이 문제를 피해간다.
 alter table work_log enable row level security;
 alter table approval_queue enable row level security;
 alter table calendar_entries enable row level security;
 alter table agency_clients enable row level security;
 
-create policy "anon insert work_log" on work_log for insert to anon with check (true);
-create policy "anon update work_log" on work_log for update to anon using (true) with check (true);
+create policy "insert work_log" on work_log for insert to public with check (true);
+create policy "update work_log" on work_log for update to public using (true) with check (true);
 
-create policy "anon insert approval_queue" on approval_queue for insert to anon with check (true);
-create policy "anon update approval_queue" on approval_queue for update to anon using (true) with check (true);
+create policy "insert approval_queue" on approval_queue for insert to public with check (true);
+create policy "update approval_queue" on approval_queue for update to public using (true) with check (true);
 
-create policy "anon insert calendar_entries" on calendar_entries for insert to anon with check (true);
-create policy "anon update calendar_entries" on calendar_entries for update to anon using (true) with check (true);
+create policy "insert calendar_entries" on calendar_entries for insert to public with check (true);
+create policy "update calendar_entries" on calendar_entries for update to public using (true) with check (true);
 
-create policy "anon insert agency_clients" on agency_clients for insert to anon with check (true);
-create policy "anon update agency_clients" on agency_clients for update to anon using (true) with check (true);
+create policy "insert agency_clients" on agency_clients for insert to public with check (true);
+create policy "update agency_clients" on agency_clients for update to public using (true) with check (true);

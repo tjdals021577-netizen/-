@@ -51,5 +51,16 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
 ## DB 스키마
 `db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 4개 테이블
 (`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`), RLS로
-anon 키는 insert/update만 가능(select/delete 불가 — 배포된 anon 키가 노출돼도
+공개 키는 insert/update만 가능(select/delete 불가 — 배포된 키가 노출돼도
 데이터를 통째로 읽거나 지울 수는 없음).
+
+### 겪었던 문제 (2026-07-11) — RLS 정책이 `to anon`이면 새 키 체계에서 막힘
+연결 테스트에서 `401 / new row violates row-level security policy` 에러가 났다.
+원인: `db/schema.sql`의 정책을 처음에 `to anon`으로 만들었는데, Supabase의 새
+Publishable/Secret 키 체계에서는 요청이 항상 legacy `anon` Postgres 역할로
+매핑되는 게 아니라서 정책이 안 먹힘.
+
+**해결**: 정책 대상을 `to anon`에서 **`to public`**으로 변경(이 프로젝트의 모든 역할을
+포함하는 pseudo-role이라 새 키 체계와도 호환됨). 이미 만든 테이블이 있으면 SQL Editor에서
+기존 정책을 `drop policy`로 지우고 `db/schema.sql`의 새 버전으로 다시 만들어야 한다
+(파일을 갱신한다고 이미 살아있는 DB의 정책이 자동으로 바뀌진 않음).
