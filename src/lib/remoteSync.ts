@@ -16,6 +16,20 @@ function sanitizeEnvValue(raw: string | undefined): string | undefined {
 const SUPABASE_URL = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_URL)
 const SUPABASE_ANON_KEY = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
+// 프론트엔드 타입(WorkLogEntry 등)은 카멜케이스인데 Supabase 테이블 컬럼은
+// 스네이크케이스다(started_at 등). 이름이 안 맞으면 PostgREST가 "컬럼을
+// 못 찾음" 에러를 응답하지만, 아래 fetch가 실패를 조용히 무시하도록 설계돼
+// 있어서 화면에는 아무 문제 없이 보이면서 실제로는 저장이 안 되는 문제가
+// 있었다(실제로 겪은 문제). 호출부마다 일일이 변환하지 않도록 여기서
+// 한 번에 처리한다.
+function toSnakeCase(record: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    out[key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = value
+  }
+  return out
+}
+
 export function syncToSupabase(table: string, record: object): void {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return
   fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
@@ -26,10 +40,16 @@ export function syncToSupabase(table: string, record: object): void {
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       Prefer: 'resolution=merge-duplicates,return=minimal',
     },
-    body: JSON.stringify(record),
-  }).catch(() => {
-    // 네트워크 실패는 조용히 무시 — 로컬 저장은 이미 끝났으므로 기능에 영향 없음
+    body: JSON.stringify(toSnakeCase(record)),
   })
+    .then((res) => {
+      if (!res.ok) {
+        res.text().then((text) => console.warn(`[Supabase sync 실패] ${table}:`, res.status, text))
+      }
+    })
+    .catch(() => {
+      // 네트워크 실패는 조용히 무시 — 로컬 저장은 이미 끝났으므로 기능에 영향 없음
+    })
 }
 
 // 설정 화면의 "연결 테스트" 버튼용 — syncToSupabase와 달리 에러를 숨기지 않고
