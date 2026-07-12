@@ -2,6 +2,27 @@ import { useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { testSupabaseConnection } from '../../lib/remoteSync'
+import { listReferences, addReference, deleteReference } from '../../lib/referenceStore'
+import type { ReferenceMediaType } from '../../types/reference'
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      resolve(result.slice(result.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+function mediaTypeOf(file: File): ReferenceMediaType | null {
+  if (file.type === 'image/png') return 'image/png'
+  if (file.type === 'image/jpeg') return 'image/jpeg'
+  if (file.type === 'image/webp') return 'image/webp'
+  return null
+}
 
 export function SettingsScreen() {
   const [todaySpend] = useState(() => getTodaySpendUsd())
@@ -9,12 +30,49 @@ export function SettingsScreen() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
 
+  const [references, setReferences] = useState(() => listReferences())
+  const [refLabel, setRefLabel] = useState('')
+  const [refFile, setRefFile] = useState<File | null>(null)
+  const [refError, setRefError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
   async function handleTestConnection() {
     setTesting(true)
     setTestResult(null)
     const result = await testSupabaseConnection()
     setTestResult(result)
     setTesting(false)
+  }
+
+  async function handleAddReference() {
+    if (!refFile) return
+    const mediaType = mediaTypeOf(refFile)
+    if (!mediaType) {
+      setRefError('PNG, JPEG, WEBP 이미지만 지원합니다.')
+      return
+    }
+    setUploading(true)
+    setRefError(null)
+    try {
+      const imageBase64 = await fileToBase64(refFile)
+      addReference({
+        label: refLabel.trim() || refFile.name,
+        imageBase64,
+        mediaType,
+      })
+      setReferences(listReferences())
+      setRefLabel('')
+      setRefFile(null)
+    } catch (err) {
+      setRefError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function handleDeleteReference(id: string) {
+    deleteReference(id)
+    setReferences(listReferences())
   }
 
   return (
@@ -44,6 +102,62 @@ export function SettingsScreen() {
           >
             {testResult.message}
           </pre>
+        )}
+      </div>
+
+      <div className="mb-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+        <p className="mb-1 text-sm font-semibold text-[var(--text)]">레퍼런스 이미지 라이브러리</p>
+        <p className="mb-3 text-xs text-[var(--text-faint)]">
+          카피라이팅 스타일 참고용 이미지를 한 번 올려두면, 대행 클라이언트 초안이나 스레드 위원회에서 골라서
+          함께 참고시킬 수 있습니다 (매번 새로 첨부할 필요 없음).
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="text"
+            value={refLabel}
+            onChange={(e) => setRefLabel(e.target.value)}
+            placeholder="라벨 (예: 후킹 문구 스타일 A)"
+            className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+          />
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(e) => setRefFile(e.target.files?.[0] ?? null)}
+            className="block text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
+          />
+          <button
+            type="button"
+            disabled={!refFile || uploading}
+            onClick={() => void handleAddReference()}
+            className="shrink-0 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {uploading ? '추가 중…' : '추가'}
+          </button>
+        </div>
+        {refError && <p className="mt-2 text-xs text-[var(--open)]">{refError}</p>}
+
+        {references.length === 0 ? (
+          <p className="mt-3 text-xs text-[var(--text-faint)]">아직 등록된 레퍼런스가 없습니다.</p>
+        ) : (
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
+            {references.map((r) => (
+              <div key={r.id} className="group relative overflow-hidden rounded-lg border border-[var(--border)]">
+                <img
+                  src={`data:${r.mediaType};base64,${r.imageBase64}`}
+                  alt={r.label}
+                  className="h-24 w-full object-cover"
+                />
+                <p className="truncate bg-[var(--surface-2)] px-1.5 py-1 text-[10px] text-[var(--text-dim)]">{r.label}</p>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteReference(r.id)}
+                  className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
+                >
+                  삭제
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

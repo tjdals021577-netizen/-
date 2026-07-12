@@ -18,6 +18,7 @@
 | `ai-ops:approval-queue` | 결재함 | `src/lib/approvalStore.ts` |
 | `ai-ops:content-calendar` | 캘린더 | `src/lib/calendarStore.ts` |
 | `ai-ops:agency-clients` | 대행 클라이언트 | `src/lib/agencyStore.ts` |
+| `ai-ops:reference-library` | 카피라이팅 레퍼런스 이미지(최대 40개, base64) | `src/lib/referenceStore.ts` |
 | `ai-ops:unlocked` (sessionStorage) | 비밀번호 게이트 통과 여부 | `src/lib/appPassword.ts` |
 
 **주의**: 전부 브라우저별로 따로 저장됨. 다른 컴퓨터/다른 브라우저에서 접속하면 이 데이터가

@@ -49,10 +49,13 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
   데이터가 마땅치 않고, 코치는 사람이 스크린샷을 직접 올려야 해서 애초에 자동화 불가능
 
 ## DB 스키마
-`db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 4개 테이블
-(`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`), RLS로
-공개 키는 insert/update만 가능(select/delete 불가 — 배포된 키가 노출돼도
-데이터를 통째로 읽거나 지울 수는 없음).
+`db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 5개 테이블
+(`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`, `reference_images`),
+select/insert/update 전부 공개 키로 가능(아래 겪었던 문제 참고 — upsert 때문에 select도 열어둠).
+
+**주의**: `schema.sql` 파일에 새 테이블/정책을 추가해도 이미 만들어진 라이브 DB에는
+자동 반영되지 않는다. 새 테이블이 추가될 때마다(예: `reference_images`) SQL Editor에서
+그 `create table ...`/`create policy ...` 블록만 따로 다시 실행해야 한다.
 
 ### 겪었던 문제 (2026-07-11) — RLS 정책이 `to anon`이면 새 키 체계에서 막힘
 연결 테스트에서 `401 / new row violates row-level security policy` 에러가 났다.

@@ -67,9 +67,23 @@ create table if not exists agency_clients (
   today_drafts_date date,
   recent_draft_texts jsonb not null default '[]',
   paused_at date,
+  reference_image_ids jsonb not null default '[]',
   created_at timestamptz not null,
   synced_at timestamptz not null default now()
 );
+
+-- 카피라이팅 레퍼런스 이미지 라이브러리. base64로 그대로 저장한다(Storage
+-- 버킷 없이 REST insert 하나로 끝내려는 목적) — 이미지가 커서 text 컬럼이
+-- 비대해질 수 있지만, 대표님 혼자 쓰는 내부 도구라 우선 단순한 쪽을 택함.
+create table if not exists reference_images (
+  id text primary key,
+  label text not null,
+  image_base64 text not null,
+  media_type text not null,
+  created_at timestamptz not null,
+  synced_at timestamptz not null default now()
+);
+create index if not exists reference_images_created_idx on reference_images (created_at desc);
 
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
@@ -94,6 +108,7 @@ alter table work_log enable row level security;
 alter table approval_queue enable row level security;
 alter table calendar_entries enable row level security;
 alter table agency_clients enable row level security;
+alter table reference_images enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -110,3 +125,7 @@ create policy "update calendar_entries" on calendar_entries for update to public
 create policy "select agency_clients" on agency_clients for select to public using (true);
 create policy "insert agency_clients" on agency_clients for insert to public with check (true);
 create policy "update agency_clients" on agency_clients for update to public using (true) with check (true);
+
+create policy "select reference_images" on reference_images for select to public using (true);
+create policy "insert reference_images" on reference_images for insert to public with check (true);
+create policy "update reference_images" on reference_images for update to public using (true) with check (true);
