@@ -302,6 +302,10 @@ export function BlogComposer({ brand }: { brand: Brand }) {
               {photoFiles.length}장 첨부됨 — AI가 사진을 직접 보고 배치를 제안합니다.
             </p>
           )}
+          <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-faint)]">
+            ⚠️ 사진을 첨부하면 사진 분석이 우선이라 이번 생성에서는 웹 검색(실제 상위노출 글
+            구조 참고)은 함께 쓰이지 않습니다. 사진 없이 생성하면 대신 검색이 들어갑니다.
+          </p>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-[var(--text-dim)]">
