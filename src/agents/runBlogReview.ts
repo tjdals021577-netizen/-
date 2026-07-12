@@ -1,4 +1,9 @@
-import { callClaudeJson } from '../lib/claude'
+import {
+  callClaudeJson,
+  callClaudeJsonWithWebSearch,
+  callClaudeVisionJson,
+  type VisionImageInput,
+} from '../lib/claude'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
 import {
   buildDraftSystemPrompt,
@@ -101,6 +106,7 @@ export async function generateBlogDraft(params: {
   previousDraft?: BlogDraft
   feedback?: string
   marketFindings?: string
+  photoImages?: VisionImageInput[]
 }): Promise<BlogDraft> {
   const {
     apiKey,
@@ -111,18 +117,35 @@ export async function generateBlogDraft(params: {
     previousDraft,
     feedback,
     marketFindings,
+    photoImages,
   } = params
-  const raw = await callClaudeJson({
+  const user = buildDraftUserPrompt({
+    topic,
+    keyPoints,
+    photoDescriptions,
+    previousDraft,
+    feedback,
+  })
+  // 실제 사진이 첨부되면 AI가 사진을 직접 보고 배치를 제안하도록 비전 호출로
+  // 전환한다(이 경우 웹서치 도구는 같이 못 쓴다 — 사진 근거가 더 중요하다고
+  // 판단해 비전을 우선). 사진이 없으면 실제 상위노출 글 구조를 검색해서 참고한다.
+  if (photoImages && photoImages.length > 0) {
+    const raw = await callClaudeVisionJson({
+      apiKey,
+      system: buildDraftSystemPrompt(brandContext, marketFindings, true),
+      user,
+      images: photoImages,
+      maxTokens: 4096,
+      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+    })
+    return parseDraft(raw)
+  }
+  const raw = await callClaudeJsonWithWebSearch({
     apiKey,
-    system: buildDraftSystemPrompt(brandContext, marketFindings),
-    user: buildDraftUserPrompt({
-      topic,
-      keyPoints,
-      photoDescriptions,
-      previousDraft,
-      feedback,
-    }),
+    system: buildDraftSystemPrompt(brandContext, marketFindings, false),
+    user,
     maxTokens: 4096,
+    maxSearches: 5,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   return parseDraft(raw)

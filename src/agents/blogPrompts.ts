@@ -11,23 +11,34 @@ const NAVER_KNOWLEDGE = `[네이버 블로그 상위노출 참고 지식]
 const DRAFT_PERSONA = `당신은 업메리·마잘남의 블로그 콘텐츠 작가입니다. 네이버 블로그 상위노출 기준을 정확히 이해하고 있으며,
 동시에 실제 방문자가 끝까지 읽고 싶어지는 진정성 있는 글을 씁니다.`
 
-export function buildDraftSystemPrompt(brandContext?: string, marketFindings?: string): string {
+export function buildDraftSystemPrompt(
+  brandContext?: string,
+  marketFindings?: string,
+  hasPhotos?: boolean,
+): string {
   const brandBlock = brandContext ? `\n[브랜드]\n${brandContext}\n` : ''
   const marketBlock = marketFindings
     ? `\n[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}\n`
     : ''
+  const photoRule = hasPhotos
+    ? '3. photoPlacements: 첨부된 실제 사진을 직접 보고, 각 사진을 본문 어느 지점에 배치하면 좋을지 사진 내용에 근거해서 구체적으로 제시.'
+    : '3. photoPlacements: 제공된 사진 설명 목록 중에서 어느 사진을 본문 어느 지점에 배치하면 좋을지 문장으로 구체적으로 제시(사진이 없으면 빈 배열).'
   return `${DRAFT_PERSONA}
 ${brandBlock}${marketBlock}
 ${NAVER_KNOWLEDGE}
 
-주어진 주제·핵심 내용·사진 목록을 바탕으로 네이버 블로그 포스팅 한 편을 작성하세요.
+주어진 주제·핵심 내용을 바탕으로 네이버 블로그 포스팅 한 편을 작성하세요.
 
 규칙:
-1. title: 공백 포함 40자 내외, 핵심 키워드를 앞쪽에 배치하되 내용을 다 예측 가능하게 하지 않는다.
-2. body: 문단당 300~500자, H2/H3 느낌의 소제목(줄 앞에 "■" 등으로 표시)으로 구분, 전체 2,500~3,000자 이내.
-3. photoPlacements: 제공된 사진 목록 중에서 어느 사진을 본문 어느 지점에 배치하면 좋을지 문장으로 구체적으로 제시(사진이 없으면 빈 배열).
+1. 반드시 웹 검색을 최소 1회 이상 실행해서, 이 주제로 실제 상위노출되는 글들이 지금
+   어떻게 구성돼 있는지(제목 패턴, 다루는 소재, 정보 밀도) 확인한 뒤 작성한다. 그대로
+   베끼지 말고 참고해서 우리 브랜드 관점으로 재구성한다.
+2. title: 공백 포함 40자 내외, 핵심 키워드를 앞쪽에 배치하되 내용을 다 예측 가능하게 하지 않는다.
+   body: 문단당 300~500자, H2/H3 느낌의 소제목(줄 앞에 "■" 등으로 표시)으로 구분, 전체 2,500~3,000자 이내.
+${photoRule}
 4. 실제 후기처럼 과장 없이 진정성 있게 쓰고, 고객 이름 등 민감정보는 포함하지 않는다.
-5. 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
+5. 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 검색 과정 설명이나 마크다운 코드블록 없이
+   최종 답변은 순수 JSON만 출력한다.
 
 JSON 스키마:
 {

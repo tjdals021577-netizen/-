@@ -15,6 +15,7 @@ import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
 import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
+import { fileToBase64, mediaTypeOf } from '../lib/imageFile'
 
 const ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -72,6 +73,7 @@ export function BlogComposer({ brand }: { brand: Brand }) {
   const [topic, setTopic] = useState('')
   const [keyPoints, setKeyPoints] = useState('')
   const [photoDescriptions, setPhotoDescriptions] = useState('')
+  const [photoFiles, setPhotoFiles] = useState<File[]>([])
 
   const [draft, setDraft] = useState<BlogDraft | null>(null)
   const [roleStates, setRoleStates] =
@@ -124,6 +126,15 @@ export function BlogComposer({ brand }: { brand: Brand }) {
 
     let newDraft: BlogDraft
     try {
+      const photoImages = (
+        await Promise.all(
+          photoFiles.map(async (f) => {
+            const mediaType = mediaTypeOf(f)
+            if (!mediaType) return null
+            return { imageBase64: await fileToBase64(f), imageMediaType: mediaType }
+          }),
+        )
+      ).filter((img): img is { imageBase64: string; imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp' } => img !== null)
       newDraft = await generateBlogDraft({
         apiKey,
         topic,
@@ -133,6 +144,7 @@ export function BlogComposer({ brand }: { brand: Brand }) {
         previousDraft,
         feedback,
         marketFindings: formatBrainFindingsForPrompt(brainReport),
+        photoImages,
       })
       setDraft(newDraft)
     } catch (err) {
@@ -241,9 +253,9 @@ export function BlogComposer({ brand }: { brand: Brand }) {
           블로그 SEO 위원회
         </h2>
         <p className="mt-1 text-sm text-[var(--text-dim)]">
-          주제·핵심 내용을 넣으면 SEO·카피/후킹·고객경험 3인 AI가 초안을 쓰고
-          채점합니다. 평균 {PASS_THRESHOLD}점 이상이면 통과, 아니면 피드백을
-          반영해 다시 씁니다.
+          주제·핵심 내용을 넣으면 실제 상위노출 글 구조를 검색해서 참고한 뒤(사진을 첨부하면
+          그 사진을 직접 보고) SEO·카피/후킹·고객경험 3인 AI가 초안을 쓰고 채점합니다.
+          평균 {PASS_THRESHOLD}점 이상이면 통과, 아니면 피드백을 반영해 다시 씁니다.
         </p>
       </header>
 
@@ -276,7 +288,24 @@ export function BlogComposer({ brand }: { brand: Brand }) {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-[var(--text-dim)]">
-            사용 가능한 사진 (설명, 한 줄에 하나씩)
+            사용 가능한 사진 — 실제 파일 첨부 (권장)
+          </label>
+          <input
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(e) => setPhotoFiles(Array.from(e.target.files ?? []))}
+            className="block w-full text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
+          />
+          {photoFiles.length > 0 && (
+            <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">
+              {photoFiles.length}장 첨부됨 — AI가 사진을 직접 보고 배치를 제안합니다.
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-[var(--text-dim)]">
+            또는 사진 설명만 텍스트로 (파일 첨부 없을 때)
           </label>
           <textarea
             value={photoDescriptions}
@@ -299,7 +328,11 @@ export function BlogComposer({ brand }: { brand: Brand }) {
           onClick={() => void runCycle()}
           className="w-full rounded-lg bg-[var(--accent)] py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {running ? '작성 + 3인 AI 심사 진행 중…' : '초안 작성 + 심사 시작'}
+          {running
+            ? photoFiles.length > 0
+              ? '작성 + 3인 AI 심사 진행 중… (사진 분석 포함)'
+              : '작성 + 3인 AI 심사 진행 중… (검색 포함, 시간이 조금 더 걸릴 수 있어요)'
+            : '초안 작성 + 심사 시작'}
         </button>
         {!apiKey && (
           <p className="text-center text-[11px] text-[var(--planned)]">
