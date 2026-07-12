@@ -78,6 +78,23 @@ PostgREST는 기본적으로 INSERT/UPDATE 후 **방금 쓴 행을 응답으로 
 "new row violates row-level security policy" 에러를 낸다 — INSERT 자체는
 성공 직전까지 갔는데 응답 생성 단계에서 막히는 것.
 
-**해결**: `src/lib/remoteSync.ts`의 두 fetch 요청 헤더에 `Prefer: resolution=merge-duplicates,return=minimal`
-추가 — "쓴 행을 돌려줄 필요 없다"고 명시하면 select 정책 없이도 insert/update가
-끝까지 성공한다. select를 막아둔 보안 설계는 그대로 유지됨.
+**해결 시도했으나 불충분했던 것**: `Prefer: resolution=merge-duplicates,return=minimal` 추가.
+RETURNING 관련 select 요구는 없앴지만, 진짜 원인은 따로 있었다(아래).
+
+### 겪었던 문제 (2026-07-11) — 진짜 원인: upsert(ON CONFLICT DO UPDATE)가 select 정책을 요구함
+위 두 시도 후에도 똑같은 401 RLS 에러가 반복됐다. Supabase SQL Editor에서
+`set role anon`으로 직접 `insert ... on conflict (id) do update set ...`을
+실행해서 재현에 성공했다 — 단순 insert는 성공하는데 upsert만 실패했다.
+
+**원인**: Postgres는 `INSERT ... ON CONFLICT DO UPDATE` 실행 시, 실제로 겹치는
+행이 있는지 확인하려고 대상 컬럼(여기서는 `id`)에 대한 **select 권한**을
+내부적으로 요구한다. `db/schema.sql`은 보안을 위해 select 정책을 아예 안
+만들어놨었기 때문에(insert/update만 허용), 겹침 확인 단계에서부터
+RLS 위반으로 막혔다 — insert/update 정책이 전부 `with check(true)`여도
+소용없었다.
+
+**해결**: 4개 테이블 모두에 `create policy "select X" on X for select to public using (true);`
+추가(`db/schema.sql`에 반영됨). 이 프로젝트는 대표님만 쓰는 내부 도구라
+select 노출 리스크보다 업서트 동작이 우선이라는 판단. 이미 만든 프로젝트는
+SQL Editor에서 위 select policy들을 4개 테이블에 대해 직접 실행해야
+반영된다(파일만 갱신해선 안 됨, 이전 항목과 동일한 주의사항).

@@ -71,10 +71,8 @@ create table if not exists agency_clients (
   synced_at timestamptz not null default now()
 );
 
--- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 다만 프론트엔드에
--- 박히는 publishable key가 외부에 노출되므로, insert/update만 허용하고
--- select/delete는 막는다 — 크론 함수는 secret(service role) 키로 RLS를
--- 우회해서 자유롭게 읽고 쓴다.
+-- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
+-- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
 -- 정책 대상을 `anon`이 아니라 `public`으로 지정한다 — Supabase의 새
 -- Publishable/Secret 키 체계에서는 요청이 항상 legacy `anon` Postgres
@@ -82,19 +80,33 @@ create table if not exists agency_clients (
 -- 요청이 "new row violates row-level security policy" 에러로 막힐 수
 -- 있다(실제로 겪은 문제). `to public`은 이 프로젝트의 모든 역할을
 -- 포함하는 pseudo-role이라 이 문제를 피해간다.
+--
+-- select 정책도 열어둔다. 원래는 "공개 키가 유출돼도 데이터를 못 읽게"
+-- select를 막아뒀는데, 프론트엔드가 dual-write에 upsert(`Prefer:
+-- resolution=merge-duplicates`, 즉 `insert ... on conflict do update`)를
+-- 쓰기 때문에 select 정책이 없으면 Postgres가 "겹치는 행이 있는지" 확인하는
+-- 단계에서부터 막혀서 insert/update 정책이 전부 true여도 매번
+-- "new row violates row-level security policy" 에러가 난다(실제로 겪은
+-- 문제 — insert 단독 테스트는 성공하는데 upsert만 실패해서 원인 특정에
+-- 오래 걸렸다). 이 프로젝트는 대표님만 쓰는 내부 도구라 select 노출
+-- 리스크보다 업서트 동작이 우선이라 열어두는 쪽으로 결정.
 alter table work_log enable row level security;
 alter table approval_queue enable row level security;
 alter table calendar_entries enable row level security;
 alter table agency_clients enable row level security;
 
+create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
 create policy "update work_log" on work_log for update to public using (true) with check (true);
 
+create policy "select approval_queue" on approval_queue for select to public using (true);
 create policy "insert approval_queue" on approval_queue for insert to public with check (true);
 create policy "update approval_queue" on approval_queue for update to public using (true) with check (true);
 
+create policy "select calendar_entries" on calendar_entries for select to public using (true);
 create policy "insert calendar_entries" on calendar_entries for insert to public with check (true);
 create policy "update calendar_entries" on calendar_entries for update to public using (true) with check (true);
 
+create policy "select agency_clients" on agency_clients for select to public using (true);
 create policy "insert agency_clients" on agency_clients for insert to public with check (true);
 create policy "update agency_clients" on agency_clients for update to public using (true) with check (true);
