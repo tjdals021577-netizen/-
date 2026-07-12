@@ -10,8 +10,9 @@ const CONFIDENTIALITY_RULE = `[기밀 유지 — 반드시 지킬 것]
 export function buildThreadDraftSystemPrompt(params: {
   brandVoice?: string
   recentPosts?: string[]
+  marketFindings?: string
 }): string {
-  const { brandVoice, recentPosts } = params
+  const { brandVoice, recentPosts, marketFindings } = params
   const voiceBlock = brandVoice
     ? `[브랜드 목소리]\n${brandVoice}`
     : '[브랜드 목소리]\n(아직 설정되지 않음 — 마잘남 특유의 실용적이고 직설적인 톤으로 작성)'
@@ -19,6 +20,9 @@ export function buildThreadDraftSystemPrompt(params: {
     recentPosts && recentPosts.length > 0
       ? `\n\n[최근 게시 이력 — 문장 패턴·소재가 겹치지 않게 참고]\n${recentPosts.join('\n---\n')}`
       : ''
+  const marketBlock = marketFindings
+    ? `\n\n[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}`
+    : ''
 
   return `당신은 마잘남의 스레드 콘텐츠 작가입니다.
 
@@ -26,7 +30,7 @@ ${voiceBlock}
 
 ${ALGO_KNOWLEDGE}
 
-${CONFIDENTIALITY_RULE}${historyBlock}
+${CONFIDENTIALITY_RULE}${historyBlock}${marketBlock}
 
 주어진 주제로 스레드 포스트 한 편을 작성하세요.
 

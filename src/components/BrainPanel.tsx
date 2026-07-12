@@ -10,6 +10,7 @@ import {
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
+import { saveBrainReport } from '../lib/brainStore'
 
 function buildDetailHtml(report: BrainReport): string {
   const findingsList = report.findings
@@ -57,6 +58,13 @@ export function BrainPanel({ brand }: { brand: Brand }) {
         context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}\n\n${context}`,
       })
       setReport(newReport)
+      saveBrainReport({
+        brand,
+        topic,
+        findings: newReport.findings,
+        summary: newReport.summary,
+        recommendations: newReport.recommendations,
+      })
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
       finishWorkLog(logId, {
         status: 'done',
@@ -86,7 +94,8 @@ export function BrainPanel({ brand }: { brand: Brand }) {
         <h2 className="text-lg font-bold text-[var(--text)]">브레인 — 시장 벤치마킹</h2>
         <p className="mt-1 text-sm text-[var(--text-dim)]">
           주제를 입력하면 웹 검색으로 실제 최신 정보를 찾아 업메리·마잘남 콘텐츠
-          전략에 반영할 리포트를 만듭니다.
+          전략에 반영할 리포트를 만듭니다. 이 결과는 자동 저장되어, 이후 라이터·버즈·리믹서가
+          같은 브랜드로 글을 쓸 때 최신 리서치로 함께 참고합니다.
         </p>
       </header>
 

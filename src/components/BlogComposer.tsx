@@ -14,6 +14,7 @@ import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
+import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
 
 const ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -78,6 +79,7 @@ export function BlogComposer({ brand }: { brand: Brand }) {
   const [running, setRunning] = useState(false)
   const [draftError, setDraftError] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
+  const brainReport = getLatestBrainReport(brand)
 
   function handleApiKeyChange(key: string) {
     setApiKey(key)
@@ -130,6 +132,7 @@ export function BlogComposer({ brand }: { brand: Brand }) {
         brandContext: BRAND_CONTEXT[brand],
         previousDraft,
         feedback,
+        marketFindings: formatBrainFindingsForPrompt(brainReport),
       })
       setDraft(newDraft)
     } catch (err) {
@@ -283,6 +286,12 @@ export function BlogComposer({ brand }: { brand: Brand }) {
             className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
           />
         </div>
+
+        {brainReport && (
+          <p className="text-[11px] text-[var(--text-faint)]">
+            🧠 브레인 최신 리서치 반영됨 ({new Date(brainReport.createdAt).toLocaleDateString('ko-KR')} · {brainReport.topic})
+          </p>
+        )}
 
         <button
           type="button"

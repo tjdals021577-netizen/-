@@ -9,6 +9,7 @@ import { createEntry } from '../lib/calendarStore'
 import { PASS_THRESHOLD } from '../types/domain'
 import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
 import type { BlogRole } from '../types/blog'
+import { getLatestBrainReport, formatBrainFindingsForPrompt, saveBrainReport } from '../lib/brainStore'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -27,6 +28,7 @@ export async function dispatchJob(params: {
   const { agent, brand, apiKey, instruction } = params
   const topic = instruction.trim()
   const today = new Date().toISOString().slice(0, 10)
+  const marketFindings = formatBrainFindingsForPrompt(getLatestBrainReport(brand))
   const spendBefore = getTodaySpendUsd()
   const logId = startWorkLog({
     agent,
@@ -43,6 +45,7 @@ export async function dispatchJob(params: {
         keyPoints: '',
         photoDescriptions: '',
         brandContext: BRAND_CONTEXT[brand],
+        marketFindings,
       })
       const reviews = await Promise.all(
         BLOG_ROLES.map((role) => runBlogAgentReview({ apiKey, role, draft })),
@@ -87,6 +90,7 @@ export async function dispatchJob(params: {
         apiKey,
         topic,
         brandVoice: BRAND_CONTEXT[brand],
+        marketFindings,
       })
       const review = await runThreadReview({ apiKey, draft })
       const passed = review.totalScore >= PASS_THRESHOLD
@@ -130,6 +134,7 @@ export async function dispatchJob(params: {
         topic,
         referenceText: '',
         brandContext: BRAND_CONTEXT[brand],
+        marketFindings,
       })
       finishWorkLog(logId, {
         status: 'done',
@@ -166,6 +171,13 @@ export async function dispatchJob(params: {
       apiKey,
       topic,
       context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
+    })
+    saveBrainReport({
+      brand,
+      topic,
+      findings: report.findings,
+      summary: report.summary,
+      recommendations: report.recommendations,
     })
     finishWorkLog(logId, {
       status: 'done',

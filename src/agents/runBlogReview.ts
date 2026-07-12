@@ -100,6 +100,7 @@ export async function generateBlogDraft(params: {
   brandContext?: string
   previousDraft?: BlogDraft
   feedback?: string
+  marketFindings?: string
 }): Promise<BlogDraft> {
   const {
     apiKey,
@@ -109,10 +110,11 @@ export async function generateBlogDraft(params: {
     brandContext,
     previousDraft,
     feedback,
+    marketFindings,
   } = params
   const raw = await callClaudeJson({
     apiKey,
-    system: buildDraftSystemPrompt(brandContext),
+    system: buildDraftSystemPrompt(brandContext, marketFindings),
     user: buildDraftUserPrompt({
       topic,
       keyPoints,

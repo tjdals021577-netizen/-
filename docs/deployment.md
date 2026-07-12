@@ -49,8 +49,8 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
   데이터가 마땅치 않고, 코치는 사람이 스크린샷을 직접 올려야 해서 애초에 자동화 불가능
 
 ## DB 스키마
-`db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 5개 테이블
-(`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`, `reference_images`),
+`db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 6개 테이블
+(`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`, `reference_images`, `brain_reports`),
 select/insert/update 전부 공개 키로 가능(아래 겪었던 문제 참고 — upsert 때문에 select도 열어둠).
 
 **주의**: `schema.sql` 파일에 새 테이블/정책을 추가해도 이미 만들어진 라이브 DB에는

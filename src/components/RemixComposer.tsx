@@ -12,6 +12,7 @@ import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
+import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
 
 function buildDetailHtml(plan: RemixPlan): string {
   const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
@@ -36,6 +37,7 @@ export function RemixComposer({ brand }: { brand: Brand }) {
   const [running, setRunning] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
+  const brainReport = getLatestBrainReport(brand)
 
   function handleApiKeyChange(key: string) {
     setApiKey(key)
@@ -66,6 +68,7 @@ export function RemixComposer({ brand }: { brand: Brand }) {
         topic,
         referenceText,
         brandContext: BRAND_CONTEXT[brand],
+        marketFindings: formatBrainFindingsForPrompt(brainReport),
       })
       setPlan(newPlan)
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
@@ -115,7 +118,8 @@ export function RemixComposer({ brand }: { brand: Brand }) {
       <header>
         <h2 className="text-lg font-bold text-[var(--text)]">유튜브 대본 기획</h2>
         <p className="mt-1 text-sm text-[var(--text-dim)]">
-          주제와 참고 자료를 넣으면 훅 후보와 대본 구성안을 만듭니다. 촬영·편집은
+          주제와 참고 자료를 넣으면, 실제 유튜브를 검색해서 요즘 비슷한 채널·영상이 어떻게
+          반응이 오는지 확인한 뒤 훅 후보와 대본 구성안을 만듭니다. 촬영·편집은
           별도 진행 — 기획안까지만 산출합니다.
         </p>
       </header>
@@ -148,13 +152,19 @@ export function RemixComposer({ brand }: { brand: Brand }) {
           />
         </div>
 
+        {brainReport && (
+          <p className="text-[11px] text-[var(--text-faint)]">
+            🧠 브레인 최신 리서치 반영됨 ({new Date(brainReport.createdAt).toLocaleDateString('ko-KR')} · {brainReport.topic})
+          </p>
+        )}
+
         <button
           type="button"
           disabled={!canStart}
           onClick={() => void handleGenerate()}
           className="w-full rounded-lg bg-[var(--accent)] py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {running ? '기획안 작성 중…' : '기획안 생성'}
+          {running ? '기획안 작성 중… (유튜브 검색 포함, 시간이 조금 더 걸릴 수 있어요)' : '기획안 생성'}
         </button>
         {!apiKey && (
           <p className="text-center text-[11px] text-[var(--planned)]">

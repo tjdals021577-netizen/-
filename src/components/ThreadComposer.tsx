@@ -20,6 +20,7 @@ import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
 import { listReferences, getReferencesByIds } from '../lib/referenceStore'
 import { fileToBase64, mediaTypeOf } from '../lib/imageFile'
+import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
 
 const VARIANT_COUNT = 3
 
@@ -78,6 +79,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
   const [variants, setVariants] = useState<ThreadDraft[] | null>(null)
   const [variantRunning, setVariantRunning] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const brainReport = getLatestBrainReport(brand)
 
   function handleApiKeyChange(key: string) {
     setApiKey(key)
@@ -115,6 +117,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
         brandVoice: BRAND_CONTEXT[brand],
         previousDraft,
         feedback,
+        marketFindings: formatBrainFindingsForPrompt(brainReport),
       })
       setDraft(newDraft)
 
@@ -295,6 +298,12 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
             className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
           />
         </div>
+
+        {brainReport && (
+          <p className="text-[11px] text-[var(--text-faint)]">
+            🧠 브레인 최신 리서치 반영됨 ({new Date(brainReport.createdAt).toLocaleDateString('ko-KR')} · {brainReport.topic})
+          </p>
+        )}
 
         <button
           type="button"

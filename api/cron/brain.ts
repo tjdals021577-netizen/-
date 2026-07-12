@@ -78,6 +78,18 @@ export default async function handler(req: Request): Promise<Response> {
         .map((f) => `- [${f.source}] ${f.insight}`)
         .join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`,
     })
+    // 라이터/버즈/리믹서가 다시 찾아 쓸 수 있게 구조화해서도 저장한다
+    // (src/lib/brainStore.ts와 같은 테이블 — 이쪽은 localStorage가 없는
+    // 서버 환경이라 직접 insert한다).
+    await supabaseInsert('brain_reports', {
+      id: makeId(),
+      brand,
+      topic,
+      findings: report.findings,
+      summary: report.summary,
+      recommendations: report.recommendations,
+      created_at: nowIso,
+    })
     results.push(`${brand}: 발견 ${report.findings.length}건`)
   }
 

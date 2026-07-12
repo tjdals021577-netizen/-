@@ -55,13 +55,15 @@ export async function generateMorningBriefing(params: {
   brand: string
   entries: WorkLogEntry[]
   todaySpendUsd: number
+  dateLabel?: string
 }): Promise<MorningBriefing> {
-  const { apiKey, brand, entries, todaySpendUsd } = params
+  const { apiKey, brand, entries, todaySpendUsd, dateLabel = '오늘' } = params
   const raw = await callClaudeJson({
     apiKey,
     system: buildMorningSystemPrompt(),
     user: buildMorningUserPrompt({
       brand,
+      dateLabel,
       logText: buildLogText(entries),
       spendText: `$${todaySpendUsd.toFixed(3)} / $5`,
     }),

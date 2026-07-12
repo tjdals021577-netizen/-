@@ -91,15 +91,16 @@ export async function generateThreadDraft(params: {
   previousDraft?: ThreadDraft
   feedback?: string
   referenceImages?: VisionImageInput[]
+  marketFindings?: string
 }): Promise<ThreadDraft> {
-  const { apiKey, topic, brandVoice, recentPosts, previousDraft, feedback, referenceImages } =
+  const { apiKey, topic, brandVoice, recentPosts, previousDraft, feedback, referenceImages, marketFindings } =
     params
   // 클라이언트에 레퍼런스 이미지가 등록돼 있으면 비전 호출로 스타일을
   // 참고시킨다 — 없으면 기존과 동일한 텍스트 전용 호출.
   if (referenceImages && referenceImages.length > 0) {
     const raw = await callClaudeVisionJson({
       apiKey,
-      system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts }),
+      system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts, marketFindings }),
       user: buildThreadDraftUserPrompt({ topic, previousDraft, feedback }),
       images: referenceImages,
       maxTokens: 1536,
@@ -109,7 +110,7 @@ export async function generateThreadDraft(params: {
   }
   const raw = await callClaudeJson({
     apiKey,
-    system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts }),
+    system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts, marketFindings }),
     user: buildThreadDraftUserPrompt({ topic, previousDraft, feedback }),
     maxTokens: 1536,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),

@@ -30,9 +30,20 @@ interface MorningBriefing {
   nextActions: string[]
 }
 
-function todayKst(): string {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
-  return kst.toISOString().slice(0, 10)
+// 크론은 매일 08:00 KST에 도는데, 그 시점의 "오늘 자정~지금"만 보면 근무는
+// 보통 낮에 일어나므로 아침엔 기록이 거의 비어있다(실제로 겪은 문제). 대신
+// "어제 00:00~23:59 KST" 전체를 봐서 전날 하루를 정리해 아침에 전달한다.
+function yesterdayKstRange(): { startIso: string; endIso: string; dateLabel: string } {
+  const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const kstToday = kstNow.toISOString().slice(0, 10)
+  const kstYesterday = new Date(kstNow.getTime() - 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+  return {
+    startIso: `${kstYesterday}T00:00:00+09:00`,
+    endIso: `${kstToday}T00:00:00+09:00`,
+    dateLabel: `어제(${kstYesterday})`,
+  }
 }
 
 function makeId(): string {
@@ -78,13 +89,13 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.', { status: 500 })
   }
 
-  const today = todayKst()
+  const { startIso, endIso, dateLabel } = yesterdayKstRange()
   const results: string[] = []
 
   for (const brand of BRANDS) {
     const rows = await supabaseSelect<WorkLogRow>(
       'work_log',
-      `brand=eq.${encodeURIComponent(brand)}&started_at=gte.${today}T00:00:00&select=agent,kind,status_label,cost_usd,note`,
+      `brand=eq.${encodeURIComponent(brand)}&started_at=gte.${encodeURIComponent(startIso)}&started_at=lt.${encodeURIComponent(endIso)}&select=agent,kind,status_label,cost_usd,note`,
     )
     const logText = buildLogText(rows)
     const spendText = `$${rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0).toFixed(3)}`
@@ -93,7 +104,7 @@ export default async function handler(req: Request): Promise<Response> {
     const raw = await callClaudeJson({
       apiKey,
       system: buildMorningSystemPrompt(),
-      user: buildMorningUserPrompt({ brand, logText, spendText }),
+      user: buildMorningUserPrompt({ brand, dateLabel, logText, spendText }),
       maxTokens: 2048,
       onUsage: (usage) => {
         costUsd = estimateCostUsd(usage)

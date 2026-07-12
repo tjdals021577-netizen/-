@@ -1,4 +1,4 @@
-import { callClaudeJson } from '../lib/claude'
+import { callClaudeJsonWithWebSearch } from '../lib/claude'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
 import { buildRemixSystemPrompt, buildRemixUserPrompt } from './remixPrompts'
 import type { RemixPlan } from '../types/remix'
@@ -24,13 +24,17 @@ export async function generateRemixPlan(params: {
   topic: string
   referenceText: string
   brandContext?: string
+  marketFindings?: string
 }): Promise<RemixPlan> {
-  const { apiKey, topic, referenceText, brandContext } = params
-  const raw = await callClaudeJson({
+  const { apiKey, topic, referenceText, brandContext, marketFindings } = params
+  // 실제 유튜브 최신 흐름을 검색해서 기획에 반영해야 하므로(단순 지식베이스
+  // 기반 추측이 아니라) 웹서치 도구가 붙은 호출을 쓴다.
+  const raw = await callClaudeJsonWithWebSearch({
     apiKey,
-    system: buildRemixSystemPrompt(brandContext),
+    system: buildRemixSystemPrompt(brandContext, marketFindings),
     user: buildRemixUserPrompt({ topic, referenceText }),
     maxTokens: 2048,
+    maxSearches: 5,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   return parseRemixPlan(raw)

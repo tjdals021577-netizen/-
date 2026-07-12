@@ -85,6 +85,20 @@ create table if not exists reference_images (
 );
 create index if not exists reference_images_created_idx on reference_images (created_at desc);
 
+-- 브레인이 조사한 결과를 구조화해서 저장 — 라이터/버즈/리믹서가 생성할 때
+-- 최신 리서치를 다시 찾아서 참고 자료로 넣을 수 있게 한다.
+create table if not exists brain_reports (
+  id text primary key,
+  brand text not null,
+  topic text not null,
+  findings jsonb not null default '[]',
+  summary text not null,
+  recommendations jsonb not null default '[]',
+  created_at timestamptz not null,
+  synced_at timestamptz not null default now()
+);
+create index if not exists brain_reports_brand_idx on brain_reports (brand, created_at desc);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -109,6 +123,7 @@ alter table approval_queue enable row level security;
 alter table calendar_entries enable row level security;
 alter table agency_clients enable row level security;
 alter table reference_images enable row level security;
+alter table brain_reports enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -129,3 +144,7 @@ create policy "update agency_clients" on agency_clients for update to public usi
 create policy "select reference_images" on reference_images for select to public using (true);
 create policy "insert reference_images" on reference_images for insert to public with check (true);
 create policy "update reference_images" on reference_images for update to public using (true) with check (true);
+
+create policy "select brain_reports" on brain_reports for select to public using (true);
+create policy "insert brain_reports" on brain_reports for insert to public with check (true);
+create policy "update brain_reports" on brain_reports for update to public using (true) with check (true);
