@@ -30,6 +30,7 @@ const AGENTS: AgentMeta[] = [
 ]
 
 const AGENT_BY_KEY = new Map(AGENTS.map((a) => [a.key, a]))
+const DISPATCHABLE_META = AGENTS.filter((a) => a.dispatchable)
 
 const STATUS_ICON: Record<WorkLogStatus, string> = {
   running: '⏳',
@@ -70,57 +71,79 @@ function agentIsBusy(agentKey: string, brand: Brand): boolean {
   return getWorkLog(agentKey, brand).some((e) => e.status === 'running')
 }
 
-function ChatBubbles({ entries, agentName }: { entries: WorkLogEntry[]; agentName: string }) {
+// 통합 피드라 한 버블 묶음에 여러 에이전트가 섞여 나오므로, 상단에 고정된
+// 이름 하나 대신 매 항목마다 어느 에이전트인지 배지를 붙여서 보여준다.
+function ChatBubbles({ entries }: { entries: WorkLogEntry[] }) {
   const sorted = [...entries].sort(
     (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
   )
   return (
     <>
-      {sorted.map((entry) => (
-        <div key={entry.id} className="mb-3">
-          <div className="flex justify-end">
-            <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-[var(--accent)] px-3.5 py-2 text-[13px] text-white">
-              {entry.note}
+      {sorted.map((entry) => {
+        const agentMeta = AGENT_BY_KEY.get(entry.agent)
+        const agentName = agentMeta?.name ?? entry.agent
+        return (
+          <div key={entry.id} className="mb-3">
+            <div className="flex justify-end">
+              <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-[var(--accent)] px-3.5 py-2 text-[13px] text-white">
+                {entry.note}
+              </div>
             </div>
-          </div>
-          <div className="mt-1.5 flex justify-start">
-            <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-[var(--surface-2)] px-3.5 py-2 text-[13px] text-[var(--text)]">
-              {entry.status === 'running'
-                ? `${STATUS_ICON.running} 처리 중이에요…`
-                : `${STATUS_ICON[entry.status]} ${stripHtml(entry.detailHtml) || entry.statusLabel}`}
+            <div className="mt-1.5 flex justify-start">
+              <div className="max-w-[80%]">
+                <p className="mb-0.5 flex items-center gap-1 px-1 text-[10px] font-bold text-[var(--text-faint)]">
+                  <span
+                    className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] text-white"
+                    style={{ background: `var(${agentMeta?.colorVar ?? '--accent'})` }}
+                  >
+                    {agentMeta?.initial ?? '?'}
+                  </span>
+                  {agentName}
+                </p>
+                <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-[var(--surface-2)] px-3.5 py-2 text-[13px] text-[var(--text)]">
+                  {entry.status === 'running'
+                    ? `${STATUS_ICON.running} 처리 중이에요…`
+                    : `${STATUS_ICON[entry.status]} ${stripHtml(entry.detailHtml) || entry.statusLabel}`}
+                </div>
+              </div>
             </div>
+            {entry.status !== 'running' && (
+              <p className="mt-1 text-center text-[10.5px] text-[var(--text-faint)]">
+                {agentName}의 상태가 '{entry.statusLabel}'(으)로 변경되었습니다 · {formatRelativeTime(entry.endedAt ?? entry.startedAt)}
+              </p>
+            )}
           </div>
-          {entry.status !== 'running' && (
-            <p className="mt-1 text-center text-[10.5px] text-[var(--text-faint)]">
-              {agentName}의 상태가 '{entry.statusLabel}'(으)로 변경되었습니다 · {formatRelativeTime(entry.endedAt ?? entry.startedAt)}
-            </p>
-          )}
-        </div>
-      ))}
+        )
+      })}
     </>
   )
 }
 
 export function TeamChatScreen({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
-  const [selectedKey, setSelectedKey] = useState<string>('morning')
+  // 피드 필터('all'이면 전체 팀 활동을 시간순으로 섞어서 보여줌)와
+  // 메시지를 보낼 대상 에이전트를 분리했다 — 예전에는 하나의 selectedKey가
+  // 둘 다 겸해서, 다른 에이전트에게 지시하려면 먼저 그 에이전트를 클릭해
+  // 피드를 전환해야 했다(사용자가 "한명씩 누르면서 확인하기 힘들다"고 지적).
+  const [feedFilter, setFeedFilter] = useState<string>('all')
+  const [dispatchTarget, setDispatchTarget] = useState<DispatchableAgent>(DISPATCHABLE_AGENTS[0])
   const [instruction, setInstruction] = useState('')
   const [dispatching, setDispatching] = useState(false)
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null)
   const [logVersion, setLogVersion] = useState(0)
   const feedEndRef = useRef<HTMLDivElement>(null)
 
-  const selected = AGENT_BY_KEY.get(selectedKey) ?? AGENTS[0]
-  const log = getWorkLog(selectedKey, brand)
-  const allTodayLog = getWorkLog(undefined, brand)
-  const recentAcrossTeam = [...allTodayLog]
+  const viewingAgent = feedFilter === 'all' ? null : (AGENT_BY_KEY.get(feedFilter) ?? null)
+  const log = feedFilter === 'all' ? getWorkLog(undefined, brand) : getWorkLog(feedFilter, brand)
+  const busyAgents = AGENTS.filter((a) => agentIsBusy(a.key, brand))
+  const recentAcrossTeam = [...log]
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
     .slice(0, 4)
   void logVersion // 근무기록 재조회 트리거용
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [selectedKey, logVersion])
+  }, [feedFilter, logVersion])
 
   function handleApiKeyChange(key: string) {
     setApiKey(key)
@@ -129,16 +152,6 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   async function handleDispatch() {
     setDispatchMessage(null)
-    if (!DISPATCHABLE_AGENTS.includes(selectedKey as DispatchableAgent)) {
-      const hint =
-        selectedKey === 'morning' || selectedKey === 'coach'
-          ? ' 대시보드 화면에서 직접 실행할 수 있습니다.'
-          : selectedKey === 'calen'
-            ? ' 캘린더 화면에서 직접 일정을 관리할 수 있습니다.'
-            : ' 아직 백엔드(스케줄러) 연동 전이라 팀 채팅에서 바로 실행할 수 없습니다.'
-      setDispatchMessage(`${selected.name}은(는) 팀 채팅의 자연어 지시로는 실행할 수 없습니다.${hint}`)
-      return
-    }
     if (!apiKey) {
       setDispatchMessage('먼저 Anthropic API 키를 저장하세요.')
       return
@@ -157,7 +170,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     setLogVersion((v) => v + 1) // 지시 직후 "진행중" 버블이 바로 보이도록
     try {
       await dispatchJob({
-        agent: selectedKey as DispatchableAgent,
+        agent: dispatchTarget,
         brand,
         apiKey,
         instruction,
@@ -180,7 +193,6 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   const lastRun = [...log].sort(
     (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
   )[0]
-  const busy = agentIsBusy(selectedKey, brand)
 
   return (
     <div>
@@ -193,15 +205,35 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
           <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
             AI 팀원 · {AGENTS.length}
           </p>
+          <button
+            type="button"
+            onClick={() => setFeedFilter('all')}
+            className={`mb-1 flex w-full items-center gap-2.5 rounded-lg border p-2 text-left ${
+              feedFilter === 'all'
+                ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
+                : 'border-transparent hover:bg-[var(--surface-2)]'
+            }`}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--accent)] text-[12.5px] font-bold text-white">
+              전체
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-bold text-[var(--text)]">전체 보기</span>
+              <span className="flex items-center gap-1 text-[10.5px] text-[var(--text-faint)]">
+                <span className={`h-1.5 w-1.5 rounded-full ${busyAgents.length > 0 ? 'bg-[var(--done)]' : 'bg-[var(--text-faint)]'}`} />
+                {busyAgents.length > 0 ? `${busyAgents.length}명 업무중` : '전원 휴식중'}
+              </span>
+            </span>
+          </button>
           {AGENTS.map((a) => {
             const isBusy = agentIsBusy(a.key, brand)
             return (
               <button
                 key={a.key}
                 type="button"
-                onClick={() => setSelectedKey(a.key)}
+                onClick={() => setFeedFilter(a.key)}
                 className={`flex w-full items-center gap-2.5 rounded-lg border p-2 text-left ${
-                  selectedKey === a.key
+                  feedFilter === a.key
                     ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
                     : 'border-transparent hover:bg-[var(--surface-2)]'
                 }`}
@@ -226,44 +258,71 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
         <div className="flex min-h-[520px] flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
           <div className="flex items-center gap-2.5 border-b border-[var(--border)] p-3.5">
-            <span
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[13px] font-bold text-white"
-              style={{ background: `var(${selected.colorVar})` }}
-            >
-              {selected.initial}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[14px] font-bold text-[var(--text)]">
-                {selected.name}{' '}
-                <span className={`ml-1 text-[10.5px] font-semibold ${busy ? 'text-[var(--done)]' : 'text-[var(--text-faint)]'}`}>
-                  {busy ? '● 업무중' : '● 휴식중'}
+            {viewingAgent ? (
+              <>
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[13px] font-bold text-white"
+                  style={{ background: `var(${viewingAgent.colorVar})` }}
+                >
+                  {viewingAgent.initial}
                 </span>
-              </p>
-              <p className="truncate text-[11px] text-[var(--text-faint)]">{selected.primaryTag} · {selected.secondaryTag}</p>
-            </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-bold text-[var(--text)]">
+                    {viewingAgent.name}{' '}
+                    <span
+                      className={`ml-1 text-[10.5px] font-semibold ${
+                        agentIsBusy(viewingAgent.key, brand) ? 'text-[var(--done)]' : 'text-[var(--text-faint)]'
+                      }`}
+                    >
+                      {agentIsBusy(viewingAgent.key, brand) ? '● 업무중' : '● 휴식중'}
+                    </span>
+                  </p>
+                  <p className="truncate text-[11px] text-[var(--text-faint)]">
+                    {viewingAgent.primaryTag} · {viewingAgent.secondaryTag}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)] text-[15px] text-white">
+                  👥
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-bold text-[var(--text)]">
+                    전체 팀{' '}
+                    <span className={`ml-1 text-[10.5px] font-semibold ${busyAgents.length > 0 ? 'text-[var(--done)]' : 'text-[var(--text-faint)]'}`}>
+                      {busyAgents.length > 0 ? `● ${busyAgents.length}명 업무중` : '● 전원 휴식중'}
+                    </span>
+                  </p>
+                  <p className="truncate text-[11px] text-[var(--text-faint)]">모든 팀원의 활동을 한 곳에서 확인하세요</p>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-3.5">
             <p className="mb-3 text-center text-[11px] text-[var(--text-faint)]">
-              {brand} 팀 채팅 — 모든 팀원이 업무를 시작했습니다. 무엇을 도와드릴까요?
+              {viewingAgent
+                ? `${viewingAgent.name}의 활동만 보고 있어요 — 왼쪽 "전체 보기"를 누르면 모든 팀원을 다시 함께 볼 수 있어요.`
+                : `${brand} 팀 채팅 — 모든 팀원의 활동이 시간순으로 함께 표시됩니다.`}
             </p>
             {log.length === 0 ? (
               <p className="py-10 text-center text-sm text-[var(--text-faint)]">아직 대화 기록이 없습니다.</p>
             ) : (
-              <ChatBubbles entries={log} agentName={selected.name} />
+              <ChatBubbles entries={log} />
             )}
             <div ref={feedEndRef} />
           </div>
 
           <div className="flex items-center gap-2 border-t border-[var(--border)] p-2.5">
             <select
-              value={selectedKey}
-              onChange={(e) => setSelectedKey(e.target.value)}
+              value={dispatchTarget}
+              onChange={(e) => setDispatchTarget(e.target.value as DispatchableAgent)}
               className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-[12px] font-bold text-[var(--accent)] focus:outline-none"
             >
-              {AGENTS.map((a) => (
+              {DISPATCHABLE_META.map((a) => (
                 <option key={a.key} value={a.key}>
-                  {a.name}
+                  {a.name}에게
                 </option>
               ))}
             </select>
@@ -294,21 +353,39 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
         <div className="space-y-3">
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
             <div className="mb-3 flex items-center gap-2.5">
-              <span
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[15px] font-bold text-white"
-                style={{ background: `var(${selected.colorVar})` }}
-              >
-                {selected.initial}
-              </span>
+              {viewingAgent ? (
+                <span
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[15px] font-bold text-white"
+                  style={{ background: `var(${viewingAgent.colorVar})` }}
+                >
+                  {viewingAgent.initial}
+                </span>
+              ) : (
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent)] text-[17px] text-white">
+                  👥
+                </span>
+              )}
               <div className="min-w-0">
-                <p className="text-[13.5px] font-bold text-[var(--text)]">{selected.name}</p>
-                <p className={`text-[10.5px] font-semibold ${busy ? 'text-[var(--done)]' : 'text-[var(--text-faint)]'}`}>
-                  {busy ? '● 업무중' : '● 휴식중'}
+                <p className="text-[13.5px] font-bold text-[var(--text)]">{viewingAgent ? viewingAgent.name : '전체 팀'}</p>
+                <p
+                  className={`text-[10.5px] font-semibold ${
+                    (viewingAgent ? agentIsBusy(viewingAgent.key, brand) : busyAgents.length > 0)
+                      ? 'text-[var(--done)]'
+                      : 'text-[var(--text-faint)]'
+                  }`}
+                >
+                  {viewingAgent
+                    ? agentIsBusy(viewingAgent.key, brand)
+                      ? '● 업무중'
+                      : '● 휴식중'
+                    : busyAgents.length > 0
+                      ? `● ${busyAgents.length}명 업무중`
+                      : '● 전원 휴식중'}
                 </p>
               </div>
             </div>
             <p className="mb-3 text-[11px] leading-relaxed text-[var(--text-dim)]">
-              {selected.primaryTag} · {selected.secondaryTag}
+              {viewingAgent ? `${viewingAgent.primaryTag} · ${viewingAgent.secondaryTag}` : '오늘 팀 전체 활동 요약'}
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg bg-[var(--surface-2)] p-2">
@@ -326,7 +403,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
                 <p className="text-[10px] text-[var(--text-faint)]">마지막 실행</p>
               </div>
               <div className="rounded-lg bg-[var(--surface-2)] p-2">
-                <p className="text-[13px] font-bold text-[var(--text)]">{selected.limit}</p>
+                <p className="text-[13px] font-bold text-[var(--text)]">{viewingAgent ? viewingAgent.limit : '—'}</p>
                 <p className="text-[10px] text-[var(--text-faint)]">업무 제한 시간</p>
               </div>
             </div>
@@ -344,7 +421,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
                   <button
                     key={entry.id}
                     type="button"
-                    onClick={() => setSelectedKey(entry.agent)}
+                    onClick={() => setFeedFilter(entry.agent)}
                     className="block w-full rounded-lg p-1.5 text-left hover:bg-[var(--surface-2)]"
                   >
                     <div className="flex items-center justify-between gap-2">
