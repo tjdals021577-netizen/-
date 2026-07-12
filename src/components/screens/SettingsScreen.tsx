@@ -3,26 +3,7 @@ import { PreviewBanner } from './PreviewBanner'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { testSupabaseConnection } from '../../lib/remoteSync'
 import { listReferences, addReference, deleteReference } from '../../lib/referenceStore'
-import type { ReferenceMediaType } from '../../types/reference'
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      resolve(result.slice(result.indexOf(',') + 1))
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-}
-
-function mediaTypeOf(file: File): ReferenceMediaType | null {
-  if (file.type === 'image/png') return 'image/png'
-  if (file.type === 'image/jpeg') return 'image/jpeg'
-  if (file.type === 'image/webp') return 'image/webp'
-  return null
-}
+import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
 
 export function SettingsScreen() {
   const [todaySpend] = useState(() => getTodaySpendUsd())

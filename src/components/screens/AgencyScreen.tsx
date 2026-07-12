@@ -21,7 +21,8 @@ import {
   daysElapsed,
   pausedDaysSoFar,
 } from '../../lib/agencyStore'
-import { listReferences, getReferencesByIds } from '../../lib/referenceStore'
+import { listReferences, getReferencesByIds, addReference } from '../../lib/referenceStore'
+import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
 import { startWorkLog, finishWorkLog } from '../../lib/workLog'
 import { submitForApproval } from '../../lib/approvalStore'
 import { createEntry } from '../../lib/calendarStore'
@@ -115,9 +116,10 @@ function chipClass(tone: 'done' | 'planned' | 'muted'): string {
 export function AgencyScreen() {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [clients, setClients] = useState<AgencyClient[]>(() => listClients())
-  const [references] = useState(() => listReferences())
+  const [references, setReferences] = useState(() => listReferences())
   const [onboardingText, setOnboardingText] = useState('')
   const [onboardRefIds, setOnboardRefIds] = useState<string[]>([])
+  const [onboardAdhocFiles, setOnboardAdhocFiles] = useState<File[]>([])
   const [onboarding, setOnboarding] = useState(false)
   const [onboardError, setOnboardError] = useState<string | null>(null)
   const [busyClientId, setBusyClientId] = useState<string | null>(null)
@@ -127,6 +129,7 @@ export function AgencyScreen() {
   // "레퍼런스 넣어 재요청" — 카드별로 새 레퍼런스를 골라서 3개 시안을 받는다.
   const [reRequestClientId, setReRequestClientId] = useState<string | null>(null)
   const [reRequestRefIds, setReRequestRefIds] = useState<string[]>([])
+  const [reRequestAdhocFiles, setReRequestAdhocFiles] = useState<File[]>([])
   const [reRequesting, setReRequesting] = useState(false)
   const [reRequestVariants, setReRequestVariants] = useState<Record<string, ThreadDraft[]>>({})
 
@@ -152,15 +155,28 @@ export function AgencyScreen() {
     setOnboardError(null)
     try {
       const result = await parseAgencyOnboarding({ apiKey, pastedText: onboardingText })
+      // 직접 첨부한 사진은 라이브러리에 자동 저장해서(클라이언트 이름으로 라벨링)
+      // 매일 초안 생성에서도 계속 재사용할 수 있게 한다 — 사용자 입장에서는
+      // "라이브러리"를 신경 쓸 필요 없이 그냥 온보딩 화면에서 사진만 올리면 됨.
+      const uploadedIds: string[] = []
+      for (const file of onboardAdhocFiles) {
+        const mediaType = mediaTypeOf(file)
+        if (!mediaType) continue
+        const imageBase64 = await fileToBase64(file)
+        const saved = addReference({ label: `${result.name} 레퍼런스`, imageBase64, mediaType })
+        uploadedIds.push(saved.id)
+      }
       createClient({
         name: result.name,
         business: result.business,
         persona: result.persona,
         threadUrl: result.threadUrl,
-        referenceImageIds: onboardRefIds,
+        referenceImageIds: [...onboardRefIds, ...uploadedIds],
       })
       setOnboardingText('')
       setOnboardRefIds([])
+      setOnboardAdhocFiles([])
+      setReferences(listReferences())
       refresh()
     } catch (err) {
       setOnboardError(err instanceof Error ? err.message : String(err))
@@ -180,11 +196,13 @@ export function AgencyScreen() {
   function openReRequest(client: AgencyClient) {
     setReRequestClientId(client.id)
     setReRequestRefIds(client.referenceImageIds)
+    setReRequestAdhocFiles([])
   }
 
   function closeReRequest() {
     setReRequestClientId(null)
     setReRequestRefIds([])
+    setReRequestAdhocFiles([])
   }
 
   function handleExtend(id: string) {
@@ -286,17 +304,28 @@ export function AgencyScreen() {
   // 초안이 마음에 안 들 때 — 새 레퍼런스 이미지를 넣고 채점/재생성 루프 없이
   // 바로 3개 시안을 받아서 그중 고르게 한다(반복 API 호출로 비용 쌓는 대신).
   async function handleReRequestVariants(client: AgencyClient) {
-    if (!apiKey || isOverDailyBudget() || reRequestRefIds.length === 0) return
+    const hasAnyReference = reRequestRefIds.length > 0 || reRequestAdhocFiles.length > 0
+    if (!apiKey || isOverDailyBudget() || !hasAnyReference) return
     setReRequesting(true)
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
       agent: 'buzz',
       brand: '마잘남',
       kind: `대행 — ${client.name} (레퍼런스 재요청)`,
-      note: `레퍼런스 ${reRequestRefIds.length}장으로 시안 ${REREQUEST_VARIANT_COUNT}개 요청`,
+      note: `레퍼런스 ${reRequestRefIds.length + reRequestAdhocFiles.length}장으로 시안 ${REREQUEST_VARIANT_COUNT}개 요청`,
     })
     try {
-      const referenceImages = toVisionImages(reRequestRefIds)
+      const libraryImages = toVisionImages(reRequestRefIds)
+      const adhocImages = (
+        await Promise.all(
+          reRequestAdhocFiles.map(async (f) => {
+            const mediaType = mediaTypeOf(f)
+            if (!mediaType) return null
+            return { imageBase64: await fileToBase64(f), imageMediaType: mediaType }
+          }),
+        )
+      ).filter((img): img is { imageBase64: string; imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp' } => img !== null)
+      const referenceImages = [...libraryImages, ...adhocImages]
       const drafts = await generateThreadVariantsWithReferences({
         apiKey,
         topic: `${client.business} 관련 스레드 게시물`,
@@ -367,7 +396,27 @@ export function AgencyScreen() {
           <p className="mb-1 text-[11px] font-medium text-[var(--text-dim)]">
             카피라이팅 레퍼런스 (선택 — 고르면 매일 초안 생성 시 스타일을 참고합니다)
           </p>
-          <ReferencePicker references={references} selectedIds={onboardRefIds} onToggle={toggleOnboardRef} />
+          {references.length > 0 && (
+            <div className="mb-2">
+              <p className="mb-1 text-[10.5px] text-[var(--text-faint)]">라이브러리에서 고르기</p>
+              <ReferencePicker references={references} selectedIds={onboardRefIds} onToggle={toggleOnboardRef} />
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-[10.5px] text-[var(--text-faint)]">
+              또는 지금 바로 사진 첨부 (자동으로 이 클라이언트 레퍼런스로 저장됨)
+            </label>
+            <input
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => setOnboardAdhocFiles(Array.from(e.target.files ?? []))}
+              className="block w-full text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
+            />
+            {onboardAdhocFiles.length > 0 && (
+              <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">{onboardAdhocFiles.length}장 선택됨</p>
+            )}
+          </div>
         </div>
         <button
           type="button"
@@ -483,10 +532,30 @@ export function AgencyScreen() {
                       selectedIds={reRequestRefIds}
                       onToggle={toggleReRequestRef}
                     />
+                    <div>
+                      <label className="mb-1 block text-[10.5px] text-[var(--text-faint)]">
+                        또는 지금 바로 첨부 (라이브러리에 저장 안 함)
+                      </label>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => setReRequestAdhocFiles(Array.from(e.target.files ?? []))}
+                        className="block w-full text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
+                      />
+                      {reRequestAdhocFiles.length > 0 && (
+                        <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">{reRequestAdhocFiles.length}장 선택됨</p>
+                      )}
+                    </div>
                     <div className="flex gap-1.5">
                       <button
                         type="button"
-                        disabled={!apiKey || reRequesting || reRequestRefIds.length === 0 || isOverDailyBudget()}
+                        disabled={
+                          !apiKey ||
+                          reRequesting ||
+                          (reRequestRefIds.length === 0 && reRequestAdhocFiles.length === 0) ||
+                          isOverDailyBudget()
+                        }
                         onClick={() => void handleReRequestVariants(client)}
                         className="flex-1 rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                       >

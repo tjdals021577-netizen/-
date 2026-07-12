@@ -10,25 +10,7 @@ import {
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      resolve(result.slice(result.indexOf(',') + 1))
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-}
-
-function mediaTypeOf(file: File): 'image/png' | 'image/jpeg' | 'image/webp' | null {
-  if (file.type === 'image/png') return 'image/png'
-  if (file.type === 'image/jpeg') return 'image/jpeg'
-  if (file.type === 'image/webp') return 'image/webp'
-  return null
-}
+import { fileToBase64, mediaTypeOf } from '../lib/imageFile'
 
 function buildDetailHtml(analysis: CoachAnalysis): string {
   const stats = analysis.extractedStats

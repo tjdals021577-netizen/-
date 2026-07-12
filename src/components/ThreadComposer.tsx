@@ -19,6 +19,7 @@ import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
 import { listReferences, getReferencesByIds } from '../lib/referenceStore'
+import { fileToBase64, mediaTypeOf } from '../lib/imageFile'
 
 const VARIANT_COUNT = 3
 
@@ -72,6 +73,8 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
   // 받아서 사람이 직접 고르는 모드로 전환된다.
   const [references] = useState(() => listReferences())
   const [refIds, setRefIds] = useState<string[]>([])
+  // 라이브러리에 저장 안 하고 이번 한 번만 참고시킬 이미지
+  const [adhocFiles, setAdhocFiles] = useState<File[]>([])
   const [variants, setVariants] = useState<ThreadDraft[] | null>(null)
   const [variantRunning, setVariantRunning] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
@@ -176,7 +179,8 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
   }
 
   async function runVariantCycle() {
-    if (!apiKey || refIds.length === 0 || topic.trim().length === 0) return
+    const hasAnyReference = refIds.length > 0 || adhocFiles.length > 0
+    if (!apiKey || !hasAnyReference || topic.trim().length === 0) return
     if (isOverDailyBudget()) {
       setErrorMessage(`오늘 예산 한도($${DAILY_BUDGET_USD})를 초과해서 중단했습니다. 내일 다시 시도해주세요.`)
       return
@@ -192,10 +196,20 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
       note: topic,
     })
     try {
-      const referenceImages = getReferencesByIds(refIds).map((r) => ({
+      const libraryImages = getReferencesByIds(refIds).map((r) => ({
         imageBase64: r.imageBase64,
         imageMediaType: r.mediaType,
       }))
+      const adhocImages = (
+        await Promise.all(
+          adhocFiles.map(async (f) => {
+            const mediaType = mediaTypeOf(f)
+            if (!mediaType) return null
+            return { imageBase64: await fileToBase64(f), imageMediaType: mediaType }
+          }),
+        )
+      ).filter((img): img is { imageBase64: string; imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp' } => img !== null)
+      const referenceImages = [...libraryImages, ...adhocImages]
       const drafts = await generateThreadVariantsWithReferences({
         apiKey,
         topic,
@@ -245,6 +259,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
     } finally {
       setVariantRunning(false)
       setTodaySpend(getTodaySpendUsd())
+      setAdhocFiles([])
     }
   }
 
@@ -321,9 +336,32 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
               })}
             </div>
           )}
+
+          <div className="mb-2">
+            <label className="mb-1 block text-[11px] text-[var(--text-faint)]">
+              또는 지금 바로 첨부 (라이브러리에 저장 안 하고 이번만 참고)
+            </label>
+            <input
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => setAdhocFiles(Array.from(e.target.files ?? []))}
+              className="block w-full text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
+            />
+            {adhocFiles.length > 0 && (
+              <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">{adhocFiles.length}장 선택됨</p>
+            )}
+          </div>
+
           <button
             type="button"
-            disabled={!apiKey || refIds.length === 0 || topic.trim().length === 0 || variantRunning || overBudget}
+            disabled={
+              !apiKey ||
+              (refIds.length === 0 && adhocFiles.length === 0) ||
+              topic.trim().length === 0 ||
+              variantRunning ||
+              overBudget
+            }
             onClick={() => void runVariantCycle()}
             className="w-full rounded-lg border border-[var(--accent)] py-2 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-40"
           >

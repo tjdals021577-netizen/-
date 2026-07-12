@@ -23,9 +23,14 @@
 - 화면: `src/components/screens/AgencyScreen.tsx`
 - 저장소: `src/lib/agencyStore.ts` (localStorage) + Supabase `agency_clients` 테이블
 - 온보딩: 구글폼 응답 + 스레드 링크를 텍스트로 붙여넣으면 AI가 페르소나 자동 정리
-  (`src/agents/agencyOnboarding.ts`)
+  (`src/agents/agencyOnboarding.ts`). 여기서 레퍼런스 이미지도 같이 넣을 수 있는데,
+  라이브러리에서 골라도 되고 그 자리에서 바로 사진을 올려도 됨(올린 사진은 자동으로
+  레퍼런스 라이브러리에 그 클라이언트 이름으로 저장돼 `referenceImageIds`에 연결됨)
 - 클라이언트당 "오늘 초안 5개 생성" 버튼 — 버즈 로직 재사용, 클라이언트의 `persona`를
-  브랜드 보이스로 사용. 항상 브랜드는 `마잘남`으로 고정 기록(대행 서비스 자체가 마잘남 사업이므로)
+  브랜드 보이스로 사용. 레퍼런스가 지정돼 있으면 매번 비전 호출로 스타일도 함께 참고함.
+  항상 브랜드는 `마잘남`으로 고정 기록(대행 서비스 자체가 마잘남 사업이므로)
+- "레퍼런스로 재요청" 버튼: 초안이 마음에 안 들 때 새 레퍼런스(라이브러리 선택 또는
+  그 자리에서 직접 첨부, 둘 다 가능)를 넣고 채점 없이 시안 3개를 바로 받는 기능
 - 계약 연장/일시중단/재개 시 종료일 자동 계산 (`daysRemaining`, `pausedDaysSoFar` 등)
 
 ## 팀 채팅
