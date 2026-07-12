@@ -3,7 +3,11 @@ import { PreviewBanner } from './PreviewBanner'
 import { ApiKeyBar } from '../ApiKeyBar'
 import { getStoredApiKey, setStoredApiKey } from '../../lib/apiKey'
 import { parseAgencyOnboarding } from '../../agents/agencyOnboarding'
-import { generateThreadDraft, runThreadReview } from '../../agents/runThreadReview'
+import {
+  generateThreadDraft,
+  runThreadReview,
+  generateThreadVariantsWithReferences,
+} from '../../agents/runThreadReview'
 import {
   listClients,
   createClient,
@@ -17,19 +21,82 @@ import {
   daysElapsed,
   pausedDaysSoFar,
 } from '../../lib/agencyStore'
+import { listReferences, getReferencesByIds } from '../../lib/referenceStore'
 import { startWorkLog, finishWorkLog } from '../../lib/workLog'
 import { submitForApproval } from '../../lib/approvalStore'
 import { createEntry } from '../../lib/calendarStore'
 import { getTodaySpendUsd, isOverDailyBudget, DAILY_BUDGET_USD } from '../../lib/budgetGuard'
 import { PASS_THRESHOLD } from '../../types/domain'
 import type { AgencyClient, DraftAttempt } from '../../types/agency'
+import type { ThreadDraft } from '../../types/thread'
 
 const DRAFT_COUNT = 5
+const REREQUEST_VARIANT_COUNT = 3
 
 function buildDraftsHtml(attempts: DraftAttempt[]): string {
   return attempts
     .map((a, i) => `<b>${i + 1}. ${a.review.totalScore}점</b><br/>${a.draft.text.replace(/\n/g, '<br/>')}`)
     .join('<br/><br/>')
+}
+
+function buildVariantsHtml(drafts: ThreadDraft[]): string {
+  return drafts
+    .map((d, i) => `<b>시안 ${i + 1}</b><br/>${d.text.replace(/\n/g, '<br/>')}`)
+    .join('<br/><br/>')
+}
+
+function toVisionImages(referenceImageIds: string[]) {
+  return getReferencesByIds(referenceImageIds).map((r) => ({
+    imageBase64: r.imageBase64,
+    imageMediaType: r.mediaType,
+  }))
+}
+
+function ReferencePicker({
+  references,
+  selectedIds,
+  onToggle,
+}: {
+  references: ReturnType<typeof listReferences>
+  selectedIds: string[]
+  onToggle: (id: string) => void
+}) {
+  if (references.length === 0) {
+    return (
+      <p className="text-[11px] text-[var(--text-faint)]">
+        레퍼런스 라이브러리가 비어있습니다 — 설정 탭에서 먼저 이미지를 등록하세요.
+      </p>
+    )
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {references.map((r) => {
+        const selected = selectedIds.includes(r.id)
+        return (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => onToggle(r.id)}
+            title={r.label}
+            className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 ${
+              selected ? 'border-[var(--accent)]' : 'border-transparent'
+            }`}
+          >
+            <img
+              src={`data:${r.mediaType};base64,${r.imageBase64}`}
+              alt={r.label}
+              className="h-full w-full object-cover"
+            />
+            {selected && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-bold text-white">
+                ✓
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 function statusLabel(client: AgencyClient): { text: string; tone: 'done' | 'planned' | 'muted' } {
@@ -48,12 +115,20 @@ function chipClass(tone: 'done' | 'planned' | 'muted'): string {
 export function AgencyScreen() {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [clients, setClients] = useState<AgencyClient[]>(() => listClients())
+  const [references] = useState(() => listReferences())
   const [onboardingText, setOnboardingText] = useState('')
+  const [onboardRefIds, setOnboardRefIds] = useState<string[]>([])
   const [onboarding, setOnboarding] = useState(false)
   const [onboardError, setOnboardError] = useState<string | null>(null)
   const [busyClientId, setBusyClientId] = useState<string | null>(null)
   const [memoDrafts, setMemoDrafts] = useState<Record<string, string>>({})
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
+
+  // "레퍼런스 넣어 재요청" — 카드별로 새 레퍼런스를 골라서 3개 시안을 받는다.
+  const [reRequestClientId, setReRequestClientId] = useState<string | null>(null)
+  const [reRequestRefIds, setReRequestRefIds] = useState<string[]>([])
+  const [reRequesting, setReRequesting] = useState(false)
+  const [reRequestVariants, setReRequestVariants] = useState<Record<string, ThreadDraft[]>>({})
 
   useEffect(() => {
     const drafts: Record<string, string> = {}
@@ -82,14 +157,34 @@ export function AgencyScreen() {
         business: result.business,
         persona: result.persona,
         threadUrl: result.threadUrl,
+        referenceImageIds: onboardRefIds,
       })
       setOnboardingText('')
+      setOnboardRefIds([])
       refresh()
     } catch (err) {
       setOnboardError(err instanceof Error ? err.message : String(err))
     } finally {
       setOnboarding(false)
     }
+  }
+
+  function toggleOnboardRef(id: string) {
+    setOnboardRefIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]))
+  }
+
+  function toggleReRequestRef(id: string) {
+    setReRequestRefIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]))
+  }
+
+  function openReRequest(client: AgencyClient) {
+    setReRequestClientId(client.id)
+    setReRequestRefIds(client.referenceImageIds)
+  }
+
+  function closeReRequest() {
+    setReRequestClientId(null)
+    setReRequestRefIds([])
   }
 
   function handleExtend(id: string) {
@@ -124,6 +219,7 @@ export function AgencyScreen() {
       note: '오늘 초안 5건 생성',
     })
     try {
+      const referenceImages = toVisionImages(client.referenceImageIds)
       const attempts: DraftAttempt[] = []
       for (let i = 0; i < DRAFT_COUNT; i++) {
         const draft = await generateThreadDraft({
@@ -134,6 +230,7 @@ export function AgencyScreen() {
             ...client.recentDraftTexts,
             ...attempts.map((a) => a.draft.text),
           ],
+          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         })
         const review = await runThreadReview({ apiKey, draft })
         attempts.push({ draft, review })
@@ -186,6 +283,71 @@ export function AgencyScreen() {
     }
   }
 
+  // 초안이 마음에 안 들 때 — 새 레퍼런스 이미지를 넣고 채점/재생성 루프 없이
+  // 바로 3개 시안을 받아서 그중 고르게 한다(반복 API 호출로 비용 쌓는 대신).
+  async function handleReRequestVariants(client: AgencyClient) {
+    if (!apiKey || isOverDailyBudget() || reRequestRefIds.length === 0) return
+    setReRequesting(true)
+    const spendBefore = getTodaySpendUsd()
+    const logId = startWorkLog({
+      agent: 'buzz',
+      brand: '마잘남',
+      kind: `대행 — ${client.name} (레퍼런스 재요청)`,
+      note: `레퍼런스 ${reRequestRefIds.length}장으로 시안 ${REREQUEST_VARIANT_COUNT}개 요청`,
+    })
+    try {
+      const referenceImages = toVisionImages(reRequestRefIds)
+      const drafts = await generateThreadVariantsWithReferences({
+        apiKey,
+        topic: `${client.business} 관련 스레드 게시물`,
+        brandVoice: client.persona,
+        referenceImages,
+        variantCount: REREQUEST_VARIANT_COUNT,
+      })
+      setReRequestVariants((prev) => ({ ...prev, [client.id]: drafts }))
+      const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
+      finishWorkLog(logId, {
+        status: 'done',
+        statusLabel: '완료',
+        costUsd: cycleCost,
+        note: `레퍼런스 재요청 시안 ${drafts.length}개`,
+        detailHtml: buildVariantsHtml(drafts),
+      })
+      const title = `${client.name} — 레퍼런스 재요청 시안 ${drafts.length}개`
+      const contentHtml = buildVariantsHtml(drafts)
+      submitForApproval({
+        agent: 'buzz',
+        brand: '마잘남',
+        title,
+        contentHtml,
+        passed: false,
+        scoreLabel: `레퍼런스 재요청 · 시안 ${drafts.length}개`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand: '마잘남',
+        channel: 'agency',
+        title,
+        status: 'open',
+        note: '레퍼런스 재요청 시안 — 결재함에서 확인 후 선택',
+        contentHtml,
+        sourceWorkLogId: logId,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      finishWorkLog(logId, {
+        status: 'error',
+        statusLabel: '오류',
+        note: '레퍼런스 재요청 실패',
+        detailHtml: message,
+      })
+    } finally {
+      setReRequesting(false)
+      setTodaySpend(getTodaySpendUsd())
+    }
+  }
+
   return (
     <div>
       <PreviewBanner message="구글폼 응답 + 스레드 링크를 붙여넣으면 페르소나를 자동으로 정리해서 카드가 생성됩니다. 계약 날짜·연장·일시중단·초안 생성까지 실제로 동작합니다." />
@@ -201,6 +363,12 @@ export function AgencyScreen() {
           rows={4}
           className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
         />
+        <div>
+          <p className="mb-1 text-[11px] font-medium text-[var(--text-dim)]">
+            카피라이팅 레퍼런스 (선택 — 고르면 매일 초안 생성 시 스타일을 참고합니다)
+          </p>
+          <ReferencePicker references={references} selectedIds={onboardRefIds} onToggle={toggleOnboardRef} />
+        </div>
         <button
           type="button"
           disabled={!apiKey || onboardingText.trim().length === 0 || onboarding}
@@ -292,6 +460,49 @@ export function AgencyScreen() {
                   </details>
                 )}
 
+                {reRequestVariants[client.id] && (
+                  <div className="mb-2 space-y-1.5 rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] p-2 text-xs">
+                    <p className="font-semibold text-[var(--accent)]">레퍼런스 재요청 시안 (결재함에도 저장됨)</p>
+                    {reRequestVariants[client.id].map((d, i) => (
+                      <p key={i} className="whitespace-pre-wrap rounded-lg bg-[var(--surface)] p-2 text-[11px] text-[var(--text-dim)]">
+                        <span className="font-mono text-[10px] text-[var(--text-faint)]">시안 {i + 1}</span>
+                        <br />
+                        {d.text}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {reRequestClientId === client.id && (
+                  <div className="mb-2 space-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2">
+                    <p className="text-[11px] font-medium text-[var(--text-dim)]">
+                      새 레퍼런스를 골라주세요 — 지금 초안이 마음에 안 들 때, 이 이미지들 스타일로 시안 {REREQUEST_VARIANT_COUNT}개를 새로 받습니다.
+                    </p>
+                    <ReferencePicker
+                      references={references}
+                      selectedIds={reRequestRefIds}
+                      onToggle={toggleReRequestRef}
+                    />
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={!apiKey || reRequesting || reRequestRefIds.length === 0 || isOverDailyBudget()}
+                        onClick={() => void handleReRequestVariants(client)}
+                        className="flex-1 rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {reRequesting ? '시안 생성 중…' : `${REREQUEST_VARIANT_COUNT}개 시안 받기`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeReRequest}
+                        className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
+                      >
+                        닫기
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
@@ -314,6 +525,13 @@ export function AgencyScreen() {
                     className="flex-1 rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {busyClientId === client.id ? '생성 중…' : '오늘 초안 5개 생성'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => (reRequestClientId === client.id ? closeReRequest() : openReRequest(client))}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
+                  >
+                    레퍼런스로 재요청
                   </button>
                   <button
                     type="button"

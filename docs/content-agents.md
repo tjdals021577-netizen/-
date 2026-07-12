@@ -15,6 +15,11 @@
 - 로직: `src/agents/runThreadReview.ts`, `src/agents/threadPrompts.ts`, `src/agents/threadRubric.ts`
 - 흐름: 라이터와 비슷하지만 위원회가 1인, 기준 4개(직관성·명확성·단순함·간결성) × 25점
 - 대행 클라이언트용 스레드도 같은 로직 재사용 (`AgencyScreen.tsx`에서 직접 호출)
+- **레퍼런스 이미지 모드**: 설정 탭 레퍼런스 라이브러리에서 이미지를 골라 첨부하면, 채점/재생성
+  루프 대신 `generateThreadVariantsWithReferences()`(비전 호출)로 스타일만 참고한 시안 3개를
+  한 번에 받는다 — API를 반복 호출하지 않고 사람이 직접 고르는 용도. 대행 클라이언트는 온보딩
+  시 레퍼런스를 지정해두면 매일 초안 5개 생성에도 자동 반영되고("레퍼런스로 재요청" 버튼으로
+  마음에 안 들 때 새 레퍼런스 넣어 시안 3개를 다시 받을 수도 있음).
 
 ## 리믹서 (유튜브 기획)
 - 화면: `src/components/RemixComposer.tsx` (운영실 → 유튜브 기획 탭)

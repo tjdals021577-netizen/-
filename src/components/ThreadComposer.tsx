@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { ApiKeyBar } from './ApiKeyBar'
 import { getStoredApiKey, setStoredApiKey } from '../lib/apiKey'
-import { generateThreadDraft, runThreadReview } from '../agents/runThreadReview'
+import {
+  generateThreadDraft,
+  runThreadReview,
+  generateThreadVariantsWithReferences,
+} from '../agents/runThreadReview'
 import { THREAD_RUBRIC } from '../agents/threadRubric'
 import type { ThreadDraft, ThreadReview } from '../types/thread'
 import { PASS_THRESHOLD } from '../types/domain'
@@ -14,6 +18,9 @@ import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
+import { listReferences, getReferencesByIds } from '../lib/referenceStore'
+
+const VARIANT_COUNT = 3
 
 const SEVERITY_LABEL: Record<string, string> = {
   risk: '반드시 확인',
@@ -45,6 +52,12 @@ function buildApprovalHtml(draft: ThreadDraft, review: ThreadReview): string {
   return `<span style="opacity:.7">${review.summary}</span><br/><br/>${body}${flagsBlock}`
 }
 
+function buildVariantsHtml(drafts: ThreadDraft[]): string {
+  return drafts
+    .map((d, i) => `<b>시안 ${i + 1}</b><br/>${d.text.replace(/\n/g, '<br/>')}`)
+    .join('<br/><br/>')
+}
+
 export function ThreadComposer({ brand }: { brand: Brand }) {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [topic, setTopic] = useState('')
@@ -54,6 +67,14 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
   const [running, setRunning] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
+
+  // 레퍼런스 이미지를 넣으면 채점/재생성 루프 대신 시안 여러 개를 한 번에
+  // 받아서 사람이 직접 고르는 모드로 전환된다.
+  const [references] = useState(() => listReferences())
+  const [refIds, setRefIds] = useState<string[]>([])
+  const [variants, setVariants] = useState<ThreadDraft[] | null>(null)
+  const [variantRunning, setVariantRunning] = useState(false)
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
   function handleApiKeyChange(key: string) {
     setApiKey(key)
@@ -150,6 +171,89 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
     void runCycle(feedback, draft)
   }
 
+  function toggleRef(id: string) {
+    setRefIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]))
+  }
+
+  async function runVariantCycle() {
+    if (!apiKey || refIds.length === 0 || topic.trim().length === 0) return
+    if (isOverDailyBudget()) {
+      setErrorMessage(`오늘 예산 한도($${DAILY_BUDGET_USD})를 초과해서 중단했습니다. 내일 다시 시도해주세요.`)
+      return
+    }
+    setVariantRunning(true)
+    setErrorMessage(null)
+    setVariants(null)
+    const spendBefore = getTodaySpendUsd()
+    const logId = startWorkLog({
+      agent: 'buzz',
+      brand,
+      kind: '레퍼런스 시안',
+      note: topic,
+    })
+    try {
+      const referenceImages = getReferencesByIds(refIds).map((r) => ({
+        imageBase64: r.imageBase64,
+        imageMediaType: r.mediaType,
+      }))
+      const drafts = await generateThreadVariantsWithReferences({
+        apiKey,
+        topic,
+        brandVoice: BRAND_CONTEXT[brand],
+        referenceImages,
+        variantCount: VARIANT_COUNT,
+      })
+      setVariants(drafts)
+      const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
+      finishWorkLog(logId, {
+        status: 'done',
+        statusLabel: '완료',
+        costUsd: cycleCost,
+        note: `레퍼런스 시안 ${drafts.length}개`,
+        detailHtml: buildVariantsHtml(drafts),
+      })
+      const title = `레퍼런스 시안 — ${topic}`
+      const contentHtml = buildVariantsHtml(drafts)
+      submitForApproval({
+        agent: 'buzz',
+        brand,
+        title,
+        contentHtml,
+        passed: false,
+        scoreLabel: `레퍼런스 시안 ${drafts.length}개`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand,
+        channel: 'thread',
+        title,
+        status: 'open',
+        note: '레퍼런스 시안 — 결재함에서 확인 후 선택',
+        contentHtml,
+        sourceWorkLogId: logId,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setErrorMessage(message)
+      finishWorkLog(logId, {
+        status: 'error',
+        statusLabel: '오류',
+        note: '레퍼런스 시안 생성 실패',
+        detailHtml: message,
+      })
+    } finally {
+      setVariantRunning(false)
+      setTodaySpend(getTodaySpendUsd())
+    }
+  }
+
+  async function handleCopyVariant(text: string, index: number) {
+    await navigator.clipboard.writeText(text)
+    setCopiedIndex(index)
+    setTimeout(() => setCopiedIndex((cur) => (cur === index ? null : cur)), 2000)
+  }
+
   return (
     <div className="space-y-4">
       <header>
@@ -185,6 +289,48 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
         >
           {running ? '작성 + 채점 진행 중…' : '초안 작성 + 심사 시작'}
         </button>
+
+        <div className="border-t border-[var(--border)] pt-3">
+          <p className="mb-1 text-xs font-medium text-[var(--text-dim)]">
+            레퍼런스 이미지로 시안 {VARIANT_COUNT}개 받기 (선택 — 채점 없이 스타일만 참고해서 후보만 제시)
+          </p>
+          {references.length === 0 ? (
+            <p className="text-[11px] text-[var(--text-faint)]">
+              레퍼런스 라이브러리가 비어있습니다 — 설정 탭에서 먼저 이미지를 등록하세요.
+            </p>
+          ) : (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {references.map((r) => {
+                const selected = refIds.includes(r.id)
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => toggleRef(r.id)}
+                    title={r.label}
+                    className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 ${
+                      selected ? 'border-[var(--accent)]' : 'border-transparent'
+                    }`}
+                  >
+                    <img src={`data:${r.mediaType};base64,${r.imageBase64}`} alt={r.label} className="h-full w-full object-cover" />
+                    {selected && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-bold text-white">✓</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={!apiKey || refIds.length === 0 || topic.trim().length === 0 || variantRunning || overBudget}
+            onClick={() => void runVariantCycle()}
+            className="w-full rounded-lg border border-[var(--accent)] py-2 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {variantRunning ? '시안 생성 중…' : `레퍼런스로 시안 ${VARIANT_COUNT}개 받기`}
+          </button>
+        </div>
+
         {!apiKey && (
           <p className="text-center text-[11px] text-[var(--planned)]">
             먼저 위에서 Anthropic API 키를 저장하세요.
@@ -204,6 +350,29 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
       {errorMessage && (
         <div className="rounded-xl border border-[var(--open)] bg-[var(--open-soft)] p-3 text-sm text-[var(--open)]">
           {errorMessage}
+        </div>
+      )}
+
+      {variants && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-[var(--text-dim)]">
+            레퍼런스 시안 {variants.length}개 (결재함에도 저장됨) — 마음에 드는 걸 복사해서 쓰세요.
+          </p>
+          {variants.map((v, i) => (
+            <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-bold text-[var(--accent)]">시안 {i + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyVariant(v.text, i)}
+                  className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11px] font-semibold text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
+                >
+                  {copiedIndex === i ? '복사됨 ✓' : '복사'}
+                </button>
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text)]">{v.text}</p>
+            </div>
+          ))}
         </div>
       )}
 

@@ -42,8 +42,7 @@ export async function analyzeScreenshot(params: {
     apiKey,
     system: buildCoachVisionSystemPrompt(),
     user: buildCoachVisionUserPrompt(context),
-    imageBase64,
-    imageMediaType,
+    images: [{ imageBase64, imageMediaType }],
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   return parseAnalysis(raw)

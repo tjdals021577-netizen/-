@@ -52,6 +52,44 @@ export function buildThreadDraftUserPrompt(params: {
   return `[주제]\n${topic}${revisionBlock}\n\n위 내용으로 스레드 포스트를 작성하고 JSON으로만 답하세요.`
 }
 
+export function buildThreadReferenceSystemPrompt(params: {
+  brandVoice?: string
+  variantCount: number
+}): string {
+  const { brandVoice, variantCount } = params
+  const voiceBlock = brandVoice
+    ? `[브랜드 목소리]\n${brandVoice}`
+    : '[브랜드 목소리]\n(아직 설정되지 않음 — 마잘남 특유의 실용적이고 직설적인 톤으로 작성)'
+
+  return `당신은 마잘남의 스레드 콘텐츠 작가입니다.
+
+${voiceBlock}
+
+${ALGO_KNOWLEDGE}
+
+${CONFIDENTIALITY_RULE}
+
+첨부된 이미지는 카피라이팅 레퍼런스입니다. 이미지 속 문구의 후킹 방식·문장 구조·톤앤매너를
+분석해서 그 스타일을 참고해 작성하세요(이미지 문구를 그대로 베끼지 말고 스타일만 차용).
+
+주어진 주제로 서로 다른 접근의 스레드 포스트 시안을 정확히 ${variantCount}개 작성하세요.
+${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해야 합니다.
+
+규칙:
+1. 각 시안은 스레드 특성에 맞게 짧고 임팩트 있게. 첫 줄이 훅이 되어야 한다.
+2. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
+
+JSON 스키마:
+{ "drafts": [ { "text": string } ] }`
+}
+
+export function buildThreadReferenceUserPrompt(params: {
+  topic: string
+  variantCount: number
+}): string {
+  return `[주제]\n${params.topic}\n\n첨부된 레퍼런스 이미지의 카피라이팅 스타일을 참고해서 서로 다른 시안 ${params.variantCount}개를 작성하고 JSON으로만 답하세요.`
+}
+
 export function buildThreadReviewSystemPrompt(): string {
   const rubricText = THREAD_RUBRIC.map(
     (c) => `- ${c.label} (${c.weight}점): ${c.description}`,

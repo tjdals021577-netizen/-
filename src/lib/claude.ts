@@ -149,13 +149,18 @@ export async function callClaudeJsonWithWebSearch(params: {
   return parseJsonResponse(lastTextBlock(response.content))
 }
 
-// 코치의 네이버 통계 스크린샷 분석처럼 이미지를 읽어야 하는 호출용.
+export interface VisionImageInput {
+  imageBase64: string
+  imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+}
+
+// 코치의 네이버 통계 스크린샷 분석, 레퍼런스 이미지 기반 카피라이팅처럼
+// 이미지를 읽어야 하는 호출용. 이미지 여러 장을 한 번에 참고시킬 수 있다.
 export async function callClaudeVisionJson(params: {
   apiKey: string
   system: string
   user: string
-  imageBase64: string
-  imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+  images: VisionImageInput[]
   maxTokens?: number
   timeoutMs?: number
   onUsage?: UsageCallback
@@ -164,8 +169,7 @@ export async function callClaudeVisionJson(params: {
     apiKey,
     system,
     user,
-    imageBase64,
-    imageMediaType,
+    images,
     maxTokens = 2048,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
@@ -181,15 +185,15 @@ export async function callClaudeVisionJson(params: {
         {
           role: 'user',
           content: [
-            {
-              type: 'image',
+            ...images.map((img) => ({
+              type: 'image' as const,
               source: {
-                type: 'base64',
-                media_type: imageMediaType,
-                data: imageBase64,
+                type: 'base64' as const,
+                media_type: img.imageMediaType,
+                data: img.imageBase64,
               },
-            },
-            { type: 'text', text: user },
+            })),
+            { type: 'text' as const, text: user },
           ],
         },
       ],

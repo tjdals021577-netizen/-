@@ -63,6 +63,7 @@ export function createClient(params: {
   threadUrl: string
   startDate?: string
   monthlyFeeKrw?: number
+  referenceImageIds?: string[]
 }): AgencyClient {
   const startDate = params.startDate ?? toIsoDate(new Date())
   const now = new Date().toISOString()
@@ -80,6 +81,7 @@ export function createClient(params: {
     history: [{ date: now, type: 'start', note: `계약 시작 ${startDate}` }],
     todayDrafts: [],
     recentDraftTexts: [],
+    referenceImageIds: params.referenceImageIds ?? [],
     createdAt: now,
   }
   writeAll([...readAll(), client])
@@ -146,6 +148,15 @@ export function resumeClient(id: string): AgencyClient | undefined {
 
 export function saveMemo(id: string, memo: string): AgencyClient | undefined {
   return updateClient(id, (c) => ({ ...c, memo }))
+}
+
+export function saveReferenceImages(
+  id: string,
+  referenceImageIds: string[],
+): AgencyClient | undefined {
+  const result = updateClient(id, (c) => ({ ...c, referenceImageIds }))
+  if (result) syncToSupabase('agency_clients', result)
+  return result
 }
 
 const MAX_RECENT_DRAFTS = 30
