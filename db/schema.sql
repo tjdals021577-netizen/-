@@ -99,6 +99,23 @@ create table if not exists brain_reports (
 );
 create index if not exists brain_reports_brand_idx on brain_reports (brand, created_at desc);
 
+-- 레이더(GA4 등 외부 성과 데이터)가 매일 수집한 스냅샷 — 모닝 브리핑이 참고하고,
+-- 대시보드가 방문자/유입경로 등을 표시할 때 이 테이블의 최신 행을 읽는다.
+create table if not exists radar_snapshots (
+  id text primary key,
+  brand text not null,
+  source text not null,
+  period_label text not null,
+  sessions integer not null default 0,
+  active_users integer not null default 0,
+  conversions integer not null default 0,
+  top_pages jsonb not null default '[]',
+  traffic_sources jsonb not null default '[]',
+  created_at timestamptz not null,
+  synced_at timestamptz not null default now()
+);
+create index if not exists radar_snapshots_brand_idx on radar_snapshots (brand, created_at desc);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -124,6 +141,7 @@ alter table calendar_entries enable row level security;
 alter table agency_clients enable row level security;
 alter table reference_images enable row level security;
 alter table brain_reports enable row level security;
+alter table radar_snapshots enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -148,3 +166,7 @@ create policy "update reference_images" on reference_images for update to public
 create policy "select brain_reports" on brain_reports for select to public using (true);
 create policy "insert brain_reports" on brain_reports for insert to public with check (true);
 create policy "update brain_reports" on brain_reports for update to public using (true) with check (true);
+
+create policy "select radar_snapshots" on radar_snapshots for select to public using (true);
+create policy "insert radar_snapshots" on radar_snapshots for insert to public with check (true);
+create policy "update radar_snapshots" on radar_snapshots for update to public using (true) with check (true);

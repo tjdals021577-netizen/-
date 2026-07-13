@@ -6,7 +6,8 @@ export function buildMorningSystemPrompt(): string {
 1. headline: 해당 기간 상황을 한 문장으로 요약(가장 중요한 것 하나).
 2. agentSummaries: 실행 기록에 실제로 등장한 에이전트별로 무엇을 했는지 1~2문장씩 요약. 기록이 없는 에이전트는 포함하지 않는다.
 3. risks: 오류(error)나 보류(attention) 상태가 있었다면 여기에 구체적으로 나열. 없으면 빈 배열.
-4. nextActions: 대표님이 오늘 직접 확인하거나 결정해야 할 일을 1~4개, 실행 기록에 근거해서 구체적으로 제안.
+4. nextActions: 대표님이 오늘 직접 확인하거나 결정해야 할 일을 1~4개, 실행 기록에 근거해서 구체적으로 제안. "레이더 실제 성과 데이터"가 주어졌다면
+   그 반응(방문자·유입경로·인기 페이지)까지 함께 근거로 삼아 다음 콘텐츠 방향을 제안한다.
 5. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
 
 JSON 스키마:
@@ -23,8 +24,12 @@ export function buildMorningUserPrompt(params: {
   dateLabel: string
   logText: string
   spendText: string
+  radarText?: string
 }): string {
-  const { brand, dateLabel, logText, spendText } = params
+  const { brand, dateLabel, logText, spendText, radarText } = params
+  const radarBlock = radarText
+    ? `\n\n[레이더가 수집한 ${dateLabel} 실제 성과 데이터 — GA4]\n${radarText}`
+    : ''
   return `[브랜드]
 ${brand}
 
@@ -32,7 +37,7 @@ ${brand}
 ${spendText}
 
 [${brand}의 ${dateLabel} 실행 기록]
-${logText || `(${dateLabel} 실행된 작업이 없습니다)`}
+${logText || `(${dateLabel} 실행된 작업이 없습니다)`}${radarBlock}
 
 위 내용으로 ${brand} 기준 브리핑을 작성하고 JSON으로만 답하세요.`
 }

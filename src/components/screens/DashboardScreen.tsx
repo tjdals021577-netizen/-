@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { getWorkLog } from '../../lib/workLog'
+import { fetchLatestRadarSnapshot, type RadarSnapshot } from '../../lib/radarStore'
 import { CoachPanel } from '../CoachPanel'
 import { MorningPanel } from '../MorningPanel'
 import { PreviewBanner } from './PreviewBanner'
@@ -14,11 +16,28 @@ function todaySpendForBrand(brand: Brand): number {
 
 function BrandSection({ brand }: { brand: Brand }) {
   const spend = todaySpendForBrand(brand)
+  const [radar, setRadar] = useState<RadarSnapshot | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchLatestRadarSnapshot(brand).then((snap) => {
+      if (!cancelled) setRadar(snap)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [brand])
+
+  const topSource = radar?.trafficSources[0]
+  const topPage = radar?.topPages[0]
   const stats = [
-    { label: '어제 방문자', value: '—' },
-    { label: '1위 유입경로', value: '—' },
-    { label: '결제 전환', value: '—' },
-    { label: '블로그 성과', value: '—' },
+    {
+      label: `${radar?.periodLabel ?? '어제'} 방문자`,
+      value: radar ? `${radar.activeUsers}명` : '—',
+    },
+    { label: '1위 유입경로', value: topSource ? topSource.source : '—' },
+    { label: '인기 페이지', value: topPage ? topPage.path : '—' },
+    { label: '전환(이벤트)', value: radar ? `${radar.conversions}건` : '—' },
     { label: '오늘 사용액(추정)', value: `$${spend.toFixed(3)}` },
   ]
 
@@ -42,7 +61,7 @@ export function DashboardScreen() {
 
   return (
     <div>
-      <PreviewBanner message="방문자·유입경로·결제 전환·블로그 성과는 Phase 4에서 GA4·아임웹 연동 후 브랜드별 실제 숫자로 채워집니다. API 사용액만 지금도 실제 값입니다." />
+      <PreviewBanner message="업메리는 레이더(GA4)가 연결돼 매일 아침 실제 방문자·유입경로 숫자가 채워집니다. 마잘남은 아직 GA4 미연결이라 '—'로 보입니다. 결제 전환은 GA4에 전환 이벤트를 등록해야 값이 잡힙니다." />
 
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--text)]">

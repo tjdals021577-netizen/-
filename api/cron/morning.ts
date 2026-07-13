@@ -23,6 +23,29 @@ interface WorkLogRow {
   note: string
 }
 
+interface RadarSnapshotRow {
+  period_label: string
+  sessions: number
+  active_users: number
+  conversions: number
+  top_pages: { path: string; views: number }[]
+  traffic_sources: { source: string; sessions: number }[]
+}
+
+async function buildRadarText(brand: string): Promise<string | undefined> {
+  const rows = await supabaseSelect<RadarSnapshotRow>(
+    'radar_snapshots',
+    `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1&select=period_label,sessions,active_users,conversions,top_pages,traffic_sources`,
+  )
+  const snap = rows[0]
+  if (!snap) return undefined
+  const topPage = snap.top_pages[0]
+  const topSource = snap.traffic_sources[0]
+  return `${snap.period_label} 방문자 ${snap.active_users}명 / 세션 ${snap.sessions}회 / 전환 ${snap.conversions}건
+1위 유입경로: ${topSource ? `${topSource.source} (세션 ${topSource.sessions}회)` : '(데이터 없음)'}
+1위 인기 페이지: ${topPage ? `${topPage.path} (조회 ${topPage.views}회)` : '(데이터 없음)'}`
+}
+
 interface MorningBriefing {
   headline: string
   agentSummaries: { agent: string; summary: string }[]
@@ -99,12 +122,13 @@ export default async function handler(req: Request): Promise<Response> {
     )
     const logText = buildLogText(rows)
     const spendText = `$${rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0).toFixed(3)}`
+    const radarText = await buildRadarText(brand)
 
     let costUsd = 0
     const raw = await callClaudeJson({
       apiKey,
       system: buildMorningSystemPrompt(),
-      user: buildMorningUserPrompt({ brand, dateLabel, logText, spendText }),
+      user: buildMorningUserPrompt({ brand, dateLabel, logText, spendText, radarText }),
       maxTokens: 2048,
       onUsage: (usage) => {
         costUsd = estimateCostUsd(usage)
