@@ -192,7 +192,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (accessToken) {
         await sendKakaoMemoToSelf({
           accessToken,
-          text: `☀️ ${dateLabel} 브리핑\n\n${kakaoLines.join('\n')}`,
+          text: `☀️ ${dateLabel} 브리핑\n\n${kakaoLines.join('\n')}\n\nhttps://topaz-omega-46.vercel.app`,
         })
         results.push('카카오 알림: 전송 완료')
       } else {
