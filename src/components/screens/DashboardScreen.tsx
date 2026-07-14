@@ -15,6 +15,15 @@ function todaySpendForBrand(brand: Brand): number {
     .reduce((sum, e) => sum + (e.costUsd ?? 0), 0)
 }
 
+// blog.naver.com/멘토아이디/글번호 형태의 리퍼러에서 "누구의 블로그인지"
+// (아이디)를 뽑아 읽기 쉽게 보여준다 — 형태가 예상과 다르면 원본 그대로.
+function formatBlogReferrer(referrer: string): string {
+  const match = referrer.match(/blog\.naver\.com\/([^/?#]+)(?:\/(\d+))?/i)
+  if (!match) return referrer
+  const blogId = match[1]
+  return match[2] ? `${blogId}의 블로그 (글 ${match[2]})` : `${blogId}의 블로그`
+}
+
 function BrandSection({ brand }: { brand: Brand }) {
   const spend = todaySpendForBrand(brand)
   const [radar, setRadar] = useState<RadarSnapshot | null>(null)
@@ -78,6 +87,24 @@ function BrandSection({ brand }: { brand: Brand }) {
               <div key={p.landingPage} className="flex items-center justify-between gap-2 text-[12px]">
                 <span className="min-w-0 truncate text-[var(--text-dim)]">{p.landingPage || '/'}</span>
                 <span className="shrink-0 font-bold text-[var(--text)]">{p.sessions.toLocaleString('ko-KR')}명</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {radar && radar.blogReferrers.length > 0 && (
+        <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3">
+          <p className="mb-2 text-[11px] font-bold text-[var(--text-faint)]">
+            어느 네이버 블로그에서 왔는지 (앱에서 열면 안 잡힐 수 있어 잡힌 만큼만 표시)
+          </p>
+          <div className="space-y-1">
+            {radar.blogReferrers.map((r) => (
+              <div key={r.referrer} className="flex items-center justify-between gap-2 text-[12px]">
+                <span className="min-w-0 truncate text-[var(--text-dim)]" title={r.referrer}>
+                  {formatBlogReferrer(r.referrer)}
+                </span>
+                <span className="shrink-0 font-bold text-[var(--text)]">{r.views.toLocaleString('ko-KR')}회</span>
               </div>
             ))}
           </div>

@@ -14,6 +14,7 @@ export interface Ga4Report {
   topPages: { path: string; views: number }[]
   trafficSources: { source: string; sessions: number }[]
   naverLandingPages: { landingPage: string; sessions: number }[]
+  blogReferrers: { referrer: string; views: number }[]
 }
 
 interface RunReportResponse {
@@ -95,7 +96,7 @@ export async function fetchGa4Report(params: {
   const accessToken = await getAccessToken(key)
   const dateRanges = [{ startDate: params.startDate, endDate: params.endDate }]
 
-  const [summary, pages, sources, naverLandingPages] = await Promise.all([
+  const [summary, pages, sources, naverLandingPages, blogReferrers] = await Promise.all([
     runReport(accessToken, params.propertyId, {
       dateRanges,
       metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'conversions' }],
@@ -130,6 +131,24 @@ export async function fetchGa4Report(params: {
       orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
       limit: '5',
     }),
+    // 네이버 블로그에서 타고 들어온 원본 주소(리퍼러) 전체 — 주소에 블로그
+    // 아이디가 들어있어서(blog.naver.com/멘토아이디/글번호) 어느 멘토의 블로그
+    // 글에서 왔는지 구분할 수 있다. 멘토들이 UTM 링크를 써주지 않아도 되는
+    // 방법(대표님 요청). 단, 네이버 앱 내장 브라우저는 리퍼러를 잘라먹는
+    // 경우가 있어 잡히는 만큼만 보이는 best-effort 데이터다.
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'pageReferrer' }],
+      metrics: [{ name: 'screenPageViews' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'pageReferrer',
+          stringFilter: { matchType: 'CONTAINS', value: 'blog.naver', caseSensitive: false },
+        },
+      },
+      orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+      limit: '10',
+    }),
   ])
 
   const summaryValues = summary.rows?.[0]?.metricValues
@@ -148,6 +167,10 @@ export async function fetchGa4Report(params: {
     naverLandingPages: (naverLandingPages.rows ?? []).map((r) => ({
       landingPage: r.dimensionValues?.[0]?.value ?? '',
       sessions: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+    blogReferrers: (blogReferrers.rows ?? []).map((r) => ({
+      referrer: r.dimensionValues?.[0]?.value ?? '',
+      views: Number(r.metricValues?.[0]?.value ?? 0),
     })),
   }
 }

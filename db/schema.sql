@@ -116,6 +116,7 @@ create table if not exists radar_snapshots (
   top_pages jsonb not null default '[]',
   traffic_sources jsonb not null default '[]',
   naver_landing_pages jsonb not null default '[]',
+  blog_referrers jsonb not null default '[]',
   order_count integer,
   revenue_krw numeric,
   created_at timestamptz not null,
