@@ -67,7 +67,15 @@ async function pickTopic(brand: Brand, channel: 'blog' | 'youtube'): Promise<str
   const fresh = recommendations.find((r) => !usedTitles.has(r))
   if (fresh) return fresh
   if (recommendations.length > 0) return recommendations[0]
-  return `${BRAND_CONTEXT[brand]} — ${channel === 'blog' ? '오늘의 블로그 주제' : '오늘의 유튜브 기획 주제'} (브레인 리서치를 먼저 실행하면 더 구체적인 주제로 자동 선정됩니다)`
+  // 브레인 리포트가 아직 없을 때의 기본 주제 — 예전엔 BRAND_CONTEXT 전체
+  // 문장(브랜드 톤 설명 + 괄호 안 메타 설명)을 그대로 "주제"로 넘겨서, 웹서치
+  // 모델이 이상하게 긴 문장을 검색어처럼 다루다가 시간을 너무 오래 쓰는
+  // 문제가 실제로 있었다(업메리가 계속 타임아웃 났던 원인). 검색어로 쓰기
+  // 좋은 짧고 자연스러운 주제 하나만 준다 — 톤/맥락은 brandContext로 이미
+  // 별도 전달되니 여기서 다시 설명할 필요 없음.
+  return channel === 'blog'
+    ? `${brand} 고객들이 요즘 궁금해할 만한 블로그 주제 하나`
+    : `${brand} 관련 요즘 반응 좋은 숏폼 유튜브 주제 하나`
 }
 
 async function fetchTodayPhotos(date: string, brand: Brand): Promise<VisionImageInput[]> {
