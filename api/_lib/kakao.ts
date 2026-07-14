@@ -6,6 +6,8 @@ import { supabaseSelect, supabaseInsert } from './supabaseAdmin.js'
 
 const TOKEN_URL = 'https://kauth.kakao.com/oauth/token'
 const SEND_URL = 'https://kapi.kakao.com/v2/api/talk/memo/default/send'
+// 카톡 메시지의 "바로 확인" 버튼이 눌러야 할 앱 주소. 도메인이 바뀌면 여기만 고치면 된다.
+const APP_URL = 'https://topaz-omega-46.vercel.app'
 
 interface KakaoTokenRow {
   refresh_token: string
@@ -79,7 +81,8 @@ export async function sendKakaoMemoToSelf(params: { accessToken: string; text: s
   const templateObject = {
     object_type: 'text',
     text: params.text,
-    link: { web_url: 'https://kakao.com', mobile_web_url: 'https://kakao.com' },
+    link: { web_url: APP_URL, mobile_web_url: APP_URL },
+    button_title: '앱에서 확인하기',
   }
   const res = await fetch(SEND_URL, {
     method: 'POST',
