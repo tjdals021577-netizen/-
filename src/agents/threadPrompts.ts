@@ -1,4 +1,4 @@
-import { THREAD_RUBRIC } from './threadRubric'
+import { THREAD_RUBRIC } from './threadRubric.js'
 
 const ALGO_KNOWLEDGE = `[스레드 알고리즘 우대 신호]
 댓글(저장 포함) > 공유 > 조회수 > 좋아요 순으로 가중치가 높다고 알려져 있다.

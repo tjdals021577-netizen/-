@@ -1,10 +1,10 @@
-import { callClaudeVisionJson } from '../lib/claude'
-import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
+import { callClaudeVisionJson } from '../lib/claude.js'
+import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import {
   buildCoachVisionSystemPrompt,
   buildCoachVisionUserPrompt,
-} from './coachPrompts'
-import type { CoachAnalysis } from '../types/coach'
+} from './coachPrompts.js'
+import type { CoachAnalysis } from '../types/coach.js'
 
 function parseAnalysis(raw: unknown): CoachAnalysis {
   if (typeof raw !== 'object' || raw === null) {

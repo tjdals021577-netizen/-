@@ -1,4 +1,4 @@
-import type { RubricCriterion } from '../types/domain'
+import type { RubricCriterion } from '../types/domain.js'
 
 // 스레드 위원회(버즈) 품질 게이트 — 4개 항목 x 25점 = 100점.
 export const THREAD_RUBRIC: RubricCriterion[] = [

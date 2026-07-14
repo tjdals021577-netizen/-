@@ -1,4 +1,4 @@
-import type { CriterionScore, RevisionFlag } from './domain'
+import type { CriterionScore, RevisionFlag } from './domain.js'
 
 export type BlogRole = 'seo' | 'copywriting' | 'experience'
 

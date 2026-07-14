@@ -1,5 +1,5 @@
-import type { ReferenceImage, ReferenceMediaType } from '../types/reference'
-import { syncToSupabase } from './remoteSync'
+import type { ReferenceImage, ReferenceMediaType } from '../types/reference.js'
+import { syncToSupabase } from './remoteSync.js'
 
 const STORAGE_KEY = 'ai-ops:reference-library'
 // base64 이미지는 용량이 크다 — localStorage 5~10MB 한도를 넘기지 않도록

@@ -1,4 +1,4 @@
-import type { Brand } from './brand'
+import type { Brand } from './brand.js'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 

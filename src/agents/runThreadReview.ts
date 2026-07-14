@@ -1,5 +1,5 @@
-import { callClaudeJson, callClaudeVisionJson, type VisionImageInput } from '../lib/claude'
-import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
+import { callClaudeJson, callClaudeVisionJson, type VisionImageInput } from '../lib/claude.js'
+import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import {
   buildThreadDraftSystemPrompt,
   buildThreadDraftUserPrompt,
@@ -7,10 +7,10 @@ import {
   buildThreadReferenceUserPrompt,
   buildThreadReviewSystemPrompt,
   buildThreadReviewUserPrompt,
-} from './threadPrompts'
-import { THREAD_RUBRIC } from './threadRubric'
-import type { ThreadDraft, ThreadReview } from '../types/thread'
-import type { CriterionScore, FlagSeverity, RevisionFlag } from '../types/domain'
+} from './threadPrompts.js'
+import { THREAD_RUBRIC } from './threadRubric.js'
+import type { ThreadDraft, ThreadReview } from '../types/thread.js'
+import type { CriterionScore, FlagSeverity, RevisionFlag } from '../types/domain.js'
 
 const FLAG_SEVERITIES: FlagSeverity[] = ['info', 'check', 'risk']
 

@@ -1,4 +1,4 @@
-import type { AgentRole, RubricCriterion } from '../types/domain'
+import type { AgentRole, RubricCriterion } from '../types/domain.js'
 
 // 현재 유튜브 편집자/PD/그로스 담당자들이 실무에서 실제로 쓰는 체크리스트를 기반으로 구성한 채점 기준.
 // 역할별로 5개 항목 x 20점 = 100점.

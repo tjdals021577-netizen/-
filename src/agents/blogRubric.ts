@@ -1,5 +1,5 @@
-import type { RubricCriterion } from '../types/domain'
-import type { BlogRole } from '../types/blog'
+import type { RubricCriterion } from '../types/domain.js'
+import type { BlogRole } from '../types/blog.js'
 
 // 네이버 블로그 상위노출(C-Rank/D.I.A+) 리서치를 반영한 채점 기준.
 // 역할별로 5개 항목 x 20점 = 100점.

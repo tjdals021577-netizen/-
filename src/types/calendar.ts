@@ -1,4 +1,4 @@
-import type { Brand } from './brand'
+import type { Brand } from './brand.js'
 
 export type CalendarStatus = 'planned' | 'done' | 'open'
 

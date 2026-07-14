@@ -1,4 +1,4 @@
-import type { ReferenceMediaType } from '../types/reference'
+import type { ReferenceMediaType } from '../types/reference.js'
 
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

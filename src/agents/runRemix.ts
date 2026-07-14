@@ -1,7 +1,7 @@
-import { callClaudeJsonWithWebSearch } from '../lib/claude'
-import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
-import { buildRemixSystemPrompt, buildRemixUserPrompt } from './remixPrompts'
-import type { RemixPlan } from '../types/remix'
+import { callClaudeJsonWithWebSearch } from '../lib/claude.js'
+import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
+import { buildRemixSystemPrompt, buildRemixUserPrompt } from './remixPrompts.js'
+import type { RemixPlan } from '../types/remix.js'
 
 function parseRemixPlan(raw: unknown): RemixPlan {
   if (typeof raw !== 'object' || raw === null) {

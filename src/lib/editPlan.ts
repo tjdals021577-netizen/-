@@ -1,4 +1,4 @@
-import type { AgentReview, EmphasisSuggestion } from '../types/domain'
+import type { AgentReview, EmphasisSuggestion } from '../types/domain.js'
 
 export interface Segment {
   start: number

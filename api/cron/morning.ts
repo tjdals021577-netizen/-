@@ -1,8 +1,8 @@
-import { callClaudeJson } from '../../src/lib/claude'
-import { estimateCostUsd } from '../../src/lib/budgetGuard'
-import { buildMorningSystemPrompt, buildMorningUserPrompt } from '../../src/agents/morningPrompts'
-import { BRANDS } from '../../src/types/brand'
-import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin'
+import { callClaudeJson } from '../../src/lib/claude.js'
+import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
+import { buildMorningSystemPrompt, buildMorningUserPrompt } from '../../src/agents/morningPrompts.js'
+import { BRANDS } from '../../src/types/brand.js'
+import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 
 const AGENT_LABEL_KO: Record<string, string> = {
   morning: '모닝',

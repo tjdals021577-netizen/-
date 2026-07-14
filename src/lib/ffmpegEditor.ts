@@ -1,7 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
-import type { Segment } from './editPlan'
-import type { RemappedEmphasis } from './editPlan'
+import type { Segment } from './editPlan.js'
+import type { RemappedEmphasis } from './editPlan.js'
 
 const CORE_BASE_URL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
 

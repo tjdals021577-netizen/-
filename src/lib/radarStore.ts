@@ -1,7 +1,7 @@
 // 레이더 크론(api/cron/radar.ts)이 매일 Supabase radar_snapshots에 저장한
 // 최신 GA4 스냅샷을 프론트에서 읽기 전용으로 가져온다. anon 키로 select만 하므로
 // 안전하고, remoteSync.ts와 동일한 환경변수 정제 방식을 쓴다.
-import type { Brand } from '../types/brand'
+import type { Brand } from '../types/brand.js'
 
 function sanitizeEnvValue(raw: string | undefined): string | undefined {
   if (!raw) return raw

@@ -3,21 +3,21 @@ import {
   callClaudeJsonWithWebSearch,
   callClaudeVisionJson,
   type VisionImageInput,
-} from '../lib/claude'
-import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
+} from '../lib/claude.js'
+import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import {
   buildDraftSystemPrompt,
   buildDraftUserPrompt,
   buildReviewSystemPrompt,
   buildReviewUserPrompt,
-} from './blogPrompts'
-import { BLOG_RUBRICS } from './blogRubric'
-import type { BlogDraft, BlogReview, BlogRole } from '../types/blog'
+} from './blogPrompts.js'
+import { BLOG_RUBRICS } from './blogRubric.js'
+import type { BlogDraft, BlogReview, BlogRole } from '../types/blog.js'
 import type {
   CriterionScore,
   FlagSeverity,
   RevisionFlag,
-} from '../types/domain'
+} from '../types/domain.js'
 
 const FLAG_SEVERITIES: FlagSeverity[] = ['info', 'check', 'risk']
 

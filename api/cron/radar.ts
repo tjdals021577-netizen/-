@@ -1,7 +1,7 @@
-import { supabaseInsert } from '../_lib/supabaseAdmin'
-import { fetchGa4Report } from '../_lib/ga4'
-import { fetchImwebOrderSummary } from '../_lib/imweb'
-import { BRANDS, type Brand } from '../../src/types/brand'
+import { supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { fetchGa4Report } from '../_lib/ga4.js'
+import { fetchImwebOrderSummary } from '../_lib/imweb.js'
+import { BRANDS, type Brand } from '../../src/types/brand.js'
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`

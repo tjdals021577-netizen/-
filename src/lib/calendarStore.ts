@@ -1,7 +1,7 @@
-import type { CalendarEntry, CalendarChannel, CalendarStatus } from '../types/calendar'
-import type { Brand } from '../types/brand'
-import { getWorkLog } from './workLog'
-import { syncToSupabase } from './remoteSync'
+import type { CalendarEntry, CalendarChannel, CalendarStatus } from '../types/calendar.js'
+import type { Brand } from '../types/brand.js'
+import { getWorkLog } from './workLog.js'
+import { syncToSupabase } from './remoteSync.js'
 
 const STORAGE_KEY = 'ai-ops:content-calendar'
 

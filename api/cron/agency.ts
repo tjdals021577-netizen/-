@@ -1,8 +1,8 @@
-import { generateThreadDraft, runThreadReview } from '../../src/agents/runThreadReview'
-import { PASS_THRESHOLD } from '../../src/types/domain'
-import type { VisionImageInput } from '../../src/lib/claude'
-import type { DraftAttempt } from '../../src/types/agency'
-import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin'
+import { generateThreadDraft, runThreadReview } from '../../src/agents/runThreadReview.js'
+import { PASS_THRESHOLD } from '../../src/types/domain.js'
+import type { VisionImageInput } from '../../src/lib/claude.js'
+import type { DraftAttempt } from '../../src/types/agency.js'
+import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 
 const DRAFT_COUNT = 5
 const MAX_RECENT_DRAFTS = 30

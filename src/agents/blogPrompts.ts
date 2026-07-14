@@ -1,5 +1,5 @@
-import type { BlogRole } from '../types/blog'
-import { BLOG_RUBRICS, BLOG_ROLE_LABEL } from './blogRubric'
+import type { BlogRole } from '../types/blog.js'
+import { BLOG_RUBRICS, BLOG_ROLE_LABEL } from './blogRubric.js'
 
 const NAVER_KNOWLEDGE = `[네이버 블로그 상위노출 참고 지식]
 - C-Rank: 카테고리 전문성을 보는 알고리즘. 양산형 문장보다 구체적 관점·정보가 있는 글을 우대한다.

@@ -1,4 +1,4 @@
-import type { TranscriptCue } from '../types/domain'
+import type { TranscriptCue } from '../types/domain.js'
 
 function timeToSeconds(h: string, m: string, s: string, ms: string): number {
   return (

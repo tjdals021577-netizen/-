@@ -1,6 +1,6 @@
-import type { ApprovalItem, ApprovalAgent, ApprovalStatus } from '../types/approval'
-import type { Brand } from '../types/brand'
-import { syncToSupabase } from './remoteSync'
+import type { ApprovalItem, ApprovalAgent, ApprovalStatus } from '../types/approval.js'
+import type { Brand } from '../types/brand.js'
+import { syncToSupabase } from './remoteSync.js'
 
 const STORAGE_KEY = 'ai-ops:approval-queue'
 const MAX_ITEMS = 200

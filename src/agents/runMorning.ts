@@ -1,8 +1,8 @@
-import { callClaudeJson } from '../lib/claude'
-import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
-import { buildMorningSystemPrompt, buildMorningUserPrompt } from './morningPrompts'
-import type { MorningBriefing } from '../types/morning'
-import type { WorkLogEntry } from '../lib/workLog'
+import { callClaudeJson } from '../lib/claude.js'
+import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
+import { buildMorningSystemPrompt, buildMorningUserPrompt } from './morningPrompts.js'
+import type { MorningBriefing } from '../types/morning.js'
+import type { WorkLogEntry } from '../lib/workLog.js'
 
 const AGENT_LABEL_KO: Record<string, string> = {
   morning: '모닝',

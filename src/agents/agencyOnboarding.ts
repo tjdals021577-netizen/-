@@ -1,6 +1,6 @@
-import { callClaudeJson } from '../lib/claude'
-import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
-import type { AgencyOnboardingResult } from '../types/agency'
+import { callClaudeJson } from '../lib/claude.js'
+import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
+import type { AgencyOnboardingResult } from '../types/agency.js'
 
 function buildSystemPrompt(): string {
   return `당신은 마잘남 대행 온보딩 담당자입니다. 대표님이 붙여넣은 구글폼 응답(업종·톤·타겟 등 7문항)과 스레드 링크 텍스트를 읽고,

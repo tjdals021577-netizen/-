@@ -1,5 +1,5 @@
-import type { AgencyClient, DraftAttempt } from '../types/agency'
-import { syncToSupabase } from './remoteSync'
+import type { AgencyClient, DraftAttempt } from '../types/agency.js'
+import { syncToSupabase } from './remoteSync.js'
 
 const STORAGE_KEY = 'ai-ops:agency-clients'
 

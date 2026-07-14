@@ -1,7 +1,7 @@
-import { callClaudeJsonWithWebSearch } from '../lib/claude'
-import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard'
-import { buildBrainSystemPrompt, buildBrainUserPrompt } from './brainPrompts'
-import type { BrainReport } from '../types/brain'
+import { callClaudeJsonWithWebSearch } from '../lib/claude.js'
+import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
+import { buildBrainSystemPrompt, buildBrainUserPrompt } from './brainPrompts.js'
+import type { BrainReport } from '../types/brain.js'
 
 function parseBrainReport(raw: unknown): BrainReport {
   if (typeof raw !== 'object' || raw === null) {

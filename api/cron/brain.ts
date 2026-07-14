@@ -1,8 +1,8 @@
-import { callClaudeJsonWithWebSearch } from '../../src/lib/claude'
-import { estimateCostUsd } from '../../src/lib/budgetGuard'
-import { buildBrainSystemPrompt, buildBrainUserPrompt } from '../../src/agents/brainPrompts'
-import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS } from '../../src/types/brand'
-import { supabaseInsert } from '../_lib/supabaseAdmin'
+import { callClaudeJsonWithWebSearch } from '../../src/lib/claude.js'
+import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
+import { buildBrainSystemPrompt, buildBrainUserPrompt } from '../../src/agents/brainPrompts.js'
+import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS } from '../../src/types/brand.js'
+import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 
 interface BrainReport {
   findings: { source: string; insight: string }[]

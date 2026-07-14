@@ -1,5 +1,5 @@
-import type { Brand } from '../types/brand'
-import { syncToSupabase } from './remoteSync'
+import type { Brand } from '../types/brand.js'
+import { syncToSupabase } from './remoteSync.js'
 
 export type WorkLogStatus = 'running' | 'done' | 'error' | 'attention'
 

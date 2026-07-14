@@ -1,5 +1,5 @@
-import type { AgentRole } from '../types/domain'
-import { RUBRICS, ROLE_LABEL } from './rubric'
+import type { AgentRole } from '../types/domain.js'
+import { RUBRICS, ROLE_LABEL } from './rubric.js'
 
 const PERSONA: Record<AgentRole, string> = {
   planning: `당신은 유튜브 콘텐츠 기획 PD입니다. 채널 전략과 기획 의도, 시청자 공감을 최우선으로 봅니다.

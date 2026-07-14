@@ -1,4 +1,4 @@
-import type { ThreadDraft, ThreadReview } from './thread'
+import type { ThreadDraft, ThreadReview } from './thread.js'
 
 export type ClientStatus = 'active' | 'paused'
 

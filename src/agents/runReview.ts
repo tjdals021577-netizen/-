@@ -1,6 +1,6 @@
-import { callClaudeJson } from '../lib/claude'
-import { buildSystemPrompt, buildUserPrompt } from './prompts'
-import { RUBRICS } from './rubric'
+import { callClaudeJson } from '../lib/claude.js'
+import { buildSystemPrompt, buildUserPrompt } from './prompts.js'
+import { RUBRICS } from './rubric.js'
 import type {
   AgentReview,
   AgentRole,
@@ -9,7 +9,7 @@ import type {
   CutSuggestion,
   EmphasisSuggestion,
   EmphasisType,
-} from '../types/domain'
+} from '../types/domain.js'
 
 const CUT_ACTIONS: CutAction[] = ['cut', 'keep_tight', 'keep']
 const EMPHASIS_TYPES: EmphasisType[] = [
