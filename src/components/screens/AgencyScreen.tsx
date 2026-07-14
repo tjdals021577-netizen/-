@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { parseAgencyOnboarding } from '../../agents/agencyOnboarding'
+import { runThreadReview } from '../../agents/runThreadReview'
 import {
-  generateThreadDraft,
-  runThreadReview,
-  generateThreadVariantsWithReferences,
-} from '../../agents/runThreadReview'
+  generateAgencyDraft,
+  generateAgencyVariantsWithReferences,
+  generateAgencyFullFormatSet,
+} from '../../agents/runAgencyThread'
 import {
   listClients,
   createClient,
@@ -28,7 +29,7 @@ import { createEntry } from '../../lib/calendarStore'
 import { getTodaySpendUsd, isOverDailyBudget, DAILY_BUDGET_USD } from '../../lib/budgetGuard'
 import { PASS_THRESHOLD } from '../../types/domain'
 import type { AgencyClient, DraftAttempt } from '../../types/agency'
-import type { ThreadDraft } from '../../types/thread'
+import type { ThreadDraft, ThreadFormatDraft } from '../../types/thread'
 
 const DRAFT_COUNT = 5
 const REREQUEST_VARIANT_COUNT = 3
@@ -36,6 +37,12 @@ const REREQUEST_VARIANT_COUNT = 3
 function buildDraftsHtml(attempts: DraftAttempt[]): string {
   return attempts
     .map((a, i) => `<b>${i + 1}. ${a.review.totalScore}점</b><br/>${a.draft.text.replace(/\n/g, '<br/>')}`)
+    .join('<br/><br/>')
+}
+
+function buildFormatSetHtml(drafts: ThreadFormatDraft[]): string {
+  return drafts
+    .map((d) => `<b>[${d.format}]</b><br/>${d.text.replace(/\n/g, '<br/>')}`)
     .join('<br/><br/>')
 }
 
@@ -133,6 +140,12 @@ export function AgencyScreen() {
   const [reRequestNote, setReRequestNote] = useState('')
   const [reRequesting, setReRequesting] = useState(false)
   const [reRequestVariants, setReRequestVariants] = useState<Record<string, ThreadDraft[]>>({})
+
+  // "9종 전체 시안" — 대표님의 "마잘남 – 글쓰기" 프롬프트가 정의한 9가지
+  // 유형(숫자 리스트형/질문 유도형/비교형/스토리형/팁형/비하인드형/트렌드형/
+  // 통합형+CTA/궁금증유발형)을 한 번에 전부 받아본다.
+  const [fullFormatClientId, setFullFormatClientId] = useState<string | null>(null)
+  const [fullFormatSets, setFullFormatSets] = useState<Record<string, ThreadFormatDraft[]>>({})
 
   useEffect(() => {
     const drafts: Record<string, string> = {}
@@ -245,10 +258,11 @@ export function AgencyScreen() {
       const referenceImages = toVisionImages(client.referenceImageIds)
       const attempts: DraftAttempt[] = []
       for (let i = 0; i < DRAFT_COUNT; i++) {
-        const draft = await generateThreadDraft({
+        const draft = await generateAgencyDraft({
           apiKey,
           topic: `${client.business} 관련 스레드 게시물`,
-          brandVoice: client.persona,
+          business: client.business,
+          persona: client.persona,
           recentPosts: [
             ...client.recentDraftTexts,
             ...attempts.map((a) => a.draft.text),
@@ -331,10 +345,11 @@ export function AgencyScreen() {
         )
       ).filter((img): img is { imageBase64: string; imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp' } => img !== null)
       const referenceImages = [...libraryImages, ...adhocImages]
-      const drafts = await generateThreadVariantsWithReferences({
+      const drafts = await generateAgencyVariantsWithReferences({
         apiKey,
         topic: `${client.business} 관련 스레드 게시물`,
-        brandVoice: client.persona,
+        business: client.business,
+        persona: client.persona,
         referenceImages,
         variantCount: REREQUEST_VARIANT_COUNT,
         note: reRequestNote,
@@ -379,6 +394,71 @@ export function AgencyScreen() {
       })
     } finally {
       setReRequesting(false)
+      setTodaySpend(getTodaySpendUsd())
+    }
+  }
+
+  // "마잘남 – 글쓰기" 프롬프트가 정의한 9가지 유형을 한 번에 전부 받아본다 —
+  // 레퍼런스 재요청과 달리 채점 없이 유형별로 다양하게 훑어보는 용도.
+  async function handleFullFormatSet(client: AgencyClient) {
+    if (isOverDailyBudget()) return
+    setFullFormatClientId(client.id)
+    const spendBefore = getTodaySpendUsd()
+    const logId = startWorkLog({
+      agent: 'buzz',
+      brand: '마잘남',
+      kind: `대행 — ${client.name} (9종 전체 시안)`,
+      note: '9가지 유형 전체 생성',
+    })
+    try {
+      const referenceImages = toVisionImages(client.referenceImageIds)
+      const drafts = await generateAgencyFullFormatSet({
+        apiKey,
+        topic: `${client.business} 관련 스레드 게시물`,
+        business: client.business,
+        persona: client.persona,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      })
+      setFullFormatSets((prev) => ({ ...prev, [client.id]: drafts }))
+      const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
+      finishWorkLog(logId, {
+        status: 'done',
+        statusLabel: '완료',
+        costUsd: cycleCost,
+        note: `9종 전체 시안 ${drafts.length}개`,
+        detailHtml: buildFormatSetHtml(drafts),
+      })
+      const title = `${client.name} — 9종 전체 시안 ${drafts.length}개`
+      const contentHtml = buildFormatSetHtml(drafts)
+      submitForApproval({
+        agent: 'buzz',
+        brand: '마잘남',
+        title,
+        contentHtml,
+        passed: false,
+        scoreLabel: `9종 전체 · 시안 ${drafts.length}개`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand: '마잘남',
+        channel: 'agency',
+        title,
+        status: 'open',
+        note: '9종 전체 시안 — 결재함에서 확인 후 선택',
+        contentHtml,
+        sourceWorkLogId: logId,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      finishWorkLog(logId, {
+        status: 'error',
+        statusLabel: '오류',
+        note: '9종 전체 시안 생성 실패',
+        detailHtml: message,
+      })
+    } finally {
+      setFullFormatClientId(null)
       setTodaySpend(getTodaySpendUsd())
     }
   }
@@ -526,6 +606,19 @@ export function AgencyScreen() {
                   </div>
                 )}
 
+                {fullFormatSets[client.id] && (
+                  <div className="mb-2 space-y-1.5 rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] p-2 text-xs">
+                    <p className="font-semibold text-[var(--accent)]">9종 전체 시안 (결재함에도 저장됨)</p>
+                    {fullFormatSets[client.id].map((d, i) => (
+                      <p key={i} className="whitespace-pre-wrap rounded-lg bg-[var(--surface)] p-2 text-[11px] text-[var(--text-dim)]">
+                        <span className="font-mono text-[10px] text-[var(--text-faint)]">[{d.format}]</span>
+                        <br />
+                        {d.text}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
                 {reRequestClientId === client.id && (
                   <div className="mb-2 space-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2">
                     <p className="text-[11px] font-medium text-[var(--text-dim)]">
@@ -616,6 +709,14 @@ export function AgencyScreen() {
                     className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
                   >
                     레퍼런스로 재요청
+                  </button>
+                  <button
+                    type="button"
+                    disabled={fullFormatClientId === client.id || isOverDailyBudget()}
+                    onClick={() => void handleFullFormatSet(client)}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-dim)] hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {fullFormatClientId === client.id ? '생성 중…' : '9종 전체 시안'}
                   </button>
                   <button
                     type="button"
