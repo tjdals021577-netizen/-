@@ -1,4 +1,4 @@
-import { callClaudeJsonWithWebSearch } from '../lib/claude.js'
+import { callClaudeJson, callClaudeJsonWithWebSearch } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import { buildRemixSystemPrompt, buildRemixUserPrompt } from './remixPrompts.js'
 import type { RemixPlan } from '../types/remix.js'
@@ -31,13 +31,33 @@ export async function generateRemixPlan(params: {
   // 기반 추측이 아니라) 웹서치 도구가 붙은 호출을 쓴다. maxTokens는 검색
   // 도구 호출 블록과 최종 답변이 같은 예산을 나눠 쓰기 때문에(블로그 쪽에서
   // 실제로 예산 부족으로 "응답에 텍스트 없음" 에러가 났었음) 여유 있게 잡음.
-  const raw = await callClaudeJsonWithWebSearch({
-    apiKey,
-    system: buildRemixSystemPrompt(brandContext, marketFindings),
-    user: buildRemixUserPrompt({ topic, referenceText }),
-    maxTokens: 4096,
-    maxSearches: 5,
-    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-  })
-  return parseRemixPlan(raw)
+  const user = buildRemixUserPrompt({ topic, referenceText })
+  const system = buildRemixSystemPrompt(brandContext, marketFindings)
+  // 타임아웃을 기본값보다 짧게 잡는 이유는 블로그 쪽과 동일 — 실패해도
+  // 검색 없는 재시도가 있으니 적당히 빨리 넘어가는 게 전체적으로 안전하다.
+  try {
+    const raw = await callClaudeJsonWithWebSearch({
+      apiKey,
+      system,
+      user,
+      maxTokens: 4096,
+      maxSearches: 5,
+      timeoutMs: 150_000,
+      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+    })
+    return parseRemixPlan(raw)
+  } catch {
+    // 웹서치 경로가 타임아웃 등으로 실패하면(주제에 따라 검색이 오래 걸리는
+    // 경우가 실제로 있었다 — 블로그 쪽에서 먼저 발견) 검색 없이 지식 기반으로
+    // 한 번 더 시도한다. 최신성은 놓치더라도 아예 실패하는 것보단 낫다.
+    const raw = await callClaudeJson({
+      apiKey,
+      system,
+      user: `${user}\n\n(실시간 검색 없이, 알고 있는 지식만으로 작성해주세요.)`,
+      maxTokens: 2048,
+      timeoutMs: 45_000,
+      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+    })
+    return parseRemixPlan(raw)
+  }
 }
