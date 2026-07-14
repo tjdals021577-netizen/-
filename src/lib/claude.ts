@@ -32,7 +32,12 @@ async function createMessage(
   if (!apiKey) {
     throw new ClaudeCallError('Anthropic API 키가 설정되지 않았습니다.')
   }
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+  // maxRetries: 0 — SDK 기본값(최대 2회 자동 재시도)을 끈다. 재시도가 켜져
+  // 있으면 타임아웃 1건마다 timeoutMs를 최대 3번(최초 시도 + 재시도 2회)
+  // 반복해서 크론의 300초 실행 제한을 넘기는 문제가 실제로 있었다(브레인
+  // 크론이 병렬화해도 계속 타임아웃 났던 원인) — 재시도가 필요하면 각
+  // 호출부에서 사람이 다시 누르거나 크론이 다음 스케줄에 다시 시도한다.
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 })
   try {
     return await client.messages.create(body, { timeout: timeoutMs })
   } catch (err) {
