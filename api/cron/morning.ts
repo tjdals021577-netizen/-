@@ -7,8 +7,6 @@ import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 import { getKakaoAccessToken, sendKakaoMemoToSelf } from '../_lib/kakao.js'
 import { getScheduledSlots, kstNow, kstDateKey, addDaysKst } from '../../src/lib/weeklySchedule.js'
-import { CHECKLIST_STAGE_LABEL } from '../../src/types/calendar.js'
-import type { ChecklistStage } from '../../src/types/calendar.js'
 
 const AGENT_LABEL_KO: Record<string, string> = {
   morning: '모닝',
@@ -76,8 +74,6 @@ async function buildRadarText(brand: string): Promise<string | undefined> {
 interface CalendarScheduleRow {
   brand: string
   channel: string
-  title: string
-  checklist: ChecklistStage[] | null
 }
 
 const CHANNEL_LABEL_KO: Record<string, string> = {
@@ -88,25 +84,23 @@ const CHANNEL_LABEL_KO: Record<string, string> = {
   etc: '기타',
 }
 
-function checklistSummary(checklist: ChecklistStage[] | null): string {
-  if (!checklist || checklist.length === 0) return ''
-  const remaining = checklist.filter((s) => !s.done).map((s) => CHECKLIST_STAGE_LABEL[s.key])
-  if (remaining.length === 0) return '(체크리스트 전부 완료)'
-  return `(남은 단계: ${remaining.join('·')})`
-}
-
-// content-schedule 크론이 오늘 새로 만든 유튜브·블로그 항목을 캘린더에서 읽어와
-// "오늘 뭘 해야 하는지" 표로 만든다 — content-schedule(06:00 KST)이 모닝(08:00
-// KST)보다 먼저 돌게 스케줄돼 있어서 이 시점엔 이미 오늘 항목이 들어가 있다.
+// content-schedule 크론이 오늘 새로 만든 항목을 캘린더에서 읽어와 "오늘 뭐가
+// 예정돼 있는지"를 채널별 건수로만 압축한다 — content-schedule(06:00 KST)이
+// 모닝(08:00 KST)보다 먼저 돌게 스케줄돼 있어서 이 시점엔 이미 오늘 항목이
+// 들어가 있다. 카톡은 한 줄 요약이 목표라 제목·체크리스트는 앱에서 확인.
 async function buildTodayScheduleText(brand: string, dateKey: string): Promise<string | undefined> {
   const rows = await supabaseSelect<CalendarScheduleRow>(
     'calendar_entries',
-    `brand=eq.${encodeURIComponent(brand)}&date=eq.${dateKey}&channel=in.(blog,youtube)&select=brand,channel,title,checklist`,
+    `brand=eq.${encodeURIComponent(brand)}&date=eq.${dateKey}&channel=in.(blog,youtube,thread)&select=brand,channel`,
   )
   if (rows.length === 0) return undefined
-  return rows
-    .map((r) => `- [${CHANNEL_LABEL_KO[r.channel] ?? r.channel}] ${r.title} ${checklistSummary(r.checklist)}`.trim())
-    .join('\n')
+  const counts = new Map<string, number>()
+  for (const r of rows) {
+    counts.set(r.channel, (counts.get(r.channel) ?? 0) + 1)
+  }
+  return Array.from(counts.entries())
+    .map(([channel, n]) => `${CHANNEL_LABEL_KO[channel] ?? channel} ${n}건`)
+    .join('·')
 }
 
 // 이틀 뒤 블로그 예정일에 아직 사진이 안 올라와 있으면 미리 알려준다 — 사진이
@@ -238,16 +232,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         .join('<br/>')}`,
     })
     results.push(`${brand}: ${briefing.headline}`)
-    kakaoLines.push(`[${brand}] ${briefing.headline}`)
-    if (briefing.nextActions.length > 0) {
-      kakaoLines.push(...briefing.nextActions.slice(0, 2).map((a) => `  · ${a}`))
-    }
 
     const scheduleText = await buildTodayScheduleText(brand, todayKey)
-    if (scheduleText) {
-      kakaoLines.push(`  📅 오늘 일정(${brand})`)
-      kakaoLines.push(...scheduleText.split('\n').map((line) => `  ${line}`))
-    }
+    kakaoLines.push(`[${brand}] ${briefing.headline}${scheduleText ? ` | 오늘: ${scheduleText}` : ''}`)
   }
 
   const photoReminder = await buildPhotoReminderText()

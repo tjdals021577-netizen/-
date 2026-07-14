@@ -147,6 +147,33 @@ create table if not exists content_photos (
 );
 create index if not exists content_photos_date_brand_idx on content_photos (date, brand, channel);
 
+-- 팀채팅에서 에이전트와 나눈 대화("말"만 오간 기록 — 되묻는 질문, 대표님의
+-- 답, 가벼운 피드백). 실제 작업 실행 결과는 work_log에 그대로 남고, 이
+-- 테이블은 그 앞뒤로 오간 대화만 별도로 쌓는다.
+create table if not exists agent_chat_messages (
+  id text primary key,
+  agent text not null,
+  brand text not null,
+  role text not null,
+  content text not null,
+  is_question boolean not null default false,
+  created_at timestamptz not null,
+  synced_at timestamptz not null default now()
+);
+create index if not exists agent_chat_messages_agent_brand_idx on agent_chat_messages (agent, brand, created_at);
+
+-- 대화 중 파악한 대표님의 취향·스타일을 에이전트·브랜드별로 쌓아서, 다음
+-- 작업을 시킬 때 계속 참고하게 한다.
+create table if not exists agent_memory (
+  id text primary key,
+  agent text not null,
+  brand text not null,
+  fact text not null,
+  created_at timestamptz not null,
+  synced_at timestamptz not null default now()
+);
+create index if not exists agent_memory_agent_brand_idx on agent_memory (agent, brand, created_at desc);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -175,6 +202,8 @@ alter table brain_reports enable row level security;
 alter table radar_snapshots enable row level security;
 alter table kakao_tokens enable row level security;
 alter table content_photos enable row level security;
+alter table agent_chat_messages enable row level security;
+alter table agent_memory enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -211,3 +240,11 @@ create policy "update kakao_tokens" on kakao_tokens for update to public using (
 create policy "select content_photos" on content_photos for select to public using (true);
 create policy "insert content_photos" on content_photos for insert to public with check (true);
 create policy "update content_photos" on content_photos for update to public using (true) with check (true);
+
+create policy "select agent_chat_messages" on agent_chat_messages for select to public using (true);
+create policy "insert agent_chat_messages" on agent_chat_messages for insert to public with check (true);
+create policy "update agent_chat_messages" on agent_chat_messages for update to public using (true) with check (true);
+
+create policy "select agent_memory" on agent_memory for select to public using (true);
+create policy "insert agent_memory" on agent_memory for insert to public with check (true);
+create policy "update agent_memory" on agent_memory for update to public using (true) with check (true);

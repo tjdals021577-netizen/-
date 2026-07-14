@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { getWorkLog, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
+import { decideNextStep } from '../../agents/chatDecide'
+import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact } from '../../lib/agentChatStore'
+import type { AgentChatMessage } from '../../types/agentChat'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
-import { BRAND_CHANNELS, type Brand } from '../../types/brand'
+import { BRAND_CHANNELS, BRAND_CONTEXT, type Brand } from '../../types/brand'
 
 // "모두에게" 지시할 때, 그 브랜드가 아예 운영 안 하는 채널의 에이전트는
 // 애초에 빼고 보낸다(버즈/리믹서는 무조건 에러가 날 걸 알면서 보낼 이유가
@@ -81,19 +84,69 @@ function agentIsBusy(agentKey: string, brand: Brand): boolean {
   return getWorkLog(agentKey, brand).some((e) => e.status === 'running')
 }
 
+// 실제 작업 결과(work_log)와 순수 대화(agent_chat_messages)가 같은 피드에
+// 시간순으로 섞여서 나온다 — 하나는 지시→결과물, 다른 하나는 되묻는 질문·
+// 잡담 같은 "말"만 오간 기록이라 서로 데이터 구조가 달라서 태그로 구분한다.
+type TimelineItem =
+  | { kind: 'log'; time: string; entry: WorkLogEntry }
+  | { kind: 'chat'; time: string; message: AgentChatMessage }
+
+function buildTimeline(entries: WorkLogEntry[], messages: AgentChatMessage[]): TimelineItem[] {
+  return [
+    ...entries.map((entry) => ({ kind: 'log' as const, time: entry.startedAt, entry })),
+    ...messages.map((message) => ({ kind: 'chat' as const, time: message.createdAt, message })),
+  ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+}
+
 // 통합 피드라 한 버블 묶음에 여러 에이전트가 섞여 나오므로, 상단에 고정된
 // 이름 하나 대신 매 항목마다 어느 에이전트인지 배지를 붙여서 보여준다.
-function ChatBubbles({ entries }: { entries: WorkLogEntry[] }) {
-  const sorted = [...entries].sort(
-    (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
-  )
+function ChatBubbles({ items }: { items: TimelineItem[] }) {
   return (
     <>
-      {sorted.map((entry) => {
+      {items.map((item) => {
+        if (item.kind === 'chat') {
+          const { message } = item
+          const agentMeta = AGENT_BY_KEY.get(message.agent)
+          const agentName = agentMeta?.name ?? message.agent
+          if (message.role === 'user') {
+            return (
+              <div key={`chat-${message.id}`} className="mb-3 flex justify-end">
+                <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-[var(--accent)] px-3.5 py-2 text-[13px] text-white">
+                  {message.content}
+                </div>
+              </div>
+            )
+          }
+          return (
+            <div key={`chat-${message.id}`} className="mb-3 flex justify-start">
+              <div className="max-w-[80%]">
+                <p className="mb-0.5 flex items-center gap-1 px-1 text-[10px] font-bold text-[var(--text-faint)]">
+                  <span
+                    className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] text-white"
+                    style={{ background: `var(${agentMeta?.colorVar ?? '--accent'})` }}
+                  >
+                    {agentMeta?.initial ?? '?'}
+                  </span>
+                  {agentName}
+                  {message.isQuestion && (
+                    <span className="rounded-full bg-[var(--planned-soft)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--planned)]">
+                      되묻는 질문
+                    </span>
+                  )}
+                </p>
+                <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-[var(--surface-2)] px-3.5 py-2 text-[13px] text-[var(--text)]">
+                  {message.content}
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        const { entry } = item
         const agentMeta = AGENT_BY_KEY.get(entry.agent)
         const agentName = agentMeta?.name ?? entry.agent
         return (
-          <div key={entry.id} className="mb-3">
+          <div key={`log-${entry.id}`} className="mb-3">
             <div className="flex justify-end">
               <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-[var(--accent)] px-3.5 py-2 text-[13px] text-white">
                 {entry.note}
@@ -157,11 +210,17 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   const viewingAgent = feedFilter === 'all' ? null : (AGENT_BY_KEY.get(feedFilter) ?? null)
   const log = feedFilter === 'all' ? getWorkLog(undefined, brand) : getWorkLog(feedFilter, brand)
+  const chatMessages =
+    feedFilter === 'all'
+      ? DISPATCHABLE_AGENTS.flatMap((a) => getMessages(a, brand))
+      : getMessages(feedFilter, brand)
+  const timeline = buildTimeline(log, chatMessages)
+  const memoryFacts = viewingAgent && viewingAgent.dispatchable ? getMemory(viewingAgent.key, brand) : []
   const busyAgents = AGENTS.filter((a) => agentIsBusy(a.key, brand))
   const recentAcrossTeam = [...log]
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
     .slice(0, 4)
-  void logVersion // 근무기록 재조회 트리거용
+  void logVersion // 근무기록·대화기록 재조회 트리거용
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
@@ -180,6 +239,8 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
       return
     }
     setDispatching(true)
+    const text = instruction.trim()
+    setInstruction('')
     setLogVersion((v) => v + 1) // 지시 직후 "진행중" 버블이 바로 보이도록
     try {
       if (dispatchTarget === 'all') {
@@ -188,21 +249,46 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
           return !requiredChannel || BRAND_CHANNELS[brand].includes(requiredChannel)
         })
         const results = await Promise.allSettled(
-          targets.map((agent) => dispatchJob({ agent, brand, apiKey, instruction })),
+          targets.map((agent) => dispatchJob({ agent, brand, apiKey, instruction: text })),
         )
         const failed = results.filter((r) => r.status === 'rejected')
         if (failed.length > 0) {
           setDispatchMessage(`${targets.length}명 중 ${failed.length}명 실패 — 각자의 결과 버블에서 확인하세요.`)
         }
       } else {
-        await dispatchJob({
-          agent: dispatchTarget,
-          brand,
+        // 바로 작업을 실행하지 않고, 먼저 이 지시가 실행해도 될 만큼 충분한지
+        // 판단시킨다 — 애매하면 되묻고, 충분하면 지금까지 대화를 종합한
+        // 지시문으로 기존 dispatchJob을 그대로 실행한다.
+        const agent = dispatchTarget
+        addMessage({ agent, brand, role: 'user', content: text })
+        setLogVersion((v) => v + 1)
+        const history = getMessages(agent, brand)
+        const memory = getMemory(agent, brand).map((m) => m.fact)
+        const decision = await decideNextStep({
           apiKey,
-          instruction,
+          agent,
+          brandContext: BRAND_CONTEXT[brand],
+          userMessage: text,
+          history,
+          memory,
         })
+        if (decision.memoryFacts.length > 0) {
+          addMemoryFacts(agent, brand, decision.memoryFacts)
+        }
+        if (decision.kind === 'act') {
+          addMessage({ agent, brand, role: 'agent', content: decision.text || '작업을 시작할게요.' })
+          setLogVersion((v) => v + 1)
+          await dispatchJob({ agent, brand, apiKey, instruction: decision.cleanInstruction || text })
+        } else {
+          addMessage({
+            agent,
+            brand,
+            role: 'agent',
+            content: decision.text || (decision.kind === 'question' ? '조금 더 구체적으로 알려주실 수 있을까요?' : '네, 확인했습니다.'),
+            isQuestion: decision.kind === 'question',
+          })
+        }
       }
-      setInstruction('')
     } catch (err) {
       setDispatchMessage(err instanceof Error ? err.message : String(err))
     } finally {
@@ -331,10 +417,10 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
                 ? `${viewingAgent.name}의 활동만 보고 있어요 — 왼쪽 "전체 보기"를 누르면 모든 팀원을 다시 함께 볼 수 있어요.`
                 : `${brand} 팀 채팅 — 모든 팀원의 활동이 시간순으로 함께 표시됩니다.`}
             </p>
-            {log.length === 0 ? (
+            {timeline.length === 0 ? (
               <p className="py-10 text-center text-sm text-[var(--text-faint)]">아직 대화 기록이 없습니다.</p>
             ) : (
-              <ChatBubbles entries={log} />
+              <ChatBubbles items={timeline} />
             )}
             <div ref={feedEndRef} />
           </div>
@@ -434,6 +520,41 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               </div>
             </div>
           </div>
+
+          {viewingAgent && viewingAgent.dispatchable && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+                {viewingAgent.name}가 기억하는 것
+              </p>
+              {memoryFacts.length === 0 ? (
+                <p className="text-[11px] leading-relaxed text-[var(--text-faint)]">
+                  대화하면서 파악한 취향·스타일이 여기 쌓여서 다음 작업에 계속 참고됩니다.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {memoryFacts.map((fact) => (
+                    <div
+                      key={fact.id}
+                      className="flex items-start justify-between gap-1.5 rounded-lg bg-[var(--surface-2)] p-1.5"
+                    >
+                      <p className="text-[11px] leading-snug text-[var(--text-dim)]">{fact.fact}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          deleteMemoryFact(fact.id)
+                          setLogVersion((v) => v + 1)
+                        }}
+                        className="shrink-0 text-[10px] text-[var(--text-faint)] hover:text-[var(--open)]"
+                        aria-label="기억 삭제"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
             <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
