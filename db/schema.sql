@@ -121,6 +121,14 @@ create table if not exists radar_snapshots (
 );
 create index if not exists radar_snapshots_brand_idx on radar_snapshots (brand, created_at desc);
 
+-- 카카오 "나에게 보내기" refresh_token 저장 — 딱 한 행(id='default')만 씀.
+-- 모닝 크론이 매일 이 토큰으로 access_token을 새로 받아서 카톡을 보낸다.
+create table if not exists kakao_tokens (
+  id text primary key,
+  refresh_token text not null,
+  updated_at timestamptz not null default now()
+);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -147,6 +155,7 @@ alter table agency_clients enable row level security;
 alter table reference_images enable row level security;
 alter table brain_reports enable row level security;
 alter table radar_snapshots enable row level security;
+alter table kakao_tokens enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -175,3 +184,7 @@ create policy "update brain_reports" on brain_reports for update to public using
 create policy "select radar_snapshots" on radar_snapshots for select to public using (true);
 create policy "insert radar_snapshots" on radar_snapshots for insert to public with check (true);
 create policy "update radar_snapshots" on radar_snapshots for update to public using (true) with check (true);
+
+create policy "select kakao_tokens" on kakao_tokens for select to public using (true);
+create policy "insert kakao_tokens" on kakao_tokens for insert to public with check (true);
+create policy "update kakao_tokens" on kakao_tokens for update to public using (true) with check (true);

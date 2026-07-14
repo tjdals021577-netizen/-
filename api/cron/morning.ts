@@ -5,6 +5,7 @@ import { buildMorningSystemPrompt, buildMorningUserPrompt } from '../../src/agen
 import { BRANDS } from '../../src/types/brand.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
+import { getKakaoAccessToken, sendKakaoMemoToSelf } from '../_lib/kakao.js'
 
 const AGENT_LABEL_KO: Record<string, string> = {
   morning: '모닝',
@@ -136,6 +137,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const { startIso, endIso, dateLabel } = yesterdayKstRange()
   const results: string[] = []
+  const kakaoLines: string[] = []
 
   for (const brand of BRANDS) {
     const rows = await supabaseSelect<WorkLogRow>(
@@ -175,6 +177,30 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         .join('<br/>')}`,
     })
     results.push(`${brand}: ${briefing.headline}`)
+    kakaoLines.push(`[${brand}] ${briefing.headline}`)
+    if (briefing.nextActions.length > 0) {
+      kakaoLines.push(...briefing.nextActions.slice(0, 2).map((a) => `  · ${a}`))
+    }
+  }
+
+  // 카카오 연결이 안 돼 있으면(설정 전, 또는 토큰 없음) 조용히 건너뛴다 — 실패해도
+  // 브리핑 자체는 이미 Supabase에 저장 완료된 뒤라 크론 전체를 실패로 안 만든다.
+  const kakaoRestApiKey = process.env.KAKAO_REST_API_KEY
+  if (kakaoRestApiKey) {
+    try {
+      const accessToken = await getKakaoAccessToken(kakaoRestApiKey)
+      if (accessToken) {
+        await sendKakaoMemoToSelf({
+          accessToken,
+          text: `☀️ ${dateLabel} 브리핑\n\n${kakaoLines.join('\n')}`,
+        })
+        results.push('카카오 알림: 전송 완료')
+      } else {
+        results.push('카카오 알림: 건너뜀 (연결 안 됨 — /api/kakao-setup으로 최초 연결 필요)')
+      }
+    } catch (err) {
+      results.push(`카카오 알림: 실패 (${err instanceof Error ? err.message : String(err)})`)
+    }
   }
 
   sendJson(res, 200, { ok: true, results })
