@@ -90,10 +90,11 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     photoImages: photoImages.length > 0 ? photoImages : undefined,
   })
 
-  const reviews: BlogReview[] = []
-  for (const role of BLOG_ROLES) {
-    reviews.push(await runBlogAgentReview({ apiKey, role, draft }))
-  }
+  // 3명 심사위원을 순서대로 하나씩 기다리면(전) 시간을 3배로 썼다 — 서로
+  // 독립적인 채점이라 병렬로 돌려도 무방해서, 동시에 실행해 시간을 아낀다
+  // (초안 생성 자체가 웹서치 때문에 오래 걸릴 때가 있어, 나머지 단계에서라도
+  // 최대한 시간을 절약해서 크론 함수 전체 제한(300초) 안에 들어오게 함).
+  const reviews = await Promise.all(BLOG_ROLES.map((role) => runBlogAgentReview({ apiKey, role, draft })))
   const avg = reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length
   const passed = avg >= PASS_THRESHOLD
   const nowIso = new Date().toISOString()
