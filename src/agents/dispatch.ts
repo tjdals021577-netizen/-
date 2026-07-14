@@ -1,5 +1,6 @@
 import { generateBlogDraft, runBlogAgentReview } from './runBlogReview.js'
 import { generateThreadDraft, runThreadReview } from './runThreadReview.js'
+import { MAJALNAM_THREAD_VOICE } from './threadPrompts.js'
 import { generateRemixPlan } from './runRemix.js'
 import { researchMarket } from './runBrain.js'
 import { startWorkLog, finishWorkLog } from '../lib/workLog.js'
@@ -89,7 +90,7 @@ export async function dispatchJob(params: {
       const draft = await generateThreadDraft({
         apiKey,
         topic,
-        brandVoice: BRAND_CONTEXT[brand],
+        brandVoice: MAJALNAM_THREAD_VOICE,
         marketFindings,
       })
       const review = await runThreadReview({ apiKey, draft })

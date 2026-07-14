@@ -1,22 +1,16 @@
-// 매일 아침(07:40 KST, vercel.json 참고) 마잘남 스레드 위원회가 "오늘 바로
-// 쓸 수 있는" 유형별 시안 5개를 자동으로 만들어서 팀채팅에 올려둔다.
+// 매일 아침(07:40 KST, vercel.json 참고) 마잘남 스레드 위원회가 대표님이
+// 실제 쓰던 마스터 프롬프트 그대로 8개 형식(7가지 형식 + 질문형 후킹 버전)
+// 시안을 자동으로 만들어서 팀채팅에 올려둔다.
 // 사람이 결재/발행할 필요 없는 참고용 시안이라 캘린더·결재함에는 넣지 않고
 // work_log에만 남긴다(대표님 요청: "팀채팅에만 쌓아두기").
 // 스레드는 마잘남 전용 채널이라(업메리는 스레드 미운영) 마잘남만 처리한다.
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { generateThreadVariantsWithReferences } from '../../src/agents/runThreadReview.js'
-import { BRAND_CONTEXT } from '../../src/types/brand.js'
+import { generateThreadFullFormatSet } from '../../src/agents/runThreadReview.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
 
 const BRAND = '마잘남'
-const VARIANT_COUNT = 5
-
-// 저자가 검증했다고 밝힌 7가지 유형 중, 하루에 5개를 돌아가며 골고루
-// 써보게 한다(매일 같은 5개면 금방 소재가 마른다) — 날짜 기준으로 하루씩
-// 밀어서 순환시킨다.
-const TEMPLATE_TYPES = ['공감형', '숫자형', '통찰형', '반전형', '팁형', '스토리형', '궁금증유발형']
 
 // 대표님이 지정한 주제 축(스레드·브랜딩·1인사업) 안에서 매일 다른 각도로
 // 돌아가며 쓰게 한다 — 브레인 리서치가 아직 없을 때도 항상 쓸 거리가 있게.
@@ -40,10 +34,8 @@ function dayOfYear(): number {
   return Math.floor((now.getTime() - start) / 86_400_000)
 }
 
-// 순환 배열에서 오늘 기준으로 count개를 겹치지 않게 골라온다.
-function pickRotating<T>(pool: T[], count: number): T[] {
-  const offset = dayOfYear() % pool.length
-  return Array.from({ length: Math.min(count, pool.length) }, (_, i) => pool[(offset + i) % pool.length])
+function pickTopicOfTheDay(pool: string[]): string {
+  return pool[dayOfYear() % pool.length]
 }
 
 interface ReferenceImageRow {
@@ -55,7 +47,7 @@ interface ReferenceImageRow {
 // 레퍼런스 라이브러리는 "잘 터진 글" 캡처를 모아두는 용도라, 라벨로 골라낼
 // 필요 없이 최근 등록된 것들을 그대로 쓴다 — 라이팅 시스템 프롬프트가 이
 // 글들의 "후킹 문장 구조"만 재사용하고 주제만 이번 topic에 맞게 바꿔쓰도록
-// 지시한다(threadPrompts.ts의 buildThreadReferenceSystemPrompt 참고).
+// 지시한다(threadPrompts.ts의 buildThreadFullFormatSystemPrompt 참고).
 async function pickReferenceImages(): Promise<VisionImageInput[]> {
   const rows = await supabaseSelect<ReferenceImageRow>(
     'reference_images',
@@ -64,8 +56,10 @@ async function pickReferenceImages(): Promise<VisionImageInput[]> {
   return rows.map((r) => ({ imageBase64: r.image_base64, imageMediaType: r.media_type }))
 }
 
-function buildDetailHtml(drafts: { text: string }[]): string {
-  return drafts.map((d, i) => `<b>시안 ${i + 1}</b><br/>${d.text.replace(/\n/g, '<br/>')}`).join('<br/><br/>')
+function buildDetailHtml(drafts: { format: string; text: string }[]): string {
+  return drafts
+    .map((d) => `<b>[${d.format}]</b><br/>${d.text.replace(/\n/g, '<br/>')}`)
+    .join('<br/><br/>')
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -76,29 +70,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
-  const types = pickRotating(TEMPLATE_TYPES, VARIANT_COUNT)
-  const topic = pickRotating(TOPIC_POOL, 1)[0]
+  const topic = pickTopicOfTheDay(TOPIC_POOL)
   const nowIso = new Date().toISOString()
 
   try {
     const referenceImages = await pickReferenceImages()
-    const drafts = await generateThreadVariantsWithReferences({
-      apiKey,
-      topic,
-      brandVoice: BRAND_CONTEXT[BRAND],
-      referenceImages,
-      variantCount: VARIANT_COUNT,
-      note: `5개 시안은 아래 유형을 순서대로 하나씩 사용해서 서로 다르게 써주세요(유형끼리 절대 겹치지 않게): ${types.join(
-        ', ',
-      )}. 각 시안의 text 맨 앞줄에 "[유형]" 형태로 어떤 유형인지 표시하고(예: [공감형]) 줄바꿈 후 본문을 이어서 쓰세요.
-첨부된 레퍼런스 이미지가 있다면 그 글의 후킹 문장 패턴을 그대로 재사용하되, 주제만 스레드·1인사업·브랜딩에 맞게 바꿔서 쓰세요.`,
-    })
+    const drafts = await generateThreadFullFormatSet({ apiKey, topic, referenceImages })
 
     await supabaseInsert('work_log', {
       id: makeId(),
       agent: 'buzz',
       brand: BRAND,
-      kind: '아침 유형별 시안 5개(자동)',
+      kind: '아침 유형별 시안 8개(자동)',
       status: 'done',
       status_label: '완료',
       started_at: nowIso,
@@ -114,7 +97,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         id: makeId(),
         agent: 'buzz',
         brand: BRAND,
-        kind: '아침 유형별 시안 5개(자동)',
+        kind: '아침 유형별 시안 8개(자동)',
         status: 'error',
         status_label: '오류',
         started_at: nowIso,

@@ -5,6 +5,7 @@ import {
   generateThreadVariantsWithReferences,
 } from '../agents/runThreadReview'
 import { THREAD_RUBRIC } from '../agents/threadRubric'
+import { MAJALNAM_THREAD_VOICE } from '../agents/threadPrompts'
 import type { ThreadDraft, ThreadReview } from '../types/thread'
 import { PASS_THRESHOLD } from '../types/domain'
 import {
@@ -15,7 +16,7 @@ import {
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
 import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
-import { BRAND_CONTEXT, type Brand } from '../types/brand'
+import type { Brand } from '../types/brand'
 import { listReferences, getReferencesByIds } from '../lib/referenceStore'
 import { fileToBase64, mediaTypeOf } from '../lib/imageFile'
 import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
@@ -109,7 +110,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
       const newDraft = await generateThreadDraft({
         apiKey,
         topic,
-        brandVoice: BRAND_CONTEXT[brand],
+        brandVoice: MAJALNAM_THREAD_VOICE,
         previousDraft,
         feedback,
         marketFindings: formatBrainFindingsForPrompt(brainReport),
@@ -211,7 +212,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
       const drafts = await generateThreadVariantsWithReferences({
         apiKey,
         topic,
-        brandVoice: BRAND_CONTEXT[brand],
+        brandVoice: MAJALNAM_THREAD_VOICE,
         referenceImages,
         variantCount: VARIANT_COUNT,
         note: variantNote,

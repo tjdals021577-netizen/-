@@ -5,11 +5,13 @@ import {
   buildThreadDraftUserPrompt,
   buildThreadReferenceSystemPrompt,
   buildThreadReferenceUserPrompt,
+  buildThreadFullFormatSystemPrompt,
+  buildThreadFullFormatUserPrompt,
   buildThreadReviewSystemPrompt,
   buildThreadReviewUserPrompt,
 } from './threadPrompts.js'
 import { THREAD_RUBRIC } from './threadRubric.js'
-import type { ThreadDraft, ThreadReview } from '../types/thread.js'
+import type { ThreadDraft, ThreadFormatDraft, ThreadReview } from '../types/thread.js'
 import type { CriterionScore, FlagSeverity, RevisionFlag } from '../types/domain.js'
 
 const FLAG_SEVERITIES: FlagSeverity[] = ['info', 'check', 'risk']
@@ -146,6 +148,58 @@ export async function generateThreadVariantsWithReferences(params: {
     throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
   }
   return rec.drafts.map((d) => parseDraft(d))
+}
+
+function parseFormatDraft(raw: unknown): ThreadFormatDraft {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+  }
+  const rec = raw as Record<string, unknown>
+  return {
+    format: typeof rec.format === 'string' ? rec.format : '',
+    text: typeof rec.text === 'string' ? rec.text : '',
+  }
+}
+
+// 대표님이 실제 쓰던 마스터 프롬프트 그대로 — 7가지 형식 + 질문형 후킹
+// 버전까지 총 8개를 한 번에 받는다. 오직 스레드 위원회(마잘남 본인 계정)
+// 전용이라 브랜드 목소리를 따로 받지 않고 항상 MAJALNAM_THREAD_VOICE를 쓴다.
+export async function generateThreadFullFormatSet(params: {
+  apiKey: string
+  topic: string
+  referenceImages?: VisionImageInput[]
+  note?: string
+}): Promise<ThreadFormatDraft[]> {
+  const { apiKey, topic, referenceImages, note } = params
+  const system = buildThreadFullFormatSystemPrompt()
+  const user = buildThreadFullFormatUserPrompt({ topic, note })
+
+  const raw =
+    referenceImages && referenceImages.length > 0
+      ? await callClaudeVisionJson({
+          apiKey,
+          system,
+          user,
+          images: referenceImages,
+          maxTokens: 4096,
+          onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+        })
+      : await callClaudeJson({
+          apiKey,
+          system,
+          user,
+          maxTokens: 4096,
+          onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+        })
+
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+  }
+  const rec = raw as Record<string, unknown>
+  if (!Array.isArray(rec.drafts)) {
+    throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+  }
+  return rec.drafts.map((d) => parseFormatDraft(d))
 }
 
 export async function runThreadReview(params: {
