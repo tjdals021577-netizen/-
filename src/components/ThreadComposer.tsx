@@ -76,6 +76,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
   const [refIds, setRefIds] = useState<string[]>([])
   // 라이브러리에 저장 안 하고 이번 한 번만 참고시킬 이미지
   const [adhocFiles, setAdhocFiles] = useState<File[]>([])
+  const [variantNote, setVariantNote] = useState('')
   const [variants, setVariants] = useState<ThreadDraft[] | null>(null)
   const [variantRunning, setVariantRunning] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
@@ -219,6 +220,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
         brandVoice: BRAND_CONTEXT[brand],
         referenceImages,
         variantCount: VARIANT_COUNT,
+        note: variantNote,
       })
       setVariants(drafts)
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
@@ -360,6 +362,19 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
             {adhocFiles.length > 0 && (
               <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">{adhocFiles.length}장 선택됨</p>
             )}
+          </div>
+
+          <div className="mb-2">
+            <label className="mb-1 block text-[11px] text-[var(--text-faint)]">
+              요청사항 (선택 — 예: "할인 이벤트 강조해줘", "더 짧고 임팩트 있게")
+            </label>
+            <textarea
+              value={variantNote}
+              onChange={(e) => setVariantNote(e.target.value)}
+              placeholder="어떻게 다시 써줬으면 좋겠는지 적어주세요"
+              rows={2}
+              className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+            />
           </div>
 
           <button

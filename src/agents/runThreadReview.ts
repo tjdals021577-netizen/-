@@ -127,12 +127,13 @@ export async function generateThreadVariantsWithReferences(params: {
   brandVoice?: string
   referenceImages: VisionImageInput[]
   variantCount?: number
+  note?: string
 }): Promise<ThreadDraft[]> {
-  const { apiKey, topic, brandVoice, referenceImages, variantCount = 3 } = params
+  const { apiKey, topic, brandVoice, referenceImages, variantCount = 3, note } = params
   const raw = await callClaudeVisionJson({
     apiKey,
     system: buildThreadReferenceSystemPrompt({ brandVoice, variantCount }),
-    user: buildThreadReferenceUserPrompt({ topic, variantCount }),
+    user: buildThreadReferenceUserPrompt({ topic, variantCount, note }),
     images: referenceImages,
     maxTokens: 2048,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),

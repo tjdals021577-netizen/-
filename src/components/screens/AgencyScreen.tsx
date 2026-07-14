@@ -131,6 +131,7 @@ export function AgencyScreen() {
   const [reRequestClientId, setReRequestClientId] = useState<string | null>(null)
   const [reRequestRefIds, setReRequestRefIds] = useState<string[]>([])
   const [reRequestAdhocFiles, setReRequestAdhocFiles] = useState<File[]>([])
+  const [reRequestNote, setReRequestNote] = useState('')
   const [reRequesting, setReRequesting] = useState(false)
   const [reRequestVariants, setReRequestVariants] = useState<Record<string, ThreadDraft[]>>({})
 
@@ -205,12 +206,14 @@ export function AgencyScreen() {
     setReRequestClientId(client.id)
     setReRequestRefIds(client.referenceImageIds)
     setReRequestAdhocFiles([])
+    setReRequestNote('')
   }
 
   function closeReRequest() {
     setReRequestClientId(null)
     setReRequestRefIds([])
     setReRequestAdhocFiles([])
+    setReRequestNote('')
   }
 
   function handleExtend(id: string) {
@@ -340,6 +343,7 @@ export function AgencyScreen() {
         brandVoice: client.persona,
         referenceImages,
         variantCount: REREQUEST_VARIANT_COUNT,
+        note: reRequestNote,
       })
       setReRequestVariants((prev) => ({ ...prev, [client.id]: drafts }))
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
@@ -554,6 +558,18 @@ export function AgencyScreen() {
                       {reRequestAdhocFiles.length > 0 && (
                         <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">{reRequestAdhocFiles.length}장 선택됨</p>
                       )}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10.5px] text-[var(--text-faint)]">
+                        요청사항 (선택 — 예: "할인 이벤트 강조해줘", "더 짧고 임팩트 있게")
+                      </label>
+                      <textarea
+                        value={reRequestNote}
+                        onChange={(e) => setReRequestNote(e.target.value)}
+                        placeholder="어떻게 다시 써줬으면 좋겠는지 적어주세요"
+                        rows={2}
+                        className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+                      />
                     </div>
                     <div className="flex gap-1.5">
                       <button

@@ -114,8 +114,12 @@ JSON 스키마:
 export function buildThreadReferenceUserPrompt(params: {
   topic: string
   variantCount: number
+  note?: string
 }): string {
-  return `[주제]\n${params.topic}\n\n첨부된 레퍼런스 이미지의 카피라이팅 스타일을 참고해서 서로 다른 시안 ${params.variantCount}개를 작성하고 JSON으로만 답하세요.`
+  const noteBlock = params.note?.trim()
+    ? `\n\n[추가 요청사항 — 반드시 반영]\n${params.note.trim()}`
+    : ''
+  return `[주제]\n${params.topic}${noteBlock}\n\n첨부된 레퍼런스 이미지의 카피라이팅 스타일을 참고해서 서로 다른 시안 ${params.variantCount}개를 작성하고 JSON으로만 답하세요.`
 }
 
 export function buildThreadReviewSystemPrompt(): string {
