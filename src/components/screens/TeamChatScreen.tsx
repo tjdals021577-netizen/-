@@ -91,6 +91,20 @@ type TimelineItem =
   | { kind: 'log'; time: string; entry: WorkLogEntry }
   | { kind: 'chat'; time: string; message: AgentChatMessage }
 
+// "모두에게" 보낸 메시지는 에이전트마다 자기 맥락으로 기억해야 해서 각자의
+// 기록에 따로 저장돼 있다 — 여러 에이전트를 한 피드에 합칠 때 그대로 두면
+// 내가 보낸 말이 에이전트 수만큼 중복으로 찍힌다. 같은 batchId를 가진 사용자
+// 메시지는 하나만 남긴다.
+function dedupeBroadcastMessages(messages: AgentChatMessage[]): AgentChatMessage[] {
+  const seenBatch = new Set<string>()
+  return messages.filter((m) => {
+    if (m.role !== 'user' || !m.batchId) return true
+    if (seenBatch.has(m.batchId)) return false
+    seenBatch.add(m.batchId)
+    return true
+  })
+}
+
 function buildTimeline(entries: WorkLogEntry[], messages: AgentChatMessage[]): TimelineItem[] {
   return [
     ...entries.map((entry) => ({ kind: 'log' as const, time: entry.startedAt, entry })),
@@ -212,7 +226,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   const log = feedFilter === 'all' ? getWorkLog(undefined, brand) : getWorkLog(feedFilter, brand)
   const chatMessages =
     feedFilter === 'all'
-      ? DISPATCHABLE_AGENTS.flatMap((a) => getMessages(a, brand))
+      ? dedupeBroadcastMessages(DISPATCHABLE_AGENTS.flatMap((a) => getMessages(a, brand)))
       : getMessages(feedFilter, brand)
   const timeline = buildTimeline(log, chatMessages)
   const memoryFacts = viewingAgent && viewingAgent.dispatchable ? getMemory(viewingAgent.key, brand) : []
@@ -225,6 +239,42 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
   }, [feedFilter, logVersion])
+
+  // 한 에이전트가 지시 한 건을 어떻게 받아들일지 처리하는 단위 — 역할마다
+  // 판단이 다를 수 있어서("모두에게"를 보내도 각자 따로 되묻거나 실행할 수
+  // 있게) 단일 대상 전송과 "모두에게" 전송이 이 함수를 각자 독립적으로
+  // 호출한다.
+  async function runAgentTurn(agent: DispatchableAgent, text: string, batchId?: string): Promise<void> {
+    addMessage({ agent, brand, role: 'user', content: text, batchId })
+    setLogVersion((v) => v + 1)
+    const history = getMessages(agent, brand)
+    const memory = getMemory(agent, brand).map((m) => m.fact)
+    const decision = await decideNextStep({
+      apiKey,
+      agent,
+      brandContext: BRAND_CONTEXT[brand],
+      userMessage: text,
+      history,
+      memory,
+    })
+    if (decision.memoryFacts.length > 0) {
+      addMemoryFacts(agent, brand, decision.memoryFacts)
+    }
+    if (decision.kind === 'act') {
+      addMessage({ agent, brand, role: 'agent', content: decision.text || '작업을 시작할게요.' })
+      setLogVersion((v) => v + 1)
+      await dispatchJob({ agent, brand, apiKey, instruction: decision.cleanInstruction || text })
+    } else {
+      addMessage({
+        agent,
+        brand,
+        role: 'agent',
+        content: decision.text || (decision.kind === 'question' ? '조금 더 구체적으로 알려주실 수 있을까요?' : '네, 확인했습니다.'),
+        isQuestion: decision.kind === 'question',
+      })
+      setLogVersion((v) => v + 1)
+    }
+  }
 
   async function handleDispatch() {
     setDispatchMessage(null)
@@ -244,13 +294,15 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     setLogVersion((v) => v + 1) // 지시 직후 "진행중" 버블이 바로 보이도록
     try {
       if (dispatchTarget === 'all') {
+        // "모두에게"도 각 에이전트가 독립적으로 되묻거나 실행하도록 한다 —
+        // 역할마다 판단이 다를 수 있어서(예: 같은 지시라도 라이터는 바로
+        // 실행 가능한데 리믹서는 벤치마킹 대상이 애매해 되물어야 할 수 있음).
         const targets = DISPATCHABLE_AGENTS.filter((agent) => {
           const requiredChannel = AGENT_CHANNEL_REQUIREMENT[agent]
           return !requiredChannel || BRAND_CHANNELS[brand].includes(requiredChannel)
         })
-        const results = await Promise.allSettled(
-          targets.map((agent) => dispatchJob({ agent, brand, apiKey, instruction: text })),
-        )
+        const batchId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const results = await Promise.allSettled(targets.map((agent) => runAgentTurn(agent, text, batchId)))
         const failed = results.filter((r) => r.status === 'rejected')
         if (failed.length > 0) {
           setDispatchMessage(`${targets.length}명 중 ${failed.length}명 실패 — 각자의 결과 버블에서 확인하세요.`)
@@ -259,35 +311,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
         // 바로 작업을 실행하지 않고, 먼저 이 지시가 실행해도 될 만큼 충분한지
         // 판단시킨다 — 애매하면 되묻고, 충분하면 지금까지 대화를 종합한
         // 지시문으로 기존 dispatchJob을 그대로 실행한다.
-        const agent = dispatchTarget
-        addMessage({ agent, brand, role: 'user', content: text })
-        setLogVersion((v) => v + 1)
-        const history = getMessages(agent, brand)
-        const memory = getMemory(agent, brand).map((m) => m.fact)
-        const decision = await decideNextStep({
-          apiKey,
-          agent,
-          brandContext: BRAND_CONTEXT[brand],
-          userMessage: text,
-          history,
-          memory,
-        })
-        if (decision.memoryFacts.length > 0) {
-          addMemoryFacts(agent, brand, decision.memoryFacts)
-        }
-        if (decision.kind === 'act') {
-          addMessage({ agent, brand, role: 'agent', content: decision.text || '작업을 시작할게요.' })
-          setLogVersion((v) => v + 1)
-          await dispatchJob({ agent, brand, apiKey, instruction: decision.cleanInstruction || text })
-        } else {
-          addMessage({
-            agent,
-            brand,
-            role: 'agent',
-            content: decision.text || (decision.kind === 'question' ? '조금 더 구체적으로 알려주실 수 있을까요?' : '네, 확인했습니다.'),
-            isQuestion: decision.kind === 'question',
-          })
-        }
+        await runAgentTurn(dispatchTarget, text)
       }
     } catch (err) {
       setDispatchMessage(err instanceof Error ? err.message : String(err))

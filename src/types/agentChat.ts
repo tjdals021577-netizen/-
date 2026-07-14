@@ -20,4 +20,9 @@ export interface AgentChatMessage {
   content: string
   isQuestion: boolean
   createdAt: string
+  // "모두에게" 보낼 때, 같은 메시지가 에이전트 수만큼 각자의 기록에 따로
+  // 저장된다(각자가 맥락으로 기억해야 하므로) — 같은 batchId를 공유시켜서
+  // "전체 보기"처럼 여러 에이전트를 한 화면에 합칠 때 내 메시지 버블이
+  // 여러 번 중복 표시되지 않고 하나로 묶이게 한다.
+  batchId?: string
 }

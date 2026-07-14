@@ -41,6 +41,7 @@ export function addMessage(params: {
   role: 'user' | 'agent'
   content: string
   isQuestion?: boolean
+  batchId?: string
 }): AgentChatMessage {
   const message: AgentChatMessage = {
     id: makeId(),
@@ -50,6 +51,7 @@ export function addMessage(params: {
     content: params.content,
     isQuestion: params.isQuestion ?? false,
     createdAt: new Date().toISOString(),
+    batchId: params.batchId,
   }
   const all = readAll<AgentChatMessage>(MESSAGES_KEY)
   all.push(message)
