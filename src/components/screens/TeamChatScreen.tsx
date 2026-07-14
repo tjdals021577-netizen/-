@@ -3,7 +3,15 @@ import { PreviewBanner } from './PreviewBanner'
 import { getWorkLog, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
-import type { Brand } from '../../types/brand'
+import { BRAND_CHANNELS, type Brand } from '../../types/brand'
+
+// "모두에게" 지시할 때, 그 브랜드가 아예 운영 안 하는 채널의 에이전트는
+// 애초에 빼고 보낸다(버즈/리믹서는 무조건 에러가 날 걸 알면서 보낼 이유가
+// 없음) — writer/brain은 채널 제약이 없어서 항상 대상에 포함됨.
+const AGENT_CHANNEL_REQUIREMENT: Partial<Record<DispatchableAgent, string>> = {
+  buzz: '스레드',
+  remix: '유튜브',
+}
 
 interface AgentMeta {
   key: string
@@ -140,7 +148,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   // 둘 다 겸해서, 다른 에이전트에게 지시하려면 먼저 그 에이전트를 클릭해
   // 피드를 전환해야 했다(사용자가 "한명씩 누르면서 확인하기 힘들다"고 지적).
   const [feedFilter, setFeedFilter] = useState<string>('all')
-  const [dispatchTarget, setDispatchTarget] = useState<DispatchableAgent>(DISPATCHABLE_AGENTS[0])
+  const [dispatchTarget, setDispatchTarget] = useState<DispatchableAgent | 'all'>(DISPATCHABLE_AGENTS[0])
   const [instruction, setInstruction] = useState('')
   const [dispatching, setDispatching] = useState(false)
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null)
@@ -174,12 +182,26 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     setDispatching(true)
     setLogVersion((v) => v + 1) // 지시 직후 "진행중" 버블이 바로 보이도록
     try {
-      await dispatchJob({
-        agent: dispatchTarget,
-        brand,
-        apiKey,
-        instruction,
-      })
+      if (dispatchTarget === 'all') {
+        const targets = DISPATCHABLE_AGENTS.filter((agent) => {
+          const requiredChannel = AGENT_CHANNEL_REQUIREMENT[agent]
+          return !requiredChannel || BRAND_CHANNELS[brand].includes(requiredChannel)
+        })
+        const results = await Promise.allSettled(
+          targets.map((agent) => dispatchJob({ agent, brand, apiKey, instruction })),
+        )
+        const failed = results.filter((r) => r.status === 'rejected')
+        if (failed.length > 0) {
+          setDispatchMessage(`${targets.length}명 중 ${failed.length}명 실패 — 각자의 결과 버블에서 확인하세요.`)
+        }
+      } else {
+        await dispatchJob({
+          agent: dispatchTarget,
+          brand,
+          apiKey,
+          instruction,
+        })
+      }
       setInstruction('')
     } catch (err) {
       setDispatchMessage(err instanceof Error ? err.message : String(err))
@@ -320,9 +342,10 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
           <div className="flex items-center gap-2 border-t border-[var(--border)] p-2.5">
             <select
               value={dispatchTarget}
-              onChange={(e) => setDispatchTarget(e.target.value as DispatchableAgent)}
+              onChange={(e) => setDispatchTarget(e.target.value as DispatchableAgent | 'all')}
               className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-[12px] font-bold text-[var(--accent)] focus:outline-none"
             >
+              <option value="all">모두에게</option>
               {DISPATCHABLE_META.map((a) => (
                 <option key={a.key} value={a.key}>
                   {a.name}에게
