@@ -57,7 +57,7 @@ export async function dispatchJob(params: {
         statusLabel: passed ? '완료' : '보류',
         costUsd: Math.max(0, getTodaySpendUsd() - spendBefore),
         note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`,
-        detailHtml: `<b>${draft.title}</b><br/>운영실 &gt; 블로그 탭에서 전체 내용을 확인하세요.`,
+        detailHtml: `<b>${draft.title}</b><br/>블로그 탭에서 전체 내용을 확인하세요.`,
       })
       const contentHtml = `${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`
       submitForApproval({

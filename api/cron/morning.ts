@@ -127,7 +127,7 @@ async function buildPhotoReminderText(): Promise<string | undefined> {
     if (rows.length === 0) missing.push(slot.brand)
   }
   if (missing.length === 0) return undefined
-  return `📸 ${dateKey}(블로그 예정일) — ${missing.join(', ')} 사진이 아직 없어요. 앱의 '사진함' 탭에서 미리 올려주세요.`
+  return `📸 ${dateKey}(블로그 예정일) — ${missing.join(', ')} 사진이 아직 없어요. 앱의 '블로그' 탭 → 사진 업로드에서 미리 올려주세요.`
 }
 
 interface MorningBriefing {

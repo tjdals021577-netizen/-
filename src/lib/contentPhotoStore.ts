@@ -111,8 +111,9 @@ export interface UpcomingBlogSlot {
   hasPhotos: boolean
 }
 
-// 사진함 화면에 "앞으로 며칠간 블로그 예정일 중 사진이 아직 없는 것"을 보여주기
-// 위한 헬퍼 — 요일 고정 스케줄(주간 스케줄 크론과 동일 로직)을 그대로 재사용한다.
+// 블로그 탭의 사진 업로드 섹션에 "앞으로 며칠간 블로그 예정일 중 사진이 아직
+// 없는 것"을 보여주기 위한 헬퍼 — 요일 고정 스케줄(주간 스케줄 크론과 동일
+// 로직)을 그대로 재사용한다.
 export function getUpcomingBlogSlots(daysAhead = 7): UpcomingBlogSlot[] {
   const photos = readAll()
   const slots: UpcomingBlogSlot[] = []
