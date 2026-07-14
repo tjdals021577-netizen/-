@@ -17,11 +17,15 @@ function todaySpendForBrand(brand: Brand): number {
 function BrandSection({ brand }: { brand: Brand }) {
   const spend = todaySpendForBrand(brand)
   const [radar, setRadar] = useState<RadarSnapshot | null>(null)
+  const [imweb, setImweb] = useState<RadarSnapshot | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetchLatestRadarSnapshot(brand).then((snap) => {
+    fetchLatestRadarSnapshot(brand, 'ga4').then((snap) => {
       if (!cancelled) setRadar(snap)
+    })
+    fetchLatestRadarSnapshot(brand, 'imweb').then((snap) => {
+      if (!cancelled) setImweb(snap)
     })
     return () => {
       cancelled = true
@@ -37,14 +41,21 @@ function BrandSection({ brand }: { brand: Brand }) {
     },
     { label: '1위 유입경로', value: topSource ? topSource.source : '—' },
     { label: '인기 페이지', value: topPage ? topPage.path : '—' },
-    { label: '전환(이벤트)', value: radar ? `${radar.conversions}건` : '—' },
+    {
+      label: `${imweb?.periodLabel ?? '어제'} 주문`,
+      value: imweb ? `${imweb.orderCount ?? 0}건` : '—',
+    },
+    {
+      label: '매출(아임웹)',
+      value: imweb?.revenueKrw != null ? `${imweb.revenueKrw.toLocaleString('ko-KR')}원` : '—',
+    },
     { label: '오늘 사용액(추정)', value: `$${spend.toFixed(3)}` },
   ]
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <h3 className="mb-3 text-sm font-bold text-[var(--text)]">{brand}</h3>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {stats.map((s) => (
           <div key={s.label} className="rounded-lg bg-[var(--surface-2)] p-3">
             <p className="text-lg font-bold text-[var(--text)]">{s.value}</p>
@@ -61,7 +72,7 @@ export function DashboardScreen() {
 
   return (
     <div>
-      <PreviewBanner message="업메리는 레이더(GA4)가 연결돼 매일 아침 실제 방문자·유입경로 숫자가 채워집니다. 마잘남은 아직 GA4 미연결이라 '—'로 보입니다. 결제 전환은 GA4에 전환 이벤트를 등록해야 값이 잡힙니다." />
+      <PreviewBanner message="레이더가 연결된 브랜드는 매일 아침 실제 방문자·유입경로(GA4)·주문·매출(아임웹) 숫자가 채워집니다. 아직 연결 안 한 소스/브랜드는 '—'로 보입니다." />
 
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--text)]">

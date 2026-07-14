@@ -30,20 +30,41 @@ interface RadarSnapshotRow {
   conversions: number
   top_pages: { path: string; views: number }[]
   traffic_sources: { source: string; sessions: number }[]
+  order_count: number | null
+  revenue_krw: number | null
 }
 
 async function buildRadarText(brand: string): Promise<string | undefined> {
-  const rows = await supabaseSelect<RadarSnapshotRow>(
-    'radar_snapshots',
-    `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1&select=period_label,sessions,active_users,conversions,top_pages,traffic_sources`,
-  )
-  const snap = rows[0]
-  if (!snap) return undefined
-  const topPage = snap.top_pages[0]
-  const topSource = snap.traffic_sources[0]
-  return `${snap.period_label} 방문자 ${snap.active_users}명 / 세션 ${snap.sessions}회 / 전환 ${snap.conversions}건
+  const [ga4Rows, imwebRows] = await Promise.all([
+    supabaseSelect<RadarSnapshotRow>(
+      'radar_snapshots',
+      `brand=eq.${encodeURIComponent(brand)}&source=eq.ga4&order=created_at.desc&limit=1&select=period_label,sessions,active_users,conversions,top_pages,traffic_sources,order_count,revenue_krw`,
+    ),
+    supabaseSelect<RadarSnapshotRow>(
+      'radar_snapshots',
+      `brand=eq.${encodeURIComponent(brand)}&source=eq.imweb&order=created_at.desc&limit=1&select=period_label,order_count,revenue_krw`,
+    ),
+  ])
+  const ga4 = ga4Rows[0]
+  const imweb = imwebRows[0]
+  if (!ga4 && !imweb) return undefined
+
+  const blocks: string[] = []
+  if (ga4) {
+    const topPage = ga4.top_pages[0]
+    const topSource = ga4.traffic_sources[0]
+    blocks.push(
+      `[GA4] ${ga4.period_label} 방문자 ${ga4.active_users}명 / 세션 ${ga4.sessions}회 / 전환 ${ga4.conversions}건
 1위 유입경로: ${topSource ? `${topSource.source} (세션 ${topSource.sessions}회)` : '(데이터 없음)'}
-1위 인기 페이지: ${topPage ? `${topPage.path} (조회 ${topPage.views}회)` : '(데이터 없음)'}`
+1위 인기 페이지: ${topPage ? `${topPage.path} (조회 ${topPage.views}회)` : '(데이터 없음)'}`,
+    )
+  }
+  if (imweb) {
+    blocks.push(
+      `[아임웹] ${imweb.period_label} 주문 ${imweb.order_count ?? 0}건 / 매출 ${imweb.revenue_krw != null ? `${imweb.revenue_krw.toLocaleString('ko-KR')}원` : '(집계 안 됨)'}`,
+    )
+  }
+  return blocks.join('\n\n')
 }
 
 interface MorningBriefing {

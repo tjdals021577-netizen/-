@@ -67,6 +67,23 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
 - 구현: `api/_lib/ga4.ts`(서비스 계정 JWT로 GA4 Data API 직접 호출, 별도 SDK 없음 — Node
   내장 `crypto`로 RS256 서명)
 
+### 레이더(아임웹 주문/매출) 연결 — 2026-07-14 진행
+아임웹은 관리자 화면 자체에 API 키 발급 메뉴가 있어서 별도 개발자 포털 가입이 필요 없다.
+
+1. 아임웹 관리자 → 설정 → **외부 서비스 연동 (API)** → Rest API V2 → **API Key 발급받기**
+2. 화면에 나오는 **API Key**와 **Secret Key** 확인
+3. Vercel 환경변수에 브랜드별로 추가(Production, Sensitive):
+   - `IMWEB_API_KEY_UPMERY` / `IMWEB_SECRET_KEY_UPMERY`
+   - `IMWEB_API_KEY_MAJALNAM` / `IMWEB_SECRET_KEY_MAJALNAM`
+4. 새 브랜드 추가 시 `api/cron/radar.ts`의 `IMWEB_ENV_KEYS`에 매핑 한 줄 추가
+- 구현: `api/_lib/imweb.ts` — `POST /v2/auth`(API Key+Secret → 액세스 토큰) →
+  `GET /v2/shop/orders`(기간별 주문 조회). **주의**: 아임웹 API 응답의 정확한 필드명을
+  개발 중에 직접 확인하지 못해서(사내 네트워크 정책상 이 리포를 작업한 환경에서
+  api.imweb.me 접속이 막혀 있었음) 여러 후보 필드명을 방어적으로 시도하도록 짜여 있다.
+  첫 실제 실행 결과는 `work_log`에 "아임웹 주문 응답 샘플(디버그)"로 원본 JSON 일부가
+  남으므로, 매출 숫자가 이상하면 그 로그를 보고 `api/_lib/imweb.ts`의 필드명 후보를
+  수정하면 된다.
+
 ## DB 스키마
 `db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 6개 테이블
 (`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`, `reference_images`, `brain_reports`,

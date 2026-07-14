@@ -99,8 +99,11 @@ create table if not exists brain_reports (
 );
 create index if not exists brain_reports_brand_idx on brain_reports (brand, created_at desc);
 
--- 레이더(GA4 등 외부 성과 데이터)가 매일 수집한 스냅샷 — 모닝 브리핑이 참고하고,
--- 대시보드가 방문자/유입경로 등을 표시할 때 이 테이블의 최신 행을 읽는다.
+-- 레이더(GA4·아임웹 등 외부 성과 데이터)가 매일 수집한 스냅샷 — 모닝 브리핑이
+-- 참고하고, 대시보드가 방문자/유입경로/주문/매출 등을 표시할 때 이 테이블의
+-- 최신 행을 읽는다. source 컬럼으로 브랜드당 하루에 여러 소스(ga4, imweb 등)를
+-- 각각 한 행씩 저장한다 — order_count/revenue_krw는 아임웹 등 커머스 소스 전용,
+-- GA4 소스 행에서는 null.
 create table if not exists radar_snapshots (
   id text primary key,
   brand text not null,
@@ -111,6 +114,8 @@ create table if not exists radar_snapshots (
   conversions integer not null default 0,
   top_pages jsonb not null default '[]',
   traffic_sources jsonb not null default '[]',
+  order_count integer,
+  revenue_krw numeric,
   created_at timestamptz not null,
   synced_at timestamptz not null default now()
 );

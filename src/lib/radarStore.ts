@@ -22,6 +22,8 @@ export interface RadarSnapshot {
   conversions: number
   topPages: { path: string; views: number }[]
   trafficSources: { source: string; sessions: number }[]
+  orderCount: number | null
+  revenueKrw: number | null
   createdAt: string
 }
 
@@ -37,15 +39,21 @@ function fromRow(row: Record<string, unknown>): RadarSnapshot {
     trafficSources: Array.isArray(row.traffic_sources)
       ? (row.traffic_sources as RadarSnapshot['trafficSources'])
       : [],
+    orderCount: typeof row.order_count === 'number' ? row.order_count : null,
+    revenueKrw: typeof row.revenue_krw === 'number' ? row.revenue_krw : null,
     createdAt: String(row.created_at ?? ''),
   }
 }
 
-export async function fetchLatestRadarSnapshot(brand: Brand): Promise<RadarSnapshot | null> {
+export async function fetchLatestRadarSnapshot(
+  brand: Brand,
+  source?: string,
+): Promise<RadarSnapshot | null> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null
   try {
+    const sourceFilter = source ? `&source=eq.${encodeURIComponent(source)}` : ''
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/radar_snapshots?brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1`,
+      `${SUPABASE_URL}/rest/v1/radar_snapshots?brand=eq.${encodeURIComponent(brand)}${sourceFilter}&order=created_at.desc&limit=1`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
     )
     if (!res.ok) return null
