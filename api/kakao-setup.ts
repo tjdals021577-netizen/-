@@ -21,9 +21,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     sendText(res, 500, 'KAKAO_REST_API_KEY 환경변수가 설정되지 않았습니다.')
     return
   }
+  const clientSecret = process.env.KAKAO_CLIENT_SECRET
   const redirectUri = `https://${req.headers.host}/api/kakao-setup`
   try {
-    const { accessToken, refreshToken } = await exchangeKakaoCode({ restApiKey, redirectUri, code })
+    const { accessToken, refreshToken } = await exchangeKakaoCode({
+      restApiKey,
+      clientSecret,
+      redirectUri,
+      code,
+    })
     await supabaseInsert('kakao_tokens', {
       id: 'default',
       refresh_token: refreshToken,

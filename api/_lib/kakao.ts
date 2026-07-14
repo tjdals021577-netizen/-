@@ -13,18 +13,21 @@ interface KakaoTokenRow {
 
 export async function exchangeKakaoCode(params: {
   restApiKey: string
+  clientSecret?: string
   redirectUri: string
   code: string
 }): Promise<{ accessToken: string; refreshToken: string }> {
+  const body: Record<string, string> = {
+    grant_type: 'authorization_code',
+    client_id: params.restApiKey,
+    redirect_uri: params.redirectUri,
+    code: params.code,
+  }
+  if (params.clientSecret) body.client_secret = params.clientSecret
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: params.restApiKey,
-      redirect_uri: params.redirectUri,
-      code: params.code,
-    }),
+    body: new URLSearchParams(body),
   })
   if (!res.ok) {
     throw new Error(`카카오 토큰 발급 실패: ${res.status} ${await res.text()}`)
@@ -36,7 +39,10 @@ export async function exchangeKakaoCode(params: {
 // 저장된 refresh_token으로 access_token을 새로 발급받는다. 카카오가 새
 // refresh_token을 같이 내려주면(만료 임박 시 로테이션) Supabase에도 갱신해서
 // 계속 자동 갱신되게 한다 — 사람이 다시 로그인할 필요 없음.
-export async function getKakaoAccessToken(restApiKey: string): Promise<string | null> {
+export async function getKakaoAccessToken(
+  restApiKey: string,
+  clientSecret?: string,
+): Promise<string | null> {
   const rows = await supabaseSelect<KakaoTokenRow>(
     'kakao_tokens',
     'id=eq.default&select=refresh_token',
@@ -44,14 +50,16 @@ export async function getKakaoAccessToken(restApiKey: string): Promise<string | 
   const refreshToken = rows[0]?.refresh_token
   if (!refreshToken) return null
 
+  const body: Record<string, string> = {
+    grant_type: 'refresh_token',
+    client_id: restApiKey,
+    refresh_token: refreshToken,
+  }
+  if (clientSecret) body.client_secret = clientSecret
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: restApiKey,
-      refresh_token: refreshToken,
-    }),
+    body: new URLSearchParams(body),
   })
   if (!res.ok) {
     throw new Error(`카카오 토큰 갱신 실패: ${res.status} ${await res.text()}`)

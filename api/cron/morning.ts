@@ -188,7 +188,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const kakaoRestApiKey = process.env.KAKAO_REST_API_KEY
   if (kakaoRestApiKey) {
     try {
-      const accessToken = await getKakaoAccessToken(kakaoRestApiKey)
+      const accessToken = await getKakaoAccessToken(kakaoRestApiKey, process.env.KAKAO_CLIENT_SECRET)
       if (accessToken) {
         await sendKakaoMemoToSelf({
           accessToken,
