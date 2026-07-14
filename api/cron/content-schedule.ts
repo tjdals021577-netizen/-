@@ -220,7 +220,28 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         results.push(await generateYoutubeForBrand(apiKey, slot.brand, date))
       }
     } catch (err) {
-      results.push(`${slot.brand} ${slot.channel}: 실패 (${err instanceof Error ? err.message : String(err)})`)
+      const message = err instanceof Error ? err.message : String(err)
+      results.push(`${slot.brand} ${slot.channel}: 실패 (${message})`)
+      // 실패 시에도 work_log에 남겨서, Vercel 로그 화면 없이 Supabase SQL
+      // 조회만으로 원인을 바로 확인할 수 있게 한다(실제로 이게 필요했던
+      // 문제 — 실패하면 아무 흔적도 안 남아서 원인 파악이 어려웠음).
+      try {
+        await supabaseInsert('work_log', {
+          id: makeId(),
+          agent: slot.channel === 'blog' ? 'writer' : 'remix',
+          brand: slot.brand,
+          kind: '주간 스케줄 자동 기획',
+          status: 'error',
+          status_label: '오류',
+          started_at: new Date().toISOString(),
+          ended_at: new Date().toISOString(),
+          note: '자동 생성 실패',
+          detail_html: message,
+        })
+      } catch {
+        // 에러 로그 저장 자체가 실패해도(예: Supabase 접속 문제) 크론
+        // 전체를 막지는 않는다 — results 응답만으로도 최소한의 기록은 남음
+      }
     }
   }
 
