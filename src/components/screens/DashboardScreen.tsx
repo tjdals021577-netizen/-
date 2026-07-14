@@ -39,7 +39,10 @@ function BrandSection({ brand }: { brand: Brand }) {
       label: `${radar?.periodLabel ?? '어제'} 방문자`,
       value: radar ? `${radar.activeUsers}명` : '—',
     },
-    { label: '1위 유입경로', value: topSource ? topSource.source : '—' },
+    {
+      label: '1위 유입경로',
+      value: topSource ? `${topSource.source} (${topSource.sessions.toLocaleString('ko-KR')}명)` : '—',
+    },
     { label: '인기 페이지', value: topPage ? topPage.path : '—' },
     {
       label: `${imweb?.periodLabel ?? '어제'} 주문`,
