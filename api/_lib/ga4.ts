@@ -13,6 +13,7 @@ export interface Ga4Report {
   conversions: number
   topPages: { path: string; views: number }[]
   trafficSources: { source: string; sessions: number }[]
+  naverLandingPages: { landingPage: string; sessions: number }[]
 }
 
 interface RunReportResponse {
@@ -94,7 +95,7 @@ export async function fetchGa4Report(params: {
   const accessToken = await getAccessToken(key)
   const dateRanges = [{ startDate: params.startDate, endDate: params.endDate }]
 
-  const [summary, pages, sources] = await Promise.all([
+  const [summary, pages, sources, naverLandingPages] = await Promise.all([
     runReport(accessToken, params.propertyId, {
       dateRanges,
       metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'conversions' }],
@@ -113,6 +114,22 @@ export async function fetchGa4Report(params: {
       orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
       limit: '5',
     }),
+    // 네이버 검색으로 들어온 세션이 "어느 페이지로 착지했는지" — 브랜드명
+    // 검색(보통 홈으로 착지)과 블로그 글 검색(그 글 주소로 착지)을 구분하는
+    // 용도(대표님 요청 — GA4는 검색어 자체는 안 주지만 착지 페이지는 준다).
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'landingPage' }],
+      metrics: [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'sessionSource',
+          stringFilter: { matchType: 'CONTAINS', value: 'naver', caseSensitive: false },
+        },
+      },
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit: '5',
+    }),
   ])
 
   const summaryValues = summary.rows?.[0]?.metricValues
@@ -126,6 +143,10 @@ export async function fetchGa4Report(params: {
     })),
     trafficSources: (sources.rows ?? []).map((r) => ({
       source: r.dimensionValues?.[0]?.value ?? '',
+      sessions: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+    naverLandingPages: (naverLandingPages.rows ?? []).map((r) => ({
+      landingPage: r.dimensionValues?.[0]?.value ?? '',
       sessions: Number(r.metricValues?.[0]?.value ?? 0),
     })),
   }

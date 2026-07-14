@@ -67,6 +67,22 @@ function BrandSection({ brand }: { brand: Brand }) {
           </div>
         ))}
       </div>
+
+      {radar && radar.naverLandingPages.length > 0 && (
+        <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3">
+          <p className="mb-2 text-[11px] font-bold text-[var(--text-faint)]">
+            네이버 검색 → 착지 페이지 (브랜드명 검색은 보통 홈 "/", 블로그 글 검색은 그 글 주소로 착지)
+          </p>
+          <div className="space-y-1">
+            {radar.naverLandingPages.map((p) => (
+              <div key={p.landingPage} className="flex items-center justify-between gap-2 text-[12px]">
+                <span className="min-w-0 truncate text-[var(--text-dim)]">{p.landingPage || '/'}</span>
+                <span className="shrink-0 font-bold text-[var(--text)]">{p.sessions.toLocaleString('ko-KR')}명</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -66,6 +66,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           conversions: report.conversions,
           top_pages: report.topPages,
           traffic_sources: report.trafficSources,
+          naver_landing_pages: report.naverLandingPages,
           created_at: nowIso,
         })
         results.push(`${brand} GA4: 방문자 ${report.activeUsers}명 / 세션 ${report.sessions}회`)

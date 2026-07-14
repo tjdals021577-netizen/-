@@ -22,6 +22,7 @@ export interface RadarSnapshot {
   conversions: number
   topPages: { path: string; views: number }[]
   trafficSources: { source: string; sessions: number }[]
+  naverLandingPages: { landingPage: string; sessions: number }[]
   orderCount: number | null
   revenueKrw: number | null
   createdAt: string
@@ -38,6 +39,9 @@ function fromRow(row: Record<string, unknown>): RadarSnapshot {
     topPages: Array.isArray(row.top_pages) ? (row.top_pages as RadarSnapshot['topPages']) : [],
     trafficSources: Array.isArray(row.traffic_sources)
       ? (row.traffic_sources as RadarSnapshot['trafficSources'])
+      : [],
+    naverLandingPages: Array.isArray(row.naver_landing_pages)
+      ? (row.naver_landing_pages as RadarSnapshot['naverLandingPages'])
       : [],
     orderCount: typeof row.order_count === 'number' ? row.order_count : null,
     revenueKrw: typeof row.revenue_krw === 'number' ? row.revenue_krw : null,
