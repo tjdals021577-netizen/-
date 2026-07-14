@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/content-schedule", "schedule": "0 21 * * *" },
     { "path": "/api/cron/agency", "schedule": "30 22 * * *" },
+    { "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" },
     { "path": "/api/cron/radar", "schedule": "50 22 * * *" },
     { "path": "/api/cron/morning", "schedule": "0 23 * * *" },
     { "path": "/api/cron/brain", "schedule": "0 0 1 * *" }
