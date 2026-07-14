@@ -48,27 +48,20 @@ function pickRotating<T>(pool: T[], count: number): T[] {
 
 interface ReferenceImageRow {
   id: string
-  label: string | null
   image_base64: string
   media_type: 'image/png' | 'image/jpeg' | 'image/webp'
 }
 
-const REFERENCE_KEYWORDS = ['스레드', '브랜딩', '1인', '사업', '카피']
-
-// 레퍼런스 라이브러리에서 라벨이 이번 주제 축(스레드·브랜딩·1인사업)과
-// 맞는 걸 우선 고르고, 없으면 최근 등록된 것 몇 장으로 대체한다 — 매번
-// 사람이 수동으로 첨부하지 않아도 "구조"를 참고할 재료를 자동으로 붙여준다.
+// 레퍼런스 라이브러리는 "잘 터진 글" 캡처를 모아두는 용도라, 라벨로 골라낼
+// 필요 없이 최근 등록된 것들을 그대로 쓴다 — 라이팅 시스템 프롬프트가 이
+// 글들의 "후킹 문장 구조"만 재사용하고 주제만 이번 topic에 맞게 바꿔쓰도록
+// 지시한다(threadPrompts.ts의 buildThreadReferenceSystemPrompt 참고).
 async function pickReferenceImages(): Promise<VisionImageInput[]> {
   const rows = await supabaseSelect<ReferenceImageRow>(
     'reference_images',
-    'order=created_at.desc&limit=20&select=id,label,image_base64,media_type',
+    'order=created_at.desc&limit=3&select=id,image_base64,media_type',
   )
-  const matched = rows.filter((r) => {
-    const label = r.label ?? ''
-    return REFERENCE_KEYWORDS.some((kw) => label.includes(kw))
-  })
-  const chosen = (matched.length > 0 ? matched : rows).slice(0, 2)
-  return chosen.map((r) => ({ imageBase64: r.image_base64, imageMediaType: r.media_type }))
+  return rows.map((r) => ({ imageBase64: r.image_base64, imageMediaType: r.media_type }))
 }
 
 function buildDetailHtml(drafts: { text: string }[]): string {
@@ -97,7 +90,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       variantCount: VARIANT_COUNT,
       note: `5개 시안은 아래 유형을 순서대로 하나씩 사용해서 서로 다르게 써주세요(유형끼리 절대 겹치지 않게): ${types.join(
         ', ',
-      )}. 각 시안의 text 맨 앞줄에 "[유형]" 형태로 어떤 유형인지 표시하고(예: [공감형]) 줄바꿈 후 본문을 이어서 쓰세요.`,
+      )}. 각 시안의 text 맨 앞줄에 "[유형]" 형태로 어떤 유형인지 표시하고(예: [공감형]) 줄바꿈 후 본문을 이어서 쓰세요.
+첨부된 레퍼런스 이미지가 있다면 그 글의 후킹 문장 패턴을 그대로 재사용하되, 주제만 스레드·1인사업·브랜딩에 맞게 바꿔서 쓰세요.`,
     })
 
     await supabaseInsert('work_log', {
