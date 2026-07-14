@@ -202,48 +202,56 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const today = kstNow()
   const date = kstDateKey(today)
   const slots = getScheduledSlots(today)
-  const results: string[] = []
 
-  for (const slot of slots) {
-    try {
-      const existing = await supabaseSelect<{ id: string }>(
-        'calendar_entries',
-        `date=eq.${date}&brand=eq.${encodeURIComponent(slot.brand)}&channel=eq.${slot.channel}&select=id&limit=1`,
-      )
-      if (existing.length > 0) {
-        results.push(`${slot.brand} ${slot.channel}: 이미 오늘 항목 있음 — 건너뜀`)
-        continue
-      }
-      if (slot.channel === 'blog') {
-        results.push(await generateBlogForBrand(apiKey, slot.brand, date))
-      } else if (slot.channel === 'youtube') {
-        results.push(await generateYoutubeForBrand(apiKey, slot.brand, date))
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      results.push(`${slot.brand} ${slot.channel}: 실패 (${message})`)
-      // 실패 시에도 work_log에 남겨서, Vercel 로그 화면 없이 Supabase SQL
-      // 조회만으로 원인을 바로 확인할 수 있게 한다(실제로 이게 필요했던
-      // 문제 — 실패하면 아무 흔적도 안 남아서 원인 파악이 어려웠음).
+  // 브랜드별로 병렬 처리한다 — 예전엔 순서대로(for-loop) 하나씩 처리해서,
+  // 앞 브랜드가 시간을 오래 쓰면 뒷 브랜드는 크론 함수 전체 제한(300초)에
+  // 걸려 아예 시도도 못 해보고 잘리는 문제가 실제로 있었다(2026-07-14
+  // 실제로 겪음 — 업메리는 타임아웃 에러라도 남았는데 마잘남은 아무 기록도
+  // 안 남았음). Promise.all로 동시에 돌리면 전체 소요 시간이 "가장 느린
+  // 브랜드 1개" 기준이 돼서 이 문제가 없어진다(브레인 크론에서도 같은
+  // 패턴으로 이미 해결한 적 있음).
+  const results = await Promise.all(
+    slots.map(async (slot) => {
       try {
-        await supabaseInsert('work_log', {
-          id: makeId(),
-          agent: slot.channel === 'blog' ? 'writer' : 'remix',
-          brand: slot.brand,
-          kind: '주간 스케줄 자동 기획',
-          status: 'error',
-          status_label: '오류',
-          started_at: new Date().toISOString(),
-          ended_at: new Date().toISOString(),
-          note: '자동 생성 실패',
-          detail_html: message,
-        })
-      } catch {
-        // 에러 로그 저장 자체가 실패해도(예: Supabase 접속 문제) 크론
-        // 전체를 막지는 않는다 — results 응답만으로도 최소한의 기록은 남음
+        const existing = await supabaseSelect<{ id: string }>(
+          'calendar_entries',
+          `date=eq.${date}&brand=eq.${encodeURIComponent(slot.brand)}&channel=eq.${slot.channel}&select=id&limit=1`,
+        )
+        if (existing.length > 0) {
+          return `${slot.brand} ${slot.channel}: 이미 오늘 항목 있음 — 건너뜀`
+        }
+        if (slot.channel === 'blog') {
+          return await generateBlogForBrand(apiKey, slot.brand, date)
+        } else if (slot.channel === 'youtube') {
+          return await generateYoutubeForBrand(apiKey, slot.brand, date)
+        }
+        return `${slot.brand} ${slot.channel}: 처리 대상 아님`
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        // 실패 시에도 work_log에 남겨서, Vercel 로그 화면 없이 Supabase SQL
+        // 조회만으로 원인을 바로 확인할 수 있게 한다(실제로 이게 필요했던
+        // 문제 — 실패하면 아무 흔적도 안 남아서 원인 파악이 어려웠음).
+        try {
+          await supabaseInsert('work_log', {
+            id: makeId(),
+            agent: slot.channel === 'blog' ? 'writer' : 'remix',
+            brand: slot.brand,
+            kind: '주간 스케줄 자동 기획',
+            status: 'error',
+            status_label: '오류',
+            started_at: new Date().toISOString(),
+            ended_at: new Date().toISOString(),
+            note: '자동 생성 실패',
+            detail_html: message,
+          })
+        } catch {
+          // 에러 로그 저장 자체가 실패해도(예: Supabase 접속 문제) 크론
+          // 전체를 막지는 않는다 — results 응답만으로도 최소한의 기록은 남음
+        }
+        return `${slot.brand} ${slot.channel}: 실패 (${message})`
       }
-    }
-  }
+    }),
+  )
 
   sendJson(res, 200, { ok: true, date, results })
 }

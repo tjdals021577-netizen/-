@@ -4,7 +4,10 @@ import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resource
 export const CLAUDE_MODEL = 'claude-sonnet-5'
 
 // 호출 1건이 걸려서 무한정 응답을 기다리는 상황을 막기 위한 기본 타임아웃.
-const DEFAULT_TIMEOUT_MS = 120_000
+// 원래 120초였는데, 웹서치+비전을 같이 쓰는 실제 블로그 초안 생성이 120초를
+// 넘겨서 매번 중단되는 문제가 실제로 있었다(content-schedule 크론에서 발견) —
+// 크론 함수 자체 제한(300초)에 여유를 두고 200초로 늘렸다.
+const DEFAULT_TIMEOUT_MS = 200_000
 
 export class ClaudeCallError extends Error {}
 
