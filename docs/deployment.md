@@ -40,16 +40,36 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
 `src/lib/remoteSync.ts`의 `testSupabaseConnection()` 참고.
 
 ## 크론 작업 (`/api/cron`)
+- `content-schedule.ts`: 매일 06:00 KST(21:00 UTC) — 요일 고정 주간 스케줄(유튜브 월·수·금/
+  마잘남만, 블로그 화·목·토·일/업메리+마잘남)에 맞춰 오늘 것을 자동 기획(초안 생성 + 블로그는
+  3인 위원회 채점까지) + 결재함/캘린더 자동 등록. 오늘 이미 항목이 있으면 건너뜀(중복 방지).
+  블로그는 `content_photos`에 그날 브랜드용 사진이 올라와 있으면 비전 호출로 사진을 직접 보고
+  씀. 주제는 최신 `brain_reports.recommendations`에서 최근 14일간 안 쓴 것을 하나 골라 씀
+  (브레인 리포트가 없으면 브랜드 톤 기반 기본 주제로 대체).
 - `agency.ts`: 매일 07:30 KST(22:30 UTC) — 진행 중인 대행 클라이언트마다 초안 5개 자동 생성
   (레퍼런스 이미지 있으면 반영) + 결재함/캘린더 자동 등록
 - `radar.ts`: 매일 07:50 KST(22:50 UTC) — GA4 방문자/유입경로 스냅샷을 브랜드별로 수집
-- `morning.ts`: 매일 08:00 KST(23:00 UTC) — 브랜드별로 어제 근무기록 + 레이더 데이터를 모아 브리핑 생성
+- `morning.ts`: 매일 08:00 KST(23:00 UTC) — 브랜드별로 어제 근무기록 + 레이더 데이터를 모아
+  브리핑 생성. 오늘 콘텐츠 일정 표(content-schedule이 방금 만든 항목 + 체크리스트 진행상황)와,
+  이틀 뒤 블로그 예정일에 사진이 아직 없으면 사진 요청 알림도 카톡 메시지에 같이 넣는다.
 - `brain.ts`: 매월 1일 09:00 KST(00:00 UTC) — 브랜드별로 "이번 달 트렌드" 기본 주제로 웹서치 리서치
 - 스케줄은 저장소 루트의 `vercel.json` 참고
-- 이 넷은 전부 Supabase에 실제로 데이터가 쌓이고 있어야 의미가 있다(각자 `work_log`/`agency_clients`/
-  `radar_snapshots` 등을 읽고 쓴다) — 즉 Supabase 연결이 실제로 되고 있는지 먼저 확인 필수
-- `캘린` `코치`는 크론 없음: 캘린은 콘텐츠 생성 자체가 아직 로컬/수동이라 크론이 읽을 서버
-  데이터가 마땅치 않고, 코치는 사람이 스크린샷을 직접 올려야 해서 애초에 자동화 불가능
+- 이 크론들은 전부 Supabase에 실제로 데이터가 쌓이고 있어야 의미가 있다(각자 `work_log`/
+  `agency_clients`/`radar_snapshots`/`content_photos` 등을 읽고 쓴다) — 즉 Supabase 연결이
+  실제로 되고 있는지 먼저 확인 필수
+- `캘린` `코치`는 크론 없음: 캘린은 화면 자체(체크리스트 토글 등)가 사람이 조작하는 용도라 크론이
+  대신할 게 없고, 코치는 사람이 스크린샷을 직접 올려야 해서 애초에 자동화 불가능
+
+### 주간 콘텐츠 스케줄 — 2026-07-14 진행
+`src/lib/weeklySchedule.ts`의 `WEEKLY_SCHEDULE`에 요일별 (브랜드, 채널) 목록이 고정돼 있다.
+스레드는 이 스케줄에 없음(대표님이 직접 관리 — 기존 수동 작성 + 대행 클라이언트 자동생성만
+그대로 유지). 게시물 단위 조회수 추적 인프라가 없어서 체크리스트의 "데이터 파악"·"레퍼런스"
+단계는 자동 감지가 안 되고, 대표님이 캘린더 화면에서 직접 체크하는 수동 항목으로 남겨뒀다
+(억지로 가짜 자동화를 붙이지 않기로 결정).
+
+블로그용 사진은 `사진함` 탭(`PhotoUploadScreen.tsx`)에서 날짜·브랜드별로 미리 올려두면
+`content_photos` 테이블에 저장되고, 그 날짜의 content-schedule 크론이 실행될 때 자동으로
+반영된다. 사진이 없으면 텍스트만으로(실제 상위노출 글 구조 웹서치 참고) 생성된다.
 
 ### 레이더(GA4) 연결 — 2026-07-13 진행
 서비스 계정(Google Cloud) 방식으로 연결한다. OAuth 로그인 없이 정적 키 하나로 끝나서 이 방식을 씀.
@@ -85,14 +105,36 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
   수정하면 된다.
 
 ## DB 스키마
-`db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 6개 테이블
+`db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 8개 테이블
 (`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`, `reference_images`, `brain_reports`,
-`radar_snapshots`),
+`radar_snapshots`, `kakao_tokens`, `content_photos`),
 select/insert/update 전부 공개 키로 가능(아래 겪었던 문제 참고 — upsert 때문에 select도 열어둠).
 
 **주의**: `schema.sql` 파일에 새 테이블/정책을 추가해도 이미 만들어진 라이브 DB에는
 자동 반영되지 않는다. 새 테이블이 추가될 때마다(예: `reference_images`) SQL Editor에서
 그 `create table ...`/`create policy ...` 블록만 따로 다시 실행해야 한다.
+
+**2026-07-14 추가분 — 아래를 Supabase SQL Editor에 붙여넣고 실행해야 실제로 반영됨**:
+```sql
+alter table calendar_entries add column if not exists checklist jsonb not null default '[]';
+
+create table if not exists content_photos (
+  id text primary key,
+  date date not null,
+  brand text not null,
+  channel text not null,
+  label text,
+  image_base64 text not null,
+  media_type text not null,
+  created_at timestamptz not null,
+  synced_at timestamptz not null default now()
+);
+create index if not exists content_photos_date_brand_idx on content_photos (date, brand, channel);
+alter table content_photos enable row level security;
+create policy "select content_photos" on content_photos for select to public using (true);
+create policy "insert content_photos" on content_photos for insert to public with check (true);
+create policy "update content_photos" on content_photos for update to public using (true) with check (true);
+```
 
 ### 겪었던 문제 (2026-07-11) — RLS 정책이 `to anon`이면 새 키 체계에서 막힘
 연결 테스트에서 `401 / new row violates row-level security policy` 에러가 났다.

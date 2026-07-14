@@ -5,12 +5,13 @@ import { DashboardScreen } from './screens/DashboardScreen'
 import { AgencyScreen } from './screens/AgencyScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { PlanningLibraryScreen } from './screens/PlanningLibraryScreen'
+import { PhotoUploadScreen } from './screens/PhotoUploadScreen'
 import { ApprovalScreen } from './screens/ApprovalScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { getApprovalQueue } from '../lib/approvalStore'
 import { BRANDS, type Brand } from '../types/brand'
 
-type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'calendar' | 'planning' | 'approval' | 'settings'
+type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'calendar' | 'planning' | 'photos' | 'approval' | 'settings'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'ops', label: '운영실' },
@@ -19,6 +20,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'agency', label: '대행 관리' },
   { id: 'calendar', label: '캘린더' },
   { id: 'planning', label: '기획함' },
+  { id: 'photos', label: '사진함' },
   { id: 'approval', label: '결재함' },
   { id: 'settings', label: '설정' },
 ]
@@ -83,6 +85,7 @@ export function AppShell() {
         {activeTab === 'agency' && <AgencyScreen />}
         {activeTab === 'calendar' && <CalendarScreen brand={brand} />}
         {activeTab === 'planning' && <PlanningLibraryScreen brand={brand} />}
+        {activeTab === 'photos' && <PhotoUploadScreen />}
         {activeTab === 'approval' && <ApprovalScreen brand={brand} />}
         {activeTab === 'settings' && <SettingsScreen />}
       </main>

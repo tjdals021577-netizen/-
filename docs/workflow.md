@@ -18,6 +18,17 @@
   있으면 백업으로 가져옴 (같은 `sourceWorkLogId`면 중복 등록 안 함)
 - 일정 클릭하면 펼쳐져서 전체 내용 확인 가능 (전에는 짧은 메모만 보여서 확인이 안 됐던 문제 해결됨)
 - 채널: `blog` / `thread` / `youtube` / `agency` / `etc`
+- **주간 스케줄 자동 등록**(2026-07-14부터): `api/cron/content-schedule.ts`가 요일 고정 스케줄에
+  맞춰 매일 06:00 KST에 유튜브(월·수·금)·블로그(화·목·토·일) 항목을 자동으로 만들어 올림.
+  서버가 만든 항목이라 화면 진입 시 `syncEntriesFromSupabase()`로 끌어와야 보임.
+- 각 항목엔 기획/컨펌/피드백/데이터 파악/레퍼런스 5단계 체크리스트가 붙는다 — 클릭해서 토글.
+  자세한 내용은 `docs/content-agents.md`의 "캘린더 — 체크리스트" 참고.
+
+## 기획함 · 사진함
+- `기획함`(`PlanningLibraryScreen.tsx`): 캘린더에 등록된 완성 콘텐츠를 채널별(블로그/스레드/
+  유튜브)로 모아 보여준다. 새 저장소 없이 `calendar_entries`를 다른 관점으로 재구성한 뷰.
+- `사진함`(`PhotoUploadScreen.tsx`): 앞으로 7일간 블로그 예정일에 쓸 사진을 미리 올려두는 화면.
+  자세한 내용은 `docs/content-agents.md` 참고.
 
 ## 대행 관리
 - 화면: `src/components/screens/AgencyScreen.tsx`

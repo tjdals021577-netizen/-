@@ -1,0 +1,228 @@
+// 매일 06:00 KST(대행 크론보다 먼저)에 돌아서, 대표님이 정한 주간 고정
+// 업로드 루틴(유튜브 월·수·금 / 블로그 화·목·토·일, 업메리+마잘남)에 맞춰
+// 오늘 해당하는 콘텐츠를 자동으로 기획(초안 생성)해서 캘린더에 올린다.
+// 사람이 라이터/리믹서 화면에서 "생성" 버튼을 누른 것과 같은 결과물이며,
+// 채점(라이터는 3인 위원회, 리믹서는 채점 없음)까지 동일하게 거친다.
+//
+// 체크리스트 5단계(기획/컨펌/피드백/데이터 파악/레퍼런스) 중 "기획"만 여기서
+// 자동으로 체크해둔다 — 나머지는 대표님이 캘린더 화면에서 직접 체크하는
+// 수동 항목이다(게시물 단위 성과 추적 인프라가 없어 자동 감지가 불가능하므로
+// 억지로 자동화하지 않음).
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { generateBlogDraft, runBlogAgentReview } from '../../src/agents/runBlogReview.js'
+import { generateRemixPlan } from '../../src/agents/runRemix.js'
+import { PASS_THRESHOLD } from '../../src/types/domain.js'
+import { BRAND_CONTEXT } from '../../src/types/brand.js'
+import type { Brand } from '../../src/types/brand.js'
+import type { BlogRole, BlogDraft, BlogReview } from '../../src/types/blog.js'
+import type { VisionImageInput } from '../../src/lib/claude.js'
+import { getScheduledSlots, kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
+import { makeDefaultChecklist } from '../../src/types/calendar.js'
+import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
+
+const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
+
+interface BrainReportRow {
+  topic: string
+  recommendations: string[]
+}
+
+interface CalendarTitleRow {
+  title: string
+}
+
+interface ContentPhotoRow {
+  image_base64: string
+  media_type: 'image/png' | 'image/jpeg' | 'image/webp'
+}
+
+function makeId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function buildBlogHtml(draft: BlogDraft, reviews: BlogReview[]): string {
+  const reviewHtml = reviews
+    .map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`)
+    .join('<br/>')
+  return `<b>${draft.title}</b><br/>${draft.body.replace(/\n/g, '<br/>')}<br/><br/>${reviewHtml}`
+}
+
+// 최근 14일간 같은 브랜드·채널에 이미 쓴 제목과 안 겹치는 추천 주제를 브레인
+// 리포트에서 하나 골라온다 — 브레인 리포트가 없으면 브랜드 톤 기반 기본 주제로.
+async function pickTopic(brand: Brand, channel: 'blog' | 'youtube'): Promise<string> {
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  const [reports, recentEntries] = await Promise.all([
+    supabaseSelect<BrainReportRow>(
+      'brain_reports',
+      `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1&select=topic,recommendations`,
+    ),
+    supabaseSelect<CalendarTitleRow>(
+      'calendar_entries',
+      `brand=eq.${encodeURIComponent(brand)}&channel=eq.${channel}&created_at=gte.${encodeURIComponent(since)}&select=title`,
+    ),
+  ])
+  const usedTitles = new Set(recentEntries.map((e) => e.title))
+  const recommendations = reports[0]?.recommendations ?? []
+  const fresh = recommendations.find((r) => !usedTitles.has(r))
+  if (fresh) return fresh
+  if (recommendations.length > 0) return recommendations[0]
+  return `${BRAND_CONTEXT[brand]} — ${channel === 'blog' ? '오늘의 블로그 주제' : '오늘의 유튜브 기획 주제'} (브레인 리서치를 먼저 실행하면 더 구체적인 주제로 자동 선정됩니다)`
+}
+
+async function fetchTodayPhotos(date: string, brand: Brand): Promise<VisionImageInput[]> {
+  const rows = await supabaseSelect<ContentPhotoRow>(
+    'content_photos',
+    `date=eq.${date}&brand=eq.${encodeURIComponent(brand)}&channel=eq.blog&select=image_base64,media_type`,
+  )
+  return rows.map((r) => ({ imageBase64: r.image_base64, imageMediaType: r.media_type }))
+}
+
+async function generateBlogForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
+  const topic = await pickTopic(brand, 'blog')
+  const photoImages = await fetchTodayPhotos(date, brand)
+  const draft = await generateBlogDraft({
+    apiKey,
+    topic,
+    keyPoints: '',
+    photoDescriptions: photoImages.length > 0 ? '' : '(사진 없음 — 실제 상위노출 글 구조를 검색해서 참고)',
+    brandContext: BRAND_CONTEXT[brand],
+    photoImages: photoImages.length > 0 ? photoImages : undefined,
+  })
+
+  const reviews: BlogReview[] = []
+  for (const role of BLOG_ROLES) {
+    reviews.push(await runBlogAgentReview({ apiKey, role, draft }))
+  }
+  const avg = reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length
+  const passed = avg >= PASS_THRESHOLD
+  const nowIso = new Date().toISOString()
+  const logId = makeId()
+
+  await supabaseInsert('work_log', {
+    id: logId,
+    agent: 'writer',
+    brand,
+    kind: '주간 스케줄 자동 기획',
+    status: 'done',
+    status_label: '완료',
+    started_at: nowIso,
+    ended_at: nowIso,
+    note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'} · 사진 ${photoImages.length}장 반영`,
+    detail_html: buildBlogHtml(draft, reviews),
+  })
+  await supabaseInsert('approval_queue', {
+    id: makeId(),
+    agent: 'writer',
+    brand,
+    title: draft.title,
+    content_html: buildBlogHtml(draft, reviews),
+    passed,
+    score_label: `${avg.toFixed(1)}/100`,
+    created_at: nowIso,
+    status: 'pending',
+    source_work_log_id: logId,
+  })
+  await supabaseInsert('calendar_entries', {
+    id: makeId(),
+    date,
+    brand,
+    channel: 'blog',
+    title: draft.title,
+    status: passed ? 'planned' : 'open',
+    note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'} (주간 스케줄 자동 기획) · 사진 ${photoImages.length}장`,
+    content_html: buildBlogHtml(draft, reviews),
+    checklist: makeDefaultChecklist(true),
+    created_at: nowIso,
+    source_work_log_id: logId,
+  })
+  return `${brand} 블로그: ${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`
+}
+
+async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
+  const topic = await pickTopic(brand, 'youtube')
+  const plan = await generateRemixPlan({
+    apiKey,
+    topic,
+    referenceText: '',
+    brandContext: BRAND_CONTEXT[brand],
+  })
+  const nowIso = new Date().toISOString()
+  const logId = makeId()
+  const contentHtml = `<b>${topic}</b><br/>훅: ${plan.hooks.join(' / ')}<br/><br/>${plan.outline.replace(/\n/g, '<br/>')}`
+
+  await supabaseInsert('work_log', {
+    id: logId,
+    agent: 'remix',
+    brand,
+    kind: '주간 스케줄 자동 기획',
+    status: 'done',
+    status_label: '완료',
+    started_at: nowIso,
+    ended_at: nowIso,
+    note: `훅 후보 ${plan.hooks.length}개`,
+    detail_html: contentHtml,
+  })
+  await supabaseInsert('approval_queue', {
+    id: makeId(),
+    agent: 'remix',
+    brand,
+    title: topic,
+    content_html: contentHtml,
+    passed: true,
+    score_label: '채점 없음',
+    created_at: nowIso,
+    status: 'pending',
+    source_work_log_id: logId,
+  })
+  await supabaseInsert('calendar_entries', {
+    id: makeId(),
+    date,
+    brand,
+    channel: 'youtube',
+    title: topic,
+    status: 'planned',
+    note: `훅 후보 ${plan.hooks.length}개 (주간 스케줄 자동 기획)`,
+    content_html: contentHtml,
+    checklist: makeDefaultChecklist(true),
+    created_at: nowIso,
+    source_work_log_id: logId,
+  })
+  return `${brand} 유튜브: 훅 후보 ${plan.hooks.length}개`
+}
+
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!requireCronAuth(req, res)) return
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
+    return
+  }
+
+  const today = kstNow()
+  const date = kstDateKey(today)
+  const slots = getScheduledSlots(today)
+  const results: string[] = []
+
+  for (const slot of slots) {
+    try {
+      const existing = await supabaseSelect<{ id: string }>(
+        'calendar_entries',
+        `date=eq.${date}&brand=eq.${encodeURIComponent(slot.brand)}&channel=eq.${slot.channel}&select=id&limit=1`,
+      )
+      if (existing.length > 0) {
+        results.push(`${slot.brand} ${slot.channel}: 이미 오늘 항목 있음 — 건너뜀`)
+        continue
+      }
+      if (slot.channel === 'blog') {
+        results.push(await generateBlogForBrand(apiKey, slot.brand, date))
+      } else if (slot.channel === 'youtube') {
+        results.push(await generateYoutubeForBrand(apiKey, slot.brand, date))
+      }
+    } catch (err) {
+      results.push(`${slot.brand} ${slot.channel}: 실패 (${err instanceof Error ? err.message : String(err)})`)
+    }
+  }
+
+  sendJson(res, 200, { ok: true, date, results })
+}

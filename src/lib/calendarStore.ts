@@ -1,7 +1,25 @@
-import type { CalendarEntry, CalendarChannel, CalendarStatus } from '../types/calendar.js'
+import type {
+  CalendarEntry,
+  CalendarChannel,
+  CalendarStatus,
+  ChecklistStageKey,
+} from '../types/calendar.js'
 import type { Brand } from '../types/brand.js'
 import { getWorkLog } from './workLog.js'
 import { syncToSupabase } from './remoteSync.js'
+
+// 크론(api/cron/content-schedule.ts)이 서버에서 만든 캘린더 항목은 Supabase에만
+// 쓰여서, 브라우저 localStorage만 읽는 화면에는 원래 안 보인다(대행 자동 생성
+// 때 겪었던 문제와 동일) — syncEntriesFromSupabase()로 화면 진입 시 끌어온다.
+function sanitizeEnvValue(raw: string | undefined): string | undefined {
+  if (!raw) return raw
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.trim().replace(/[^\x20-\x7E]/g, '')
+  return cleaned || undefined
+}
+
+const SUPABASE_URL = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_URL)
+const SUPABASE_ANON_KEY = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
 const STORAGE_KEY = 'ai-ops:content-calendar'
 
@@ -45,6 +63,7 @@ export function createEntry(params: {
   status?: CalendarStatus
   note?: string
   contentHtml?: string
+  checklist?: CalendarEntry['checklist']
   sourceWorkLogId?: string
 }): CalendarEntry {
   const entries = readAll()
@@ -61,6 +80,7 @@ export function createEntry(params: {
     status: params.status ?? 'planned',
     note: params.note ?? '',
     contentHtml: params.contentHtml,
+    checklist: params.checklist,
     createdAt: new Date().toISOString(),
     sourceWorkLogId: params.sourceWorkLogId,
   }
@@ -68,6 +88,17 @@ export function createEntry(params: {
   writeAll(entries)
   syncToSupabase('calendar_entries', entry)
   return entry
+}
+
+export function toggleChecklistStage(id: string, key: ChecklistStageKey): void {
+  const entries = readAll()
+  const idx = entries.findIndex((e) => e.id === id)
+  if (idx === -1) return
+  const checklist = entries[idx].checklist ?? []
+  const nextChecklist = checklist.map((s) => (s.key === key ? { ...s, done: !s.done } : s))
+  entries[idx] = { ...entries[idx], checklist: nextChecklist }
+  writeAll(entries)
+  syncToSupabase('calendar_entries', entries[idx])
 }
 
 export function updateEntry(
@@ -84,6 +115,43 @@ export function updateEntry(
 
 export function deleteEntry(id: string): void {
   writeAll(readAll().filter((e) => e.id !== id))
+}
+
+function fromSupabaseRow(row: Record<string, unknown>): CalendarEntry {
+  return {
+    id: String(row.id ?? ''),
+    date: String(row.date ?? ''),
+    brand: (row.brand as Brand) ?? '마잘남',
+    channel: (row.channel as CalendarChannel) ?? 'etc',
+    title: String(row.title ?? ''),
+    status: (row.status as CalendarStatus) ?? 'planned',
+    note: String(row.note ?? ''),
+    contentHtml: typeof row.content_html === 'string' ? row.content_html : undefined,
+    checklist: Array.isArray(row.checklist) ? (row.checklist as CalendarEntry['checklist']) : undefined,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    sourceWorkLogId: typeof row.source_work_log_id === 'string' ? row.source_work_log_id : undefined,
+  }
+}
+
+// 서버 크론이 만든 항목을 병합해온다 — 이미 로컬에 있는 id는 원격 값으로 덮어써서
+// 체크리스트 등 다른 화면(대시보드 등)에서의 변경도 최신으로 맞춘다.
+export async function syncEntriesFromSupabase(): Promise<void> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/calendar_entries?select=*&order=date.desc&limit=500`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
+    )
+    if (!res.ok) return
+    const rows = (await res.json()) as Record<string, unknown>[]
+    if (rows.length === 0) return
+    const remote = rows.map(fromSupabaseRow)
+    const remoteIds = new Set(remote.map((e) => e.id))
+    const localOnly = readAll().filter((e) => !remoteIds.has(e.id))
+    writeAll([...remote, ...localOnly])
+  } catch {
+    // 네트워크 실패는 조용히 무시 — 로컬 데이터로 계속 동작
+  }
 }
 
 const AGENT_TO_CHANNEL: Record<string, CalendarChannel> = {

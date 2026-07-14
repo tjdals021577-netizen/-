@@ -45,6 +45,7 @@ create table if not exists calendar_entries (
   status text not null,
   note text,
   content_html text,
+  checklist jsonb not null default '[]',
   created_at timestamptz not null,
   source_work_log_id text,
   synced_at timestamptz not null default now()
@@ -129,6 +130,23 @@ create table if not exists kakao_tokens (
   updated_at timestamptz not null default now()
 );
 
+-- 주간 스케줄(화·목·토·일 블로그)에 쓸 실제 사진. 캘린더 항목이 아직 없는
+-- 미래 날짜에도 미리 올려둘 수 있도록 calendar_entries.id가 아니라
+-- (date, brand, channel) 조합으로 연결한다 — content-schedule 크론이 그날
+-- 아침에 이 조합으로 조회해서 블로그 생성 시 비전 입력으로 사용한다.
+create table if not exists content_photos (
+  id text primary key,
+  date date not null,
+  brand text not null,
+  channel text not null,
+  label text,
+  image_base64 text not null,
+  media_type text not null,
+  created_at timestamptz not null,
+  synced_at timestamptz not null default now()
+);
+create index if not exists content_photos_date_brand_idx on content_photos (date, brand, channel);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -156,6 +174,7 @@ alter table reference_images enable row level security;
 alter table brain_reports enable row level security;
 alter table radar_snapshots enable row level security;
 alter table kakao_tokens enable row level security;
+alter table content_photos enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -188,3 +207,7 @@ create policy "update radar_snapshots" on radar_snapshots for update to public u
 create policy "select kakao_tokens" on kakao_tokens for select to public using (true);
 create policy "insert kakao_tokens" on kakao_tokens for insert to public with check (true);
 create policy "update kakao_tokens" on kakao_tokens for update to public using (true) with check (true);
+
+create policy "select content_photos" on content_photos for select to public using (true);
+create policy "insert content_photos" on content_photos for insert to public with check (true);
+create policy "update content_photos" on content_photos for update to public using (true) with check (true);

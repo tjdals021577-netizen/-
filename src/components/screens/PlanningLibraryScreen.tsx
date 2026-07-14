@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { getEntries } from '../../lib/calendarStore'
+import { getEntries, syncEntriesFromSupabase } from '../../lib/calendarStore'
 import type { CalendarChannel, CalendarEntry } from '../../types/calendar'
 import type { Brand } from '../../types/brand'
 
@@ -120,6 +120,12 @@ function PlanningCard({ entry }: { entry: CalendarEntry }) {
 export function PlanningLibraryScreen({ brand }: { brand: Brand }) {
   const [channelFilter, setChannelFilter] = useState<CalendarChannel | 'all'>('all')
   const [query, setQuery] = useState('')
+  const [, setVersion] = useState(0)
+
+  // 서버 크론(content-schedule)이 만든 콘텐츠도 여기 보이게 진입 시 한 번 끌어온다.
+  useEffect(() => {
+    void syncEntriesFromSupabase().then(() => setVersion((v) => v + 1))
+  }, [])
 
   const allEntries = getEntries(brand)
     .filter((e) => LIBRARY_CHANNELS.includes(e.channel) && (e.contentHtml || e.note))

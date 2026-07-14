@@ -6,6 +6,9 @@ import { BRANDS } from '../../src/types/brand.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 import { getKakaoAccessToken, sendKakaoMemoToSelf } from '../_lib/kakao.js'
+import { getScheduledSlots, kstNow, kstDateKey, addDaysKst } from '../../src/lib/weeklySchedule.js'
+import { CHECKLIST_STAGE_LABEL } from '../../src/types/calendar.js'
+import type { ChecklistStage } from '../../src/types/calendar.js'
 
 const AGENT_LABEL_KO: Record<string, string> = {
   morning: '모닝',
@@ -68,6 +71,63 @@ async function buildRadarText(brand: string): Promise<string | undefined> {
     )
   }
   return blocks.join('\n\n')
+}
+
+interface CalendarScheduleRow {
+  brand: string
+  channel: string
+  title: string
+  checklist: ChecklistStage[] | null
+}
+
+const CHANNEL_LABEL_KO: Record<string, string> = {
+  blog: '블로그',
+  thread: '스레드',
+  youtube: '유튜브',
+  agency: '대행',
+  etc: '기타',
+}
+
+function checklistSummary(checklist: ChecklistStage[] | null): string {
+  if (!checklist || checklist.length === 0) return ''
+  const remaining = checklist.filter((s) => !s.done).map((s) => CHECKLIST_STAGE_LABEL[s.key])
+  if (remaining.length === 0) return '(체크리스트 전부 완료)'
+  return `(남은 단계: ${remaining.join('·')})`
+}
+
+// content-schedule 크론이 오늘 새로 만든 유튜브·블로그 항목을 캘린더에서 읽어와
+// "오늘 뭘 해야 하는지" 표로 만든다 — content-schedule(06:00 KST)이 모닝(08:00
+// KST)보다 먼저 돌게 스케줄돼 있어서 이 시점엔 이미 오늘 항목이 들어가 있다.
+async function buildTodayScheduleText(brand: string, dateKey: string): Promise<string | undefined> {
+  const rows = await supabaseSelect<CalendarScheduleRow>(
+    'calendar_entries',
+    `brand=eq.${encodeURIComponent(brand)}&date=eq.${dateKey}&channel=in.(blog,youtube)&select=brand,channel,title,checklist`,
+  )
+  if (rows.length === 0) return undefined
+  return rows
+    .map((r) => `- [${CHANNEL_LABEL_KO[r.channel] ?? r.channel}] ${r.title} ${checklistSummary(r.checklist)}`.trim())
+    .join('\n')
+}
+
+// 이틀 뒤 블로그 예정일에 아직 사진이 안 올라와 있으면 미리 알려준다 — 사진이
+// 그날 새벽 크론이 도는 시점까지도 없으면 텍스트만으로 글이 만들어지기 때문에,
+// 최소 하루 이상의 여유를 두고 미리 요청한다.
+async function buildPhotoReminderText(): Promise<string | undefined> {
+  const target = addDaysKst(kstNow(), 2)
+  const dateKey = kstDateKey(target)
+  const blogSlots = getScheduledSlots(target).filter((s) => s.channel === 'blog')
+  if (blogSlots.length === 0) return undefined
+
+  const missing: string[] = []
+  for (const slot of blogSlots) {
+    const rows = await supabaseSelect<{ id: string }>(
+      'content_photos',
+      `date=eq.${dateKey}&brand=eq.${encodeURIComponent(slot.brand)}&channel=eq.blog&select=id&limit=1`,
+    )
+    if (rows.length === 0) missing.push(slot.brand)
+  }
+  if (missing.length === 0) return undefined
+  return `📸 ${dateKey}(블로그 예정일) — ${missing.join(', ')} 사진이 아직 없어요. 앱의 '사진함' 탭에서 미리 올려주세요.`
 }
 
 interface MorningBriefing {
@@ -138,6 +198,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const { startIso, endIso, dateLabel } = yesterdayKstRange()
   const results: string[] = []
   const kakaoLines: string[] = []
+  const todayKey = kstDateKey(kstNow())
 
   for (const brand of BRANDS) {
     const rows = await supabaseSelect<WorkLogRow>(
@@ -181,6 +242,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (briefing.nextActions.length > 0) {
       kakaoLines.push(...briefing.nextActions.slice(0, 2).map((a) => `  · ${a}`))
     }
+
+    const scheduleText = await buildTodayScheduleText(brand, todayKey)
+    if (scheduleText) {
+      kakaoLines.push(`  📅 오늘 일정(${brand})`)
+      kakaoLines.push(...scheduleText.split('\n').map((line) => `  ${line}`))
+    }
+  }
+
+  const photoReminder = await buildPhotoReminderText()
+  if (photoReminder) {
+    kakaoLines.push('', photoReminder)
   }
 
   // 카카오 연결이 안 돼 있으면(설정 전, 또는 토큰 없음) 조용히 건너뛴다 — 실패해도

@@ -6,8 +6,11 @@ import {
   updateEntry,
   deleteEntry,
   importTodayFromWorkLog,
+  syncEntriesFromSupabase,
+  toggleChecklistStage,
 } from '../../lib/calendarStore'
-import type { CalendarChannel, CalendarEntry, CalendarStatus } from '../../types/calendar'
+import type { CalendarChannel, CalendarEntry, CalendarStatus, ChecklistStageKey } from '../../types/calendar'
+import { CHECKLIST_STAGE_LABEL } from '../../types/calendar'
 import type { Brand } from '../../types/brand'
 
 const CHANNEL_LABEL: Record<CalendarChannel, string> = {
@@ -49,14 +52,48 @@ function todayKey(): string {
   return dateKey(t.getFullYear(), t.getMonth(), t.getDate())
 }
 
+function ChecklistRow({
+  entry,
+  onToggle,
+}: {
+  entry: CalendarEntry
+  onToggle: (key: ChecklistStageKey) => void
+}) {
+  if (!entry.checklist || entry.checklist.length === 0) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-1">
+      {entry.checklist.map((stage) => (
+        <button
+          key={stage.key}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggle(stage.key)
+          }}
+          className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold transition ${
+            stage.done
+              ? 'bg-[var(--done-soft)] text-[var(--done)]'
+              : 'bg-[var(--surface)] text-[var(--text-faint)]'
+          }`}
+        >
+          {stage.done ? '✓ ' : ''}
+          {CHECKLIST_STAGE_LABEL[stage.key]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function CalendarEntryRow({
   entry,
   onCycleStatus,
   onDelete,
+  onToggleChecklist,
 }: {
   entry: CalendarEntry
   onCycleStatus: () => void
   onDelete: () => void
+  onToggleChecklist: (key: ChecklistStageKey) => void
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -86,6 +123,7 @@ function CalendarEntryRow({
           <p className="mt-0.5 pl-3 text-[11.5px] text-[var(--text-dim)]">{entry.note}</p>
         )}
       </button>
+      <ChecklistRow entry={entry} onToggle={onToggleChecklist} />
       {open && (
         <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2.5 text-[12.5px] leading-relaxed text-[var(--text-dim)]">
           {entry.contentHtml ? (
@@ -121,10 +159,12 @@ export function CalendarScreen({ brand }: { brand: Brand }) {
   void version // 저장소 변경 후 재조회 트리거용
 
   // 캘린더 화면을 열 때마다 근무기록에서 아직 등록 안 된 오늘 완료분을
-  // 자동으로 가져온다 — 버튼을 안 눌러도 항상 최신 상태로 보인다.
+  // 자동으로 가져오고, 서버 크론(content-schedule)이 만든 항목도 끌어온다 —
+  // 버튼을 안 눌러도 항상 최신 상태로 보인다.
   useEffect(() => {
     importTodayFromWorkLog(brand)
     setVersion((v) => v + 1)
+    void syncEntriesFromSupabase().then(() => setVersion((v) => v + 1))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brand])
 
@@ -179,6 +219,11 @@ export function CalendarScreen({ brand }: { brand: Brand }) {
 
   function handleDelete(id: string) {
     deleteEntry(id)
+    setVersion((v) => v + 1)
+  }
+
+  function handleToggleChecklist(id: string, key: ChecklistStageKey) {
+    toggleChecklistStage(id, key)
     setVersion((v) => v + 1)
   }
 
@@ -285,6 +330,7 @@ export function CalendarScreen({ brand }: { brand: Brand }) {
                   entry={e}
                   onCycleStatus={() => handleCycleStatus(e.id, e.status)}
                   onDelete={() => handleDelete(e.id)}
+                  onToggleChecklist={(key) => handleToggleChecklist(e.id, key)}
                 />
               ))}
             </ul>
