@@ -391,7 +391,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
           })}
         </div>
 
-        <div className="flex min-h-[520px] flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="flex h-[75vh] max-h-[820px] min-h-[520px] flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
           <div className="flex items-center gap-2.5 border-b border-[var(--border)] p-3.5">
             {viewingAgent ? (
               <>

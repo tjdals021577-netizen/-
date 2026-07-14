@@ -52,6 +52,25 @@ export function syncToSupabase(table: string, record: object): void {
     })
 }
 
+export function deleteFromSupabase(table: string, id: string): void {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return
+  fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  })
+    .then((res) => {
+      if (!res.ok) {
+        res.text().then((text) => console.warn(`[Supabase 삭제 실패] ${table}:`, res.status, text))
+      }
+    })
+    .catch(() => {
+      // 네트워크 실패는 조용히 무시 — 로컬 삭제는 이미 끝났으므로 기능에 영향 없음
+    })
+}
+
 // 설정 화면의 "연결 테스트" 버튼용 — syncToSupabase와 달리 에러를 숨기지 않고
 // 그대로 화면에 보여줘서, 개발자 도구 없이도 문제를 바로 확인할 수 있게 한다.
 export async function testSupabaseConnection(): Promise<{ ok: boolean; message: string }> {

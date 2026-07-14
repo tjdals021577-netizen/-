@@ -216,6 +216,7 @@ create policy "update approval_queue" on approval_queue for update to public usi
 create policy "select calendar_entries" on calendar_entries for select to public using (true);
 create policy "insert calendar_entries" on calendar_entries for insert to public with check (true);
 create policy "update calendar_entries" on calendar_entries for update to public using (true) with check (true);
+create policy "delete calendar_entries" on calendar_entries for delete to public using (true);
 
 create policy "select agency_clients" on agency_clients for select to public using (true);
 create policy "insert agency_clients" on agency_clients for insert to public with check (true);

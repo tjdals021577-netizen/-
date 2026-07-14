@@ -6,7 +6,7 @@ import type {
 } from '../types/calendar.js'
 import type { Brand } from '../types/brand.js'
 import { getWorkLog } from './workLog.js'
-import { syncToSupabase } from './remoteSync.js'
+import { syncToSupabase, deleteFromSupabase } from './remoteSync.js'
 
 // 크론(api/cron/content-schedule.ts)이 서버에서 만든 캘린더 항목은 Supabase에만
 // 쓰여서, 브라우저 localStorage만 읽는 화면에는 원래 안 보인다(대행 자동 생성
@@ -115,6 +115,7 @@ export function updateEntry(
 
 export function deleteEntry(id: string): void {
   writeAll(readAll().filter((e) => e.id !== id))
+  deleteFromSupabase('calendar_entries', id)
 }
 
 function fromSupabaseRow(row: Record<string, unknown>): CalendarEntry {

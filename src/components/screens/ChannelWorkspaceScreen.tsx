@@ -10,6 +10,7 @@ import {
   syncEntriesFromSupabase,
   toggleChecklistStage,
   createEntry,
+  deleteEntry,
 } from '../../lib/calendarStore'
 import type { CalendarChannel, CalendarEntry, ChecklistStageKey } from '../../types/calendar'
 import { CHECKLIST_STAGE_LABEL } from '../../types/calendar'
@@ -220,7 +221,15 @@ function PhotoSlots({ brand }: { brand: Brand }) {
   )
 }
 
-function ContentCard({ entry, onToggleChecklist }: { entry: CalendarEntry; onToggleChecklist: (key: ChecklistStageKey) => void }) {
+function ContentCard({
+  entry,
+  onToggleChecklist,
+  onDelete,
+}: {
+  entry: CalendarEntry
+  onToggleChecklist: (key: ChecklistStageKey) => void
+  onDelete: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const preview = entry.contentHtml ? stripHtml(entry.contentHtml) : entry.note
@@ -291,6 +300,15 @@ function ContentCard({ entry, onToggleChecklist }: { entry: CalendarEntry; onTog
             className="rounded-lg bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-bold text-[var(--accent-strong)] hover:opacity-90"
           >
             {open ? '접기' : '열기'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm('이 글을 삭제할까요? 되돌릴 수 없습니다.')) onDelete()
+            }}
+            className="rounded-lg bg-[var(--open-soft)] px-2.5 py-1 text-[11px] font-bold text-[var(--open)] hover:opacity-90"
+          >
+            삭제
           </button>
         </div>
       </div>
@@ -450,6 +468,10 @@ export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; chann
                   entry={entry}
                   onToggleChecklist={(key) => {
                     toggleChecklistStage(entry.id, key)
+                    setVersion((v) => v + 1)
+                  }}
+                  onDelete={() => {
+                    deleteEntry(entry.id)
                     setVersion((v) => v + 1)
                   }}
                 />
