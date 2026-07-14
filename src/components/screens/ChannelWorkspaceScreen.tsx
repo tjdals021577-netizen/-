@@ -28,6 +28,7 @@ import {
   syncContentPhotosFromSupabase,
 } from '../../lib/contentPhotoStore'
 import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
+import { fetchYoutubeVideoStats, type YoutubeVideoStatRow } from '../../lib/youtubeStatsStore'
 import type { Brand } from '../../types/brand'
 
 export type WorkspaceChannel = 'blog' | 'thread' | 'youtube'
@@ -395,6 +396,56 @@ function ManualEntryForm({
   )
 }
 
+function formatCount(n: number): string {
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}만`
+  return n.toLocaleString('ko-KR')
+}
+
+// 레이더 크론이 매일 YouTube Data API로 가져온 최근 영상 통계를 보여준다 —
+// 조회수·좋아요·댓글은 공개 데이터라 API 키만으로 조회 가능(OAuth 불필요).
+function YoutubeStatsPanel({ brand }: { brand: Brand }) {
+  const [stats, setStats] = useState<YoutubeVideoStatRow[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setStats(null)
+    void fetchYoutubeVideoStats(brand).then((rows) => {
+      if (!cancelled) setStats(rows)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [brand])
+
+  if (stats === null) {
+    return <p className="text-[12px] text-[var(--text-faint)]">불러오는 중…</p>
+  }
+  if (stats.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-4 text-[12px] text-[var(--text-faint)]">
+        아직 데이터가 없습니다 — 유튜브 API 연동(YOUTUBE_API_KEY, 채널 ID) 후 매일 새벽 레이더 크론이 자동으로 채웁니다.
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      {stats.map((v) => (
+        <div key={v.videoId} className="flex items-center gap-2.5 rounded-lg bg-[var(--surface-2)] p-2">
+          {v.thumbnailUrl && (
+            <img src={v.thumbnailUrl} alt="" className="h-10 w-16 shrink-0 rounded object-cover" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[12px] font-bold text-[var(--text)]">{v.title}</p>
+            <p className="text-[10.5px] text-[var(--text-faint)]">
+              👁️ {formatCount(v.viewCount)} · 👍 {formatCount(v.likeCount)} · 💬 {formatCount(v.commentCount)}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; channel: WorkspaceChannel }) {
   const [, setVersion] = useState(0)
   const [query, setQuery] = useState('')
@@ -494,9 +545,13 @@ export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; chann
                   <CoachPanel brand={brand} />
                 </div>
               </Accordion>
+            ) : channel === 'youtube' ? (
+              <Accordion title="내 콘텐츠 분석" status="조회수·좋아요·댓글 (매일 자동 수집)">
+                <YoutubeStatsPanel brand={brand} />
+              </Accordion>
             ) : (
               <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-4 text-[12px] text-[var(--text-faint)]">
-                내 콘텐츠 분석은 {channel === 'youtube' ? '유튜브' : '메타(스레드)'} API 연동 후 여기에 추가될 예정입니다.
+                내 콘텐츠 분석은 메타(스레드) API 연동 후 여기에 추가될 예정입니다.
                 지금은 게시물 단위 조회수·반응 데이터를 가져올 방법이 없어서 비워둡니다.
               </div>
             )}

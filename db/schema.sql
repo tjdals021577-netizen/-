@@ -174,6 +174,22 @@ create table if not exists agent_memory (
 );
 create index if not exists agent_memory_agent_brand_idx on agent_memory (agent, brand, created_at desc);
 
+-- 레이더 크론이 YouTube Data API로 매일 가져오는 최근 영상 통계. 영상 하나당
+-- 한 행이고(video_id가 PK), 같은 영상을 다시 가져오면 조회수·좋아요 등이
+-- 갱신되도록 upsert한다 — 채널 탭 "내 콘텐츠 분석"에서 읽는다.
+create table if not exists youtube_video_stats (
+  video_id text primary key,
+  brand text not null,
+  title text not null,
+  published_at timestamptz,
+  view_count integer not null default 0,
+  like_count integer not null default 0,
+  comment_count integer not null default 0,
+  thumbnail_url text,
+  updated_at timestamptz not null default now()
+);
+create index if not exists youtube_video_stats_brand_idx on youtube_video_stats (brand, published_at desc);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -204,6 +220,7 @@ alter table kakao_tokens enable row level security;
 alter table content_photos enable row level security;
 alter table agent_chat_messages enable row level security;
 alter table agent_memory enable row level security;
+alter table youtube_video_stats enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -249,3 +266,7 @@ create policy "update agent_chat_messages" on agent_chat_messages for update to 
 create policy "select agent_memory" on agent_memory for select to public using (true);
 create policy "insert agent_memory" on agent_memory for insert to public with check (true);
 create policy "update agent_memory" on agent_memory for update to public using (true) with check (true);
+
+create policy "select youtube_video_stats" on youtube_video_stats for select to public using (true);
+create policy "insert youtube_video_stats" on youtube_video_stats for insert to public with check (true);
+create policy "update youtube_video_stats" on youtube_video_stats for update to public using (true) with check (true);

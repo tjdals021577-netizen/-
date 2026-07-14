@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { fetchGa4Report } from '../_lib/ga4.js'
 import { fetchImwebOrderSummary } from '../_lib/imweb.js'
+import { fetchRecentVideoStats } from '../_lib/youtube.js'
 import { BRANDS, type Brand } from '../../src/types/brand.js'
 import { requireCronAuth, sendJson } from '../_lib/cronHandler.js'
 
@@ -24,6 +25,11 @@ const GA4_PROPERTY_ID_ENV_KEY: Record<Brand, string> = {
 const IMWEB_ENV_KEYS: Record<Brand, { apiKey: string; secret: string }> = {
   업메리: { apiKey: 'IMWEB_API_KEY_UPMERY', secret: 'IMWEB_SECRET_KEY_UPMERY' },
   마잘남: { apiKey: 'IMWEB_API_KEY_MAJALNAM', secret: 'IMWEB_SECRET_KEY_MAJALNAM' },
+}
+
+const YOUTUBE_CHANNEL_ID_ENV_KEY: Record<Brand, string> = {
+  업메리: 'YOUTUBE_CHANNEL_ID_UPMERY',
+  마잘남: 'YOUTUBE_CHANNEL_ID_MAJALNAM',
 }
 
 // 매일 07:50 KST에 돌아서(모닝 크론 10분 전, vercel.json 참고), 어제 하루치
@@ -114,6 +120,36 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
     } else {
       results.push(`${brand} 아임웹: 건너뜀 (미설정)`)
+    }
+
+    // 유튜브 — 조회수·좋아요·댓글 수는 공개 정보라 API 키만으로 조회 가능
+    // (OAuth 불필요). 채널 탭 "내 콘텐츠 분석"이 이 테이블을 읽는다.
+    const youtubeApiKey = process.env.YOUTUBE_API_KEY
+    const youtubeChannelId = process.env[YOUTUBE_CHANNEL_ID_ENV_KEY[brand]]
+    if (youtubeApiKey && youtubeChannelId) {
+      try {
+        const stats = await fetchRecentVideoStats({ channelId: youtubeChannelId, apiKey: youtubeApiKey })
+        await Promise.all(
+          stats.map((v) =>
+            supabaseInsert('youtube_video_stats', {
+              video_id: v.videoId,
+              brand,
+              title: v.title,
+              published_at: v.publishedAt || null,
+              view_count: v.viewCount,
+              like_count: v.likeCount,
+              comment_count: v.commentCount,
+              thumbnail_url: v.thumbnailUrl,
+              updated_at: nowIso,
+            }),
+          ),
+        )
+        results.push(`${brand} 유튜브: 영상 ${stats.length}개 통계 갱신`)
+      } catch (err) {
+        results.push(`${brand} 유튜브: 실패 (${err instanceof Error ? err.message : String(err)})`)
+      }
+    } else {
+      results.push(`${brand} 유튜브: 건너뜀 (미설정)`)
     }
   }
 
