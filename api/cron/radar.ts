@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { supabaseInsert, supabaseSelect } from '../_lib/supabaseAdmin.js'
 import { fetchGa4Report } from '../_lib/ga4.js'
 import { fetchImwebOrderSummary } from '../_lib/imweb.js'
 import { fetchRecentVideoStats } from '../_lib/youtube.js'
@@ -130,7 +130,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const youtubeChannelId = process.env[YOUTUBE_CHANNEL_ID_ENV_KEY[brand]]
     if (youtubeApiKey && youtubeChannelId) {
       try {
+        // 분석을 매일 돌리면 새 영상이 없는 날에도 API 비용이 나간다(대표님
+        // 지적) — 갱신 전에 기존 video_id를 먼저 조회해서, 이번에 처음 보는
+        // 영상이 있을 때만 AI 분석을 실행하도록 제한한다. 통계 자체(조회수
+        // 갱신)는 비용이 안 드는 순수 API 호출이라 매일 갱신해도 무방하다.
+        const existingRows = await supabaseSelect<{ video_id: string }>(
+          'youtube_video_stats',
+          `brand=eq.${encodeURIComponent(brand)}&select=video_id`,
+        )
+        const existingIds = new Set(existingRows.map((r) => r.video_id))
+
         const stats = await fetchRecentVideoStats({ channelId: youtubeChannelId, apiKey: youtubeApiKey })
+        const hasNewVideo = stats.some((v) => !existingIds.has(v.videoId))
         await Promise.all(
           stats.map((v) =>
             supabaseInsert('youtube_video_stats', {
@@ -148,10 +159,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         )
         results.push(`${brand} 유튜브: 영상 ${stats.length}개 통계 갱신`)
 
-        // 통계만 쌓아두지 않고, 매일 AI가 어떤 영상이 잘 됐는지 분석해서
-        // 팀채팅(전략 카드)·결재함에 자동으로 올려준다 — 채널 탭 "내 콘텐츠
-        // 분석"은 숫자만 보여주고, 실제 해석·다음 기획 방향은 여기서 나온다.
-        if (apiKey && stats.length > 0) {
+        // 통계만 쌓아두지 않고, 새 영상이 올라온 날에만 AI가 어떤 영상이 잘
+        // 됐는지 분석해서 팀채팅(전략 카드)·결재함에 자동으로 올려준다 —
+        // 채널 탭 "내 콘텐츠 분석"은 숫자만 보여주고, 실제 해석·다음 기획
+        // 방향은 여기서 나온다.
+        if (apiKey && stats.length > 0 && hasNewVideo) {
           try {
             const analysis = await analyzeYoutubeContent({ apiKey, brandContext: BRAND_CONTEXT[brand], stats })
             const analysisHtml = `<b>${analysis.summary}</b><br/><br/><b>분석</b><br/>${analysis.findings
@@ -188,6 +200,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           } catch (err) {
             results.push(`${brand} 유튜브 분석: 실패 (${err instanceof Error ? err.message : String(err)})`)
           }
+        } else if (apiKey && stats.length > 0) {
+          results.push(`${brand} 유튜브 분석: 건너뜀 (새 영상 없음)`)
         }
       } catch (err) {
         results.push(`${brand} 유튜브: 실패 (${err instanceof Error ? err.message : String(err)})`)
