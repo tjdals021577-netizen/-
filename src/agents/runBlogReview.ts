@@ -140,11 +140,15 @@ export async function generateBlogDraft(params: {
     })
     return parseDraft(raw)
   }
+  // maxTokens는 최종 글 본문뿐 아니라 웹서치 도구 호출(tool_use/tool_result)
+  // 블록까지 같은 토큰 예산을 나눠 쓴다 — 4096으로는 검색을 여러 번 돌면
+  // 본문을 쓰기 전에 예산이 바닥나서 "모델 응답에 텍스트가 없습니다" 에러가
+  // 실제로 발생했다(content-schedule 크론에서 발견). 8192로 넉넉하게 늘림.
   const raw = await callClaudeJsonWithWebSearch({
     apiKey,
     system: buildDraftSystemPrompt(brandContext, marketFindings, false),
     user,
-    maxTokens: 4096,
+    maxTokens: 8192,
     maxSearches: 5,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })

@@ -28,12 +28,14 @@ export async function generateRemixPlan(params: {
 }): Promise<RemixPlan> {
   const { apiKey, topic, referenceText, brandContext, marketFindings } = params
   // 실제 유튜브 최신 흐름을 검색해서 기획에 반영해야 하므로(단순 지식베이스
-  // 기반 추측이 아니라) 웹서치 도구가 붙은 호출을 쓴다.
+  // 기반 추측이 아니라) 웹서치 도구가 붙은 호출을 쓴다. maxTokens는 검색
+  // 도구 호출 블록과 최종 답변이 같은 예산을 나눠 쓰기 때문에(블로그 쪽에서
+  // 실제로 예산 부족으로 "응답에 텍스트 없음" 에러가 났었음) 여유 있게 잡음.
   const raw = await callClaudeJsonWithWebSearch({
     apiKey,
     system: buildRemixSystemPrompt(brandContext, marketFindings),
     user: buildRemixUserPrompt({ topic, referenceText }),
-    maxTokens: 2048,
+    maxTokens: 4096,
     maxSearches: 5,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
