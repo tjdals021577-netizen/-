@@ -1,13 +1,14 @@
 # 콘텐츠 생성 에이전트
 
-브라우저에서 실행하는 에이전트(운영실 화면들)는 `api/claude-proxy.ts`를 거쳐 Anthropic을
+브라우저에서 실행하는 에이전트(채널 워크스페이스 화면들)는 `api/claude-proxy.ts`를 거쳐 Anthropic을
 호출한다 — 서버에 등록된 `ANTHROPIC_API_KEY`를 대신 쓰기 때문에 사람이 API 키를 입력할
 필요가 없다(2026-07-14부터, 이전 BYOK 방식 폐지 — 상세 이유는 `docs/README.md` 참고).
 화면에서 직접 실행하는 것들은 여전히 "버튼을 눌러야" 실행되고, 일부는 크론으로 자동화됨
 (아래 각 에이전트 항목 참고).
 
 ## 라이터 (블로그)
-- 화면: `src/components/BlogComposer.tsx` (운영실 → 블로그 탭)
+- 화면: `src/components/BlogComposer.tsx` (탭바 "블로그" → "새 글 직접 만들기" 아코디언,
+  2026-07-14부터 — 예전엔 운영실 → 블로그 탭)
 - 로직: `src/agents/runBlogReview.ts`, `src/agents/blogPrompts.ts`, `src/agents/blogRubric.ts`
 - 흐름: 초안 생성 → SEO/카피/고객경험 3인 위원회가 각 100점 만점 채점 → 평균 90점 이상 통과,
   아니면 피드백 반영해서 재생성
@@ -21,11 +22,12 @@
   전환되어 AI가 사진을 직접 보고 배치를 제안한다 — 이 경우엔 사진 근거가 검색보다 우선이라
   웹서치는 같이 못 쓴다(둘 다 하려면 나중에 `callClaudeVisionJson`에 웹서치 도구를 추가해야 함).
 - **주간 스케줄 자동 기획**(2026-07-14부터): `api/cron/content-schedule.ts` — 화·목·토·일마다
-  업메리·마잘남 각각 자동으로 블로그 초안 1건씩 생성(3인 위원회 채점까지 포함). `사진함` 탭에서
-  그 날짜·브랜드용 사진을 미리 올려두면 비전 호출로 반영되고, 없으면 텍스트만으로(웹서치 경로).
+  업메리·마잘남 각각 자동으로 블로그 초안 1건씩 생성(3인 위원회 채점까지 포함). 블로그 탭의
+  "사진 업로드" 섹션에서 그 날짜·브랜드용 사진을 미리 올려두면 비전 호출로 반영되고, 없으면
+  텍스트만으로(웹서치 경로).
 
 ## 버즈 (스레드)
-- 화면: `src/components/ThreadComposer.tsx` (운영실 → 스레드 탭)
+- 화면: `src/components/ThreadComposer.tsx` (탭바 "스레드" → "새 글 직접 만들기" 아코디언)
 - 로직: `src/agents/runThreadReview.ts`, `src/agents/threadPrompts.ts`, `src/agents/threadRubric.ts`
 - 흐름: 라이터와 비슷하지만 위원회가 1인, 기준 4개(직관성·명확성·단순함·간결성) × 25점
 - 대행 클라이언트용 스레드도 같은 로직 재사용 (`AgencyScreen.tsx`에서 직접 호출)
@@ -50,7 +52,7 @@
   고쳐 쓰는 인라인 편집 기능은 아직 없음 — "새 레퍼런스로 다시 받기" 방식만 지원.
 
 ## 리믹서 (유튜브 기획)
-- 화면: `src/components/RemixComposer.tsx` (운영실 → 유튜브 기획 탭)
+- 화면: `src/components/RemixComposer.tsx` (탭바 "유튜브" → "새 글 직접 만들기" 아코디언)
 - 로직: `src/agents/runRemix.ts`, `src/agents/remixPrompts.ts`
 - 채점 없음 — 훅 후보 3개 + 대본 구성안 + 벤치마킹 근거만 생성. 촬영·편집은 별도(사람이 함)
 - **실제 웹서치 사용**(2026-07-12부터): 예전엔 지식베이스 기준 추측이었는데, 이제
@@ -59,8 +61,9 @@
 - **주간 스케줄 자동 기획**(2026-07-14부터): `api/cron/content-schedule.ts` — 월·수·금마다
   마잘남(유튜브 채널 있는 브랜드) 기획안 1건 자동 생성해서 결재함/캘린더에 등록.
 
-## 브레인 (시장 벤치마킹)
-- 화면: `src/components/BrainPanel.tsx` (운영실 → 브레인 탭)
+## 브레인 (레퍼런스 분석 · 시장 벤치마킹)
+- 화면: `src/components/BrainPanel.tsx` (각 채널 탭의 "성과 분석" → "레퍼런스 분석" 아코디언,
+  2026-07-14부터 — 예전엔 운영실 → 브레인 탭). 결과는 팀 채팅에 "전략 카드"로도 올라옴
 - 로직: `src/agents/runBrain.ts`, `src/agents/brainPrompts.ts`
 - **Claude의 서버사이드 웹서치 도구**(`callClaudeJsonWithWebSearch`, `src/lib/claude.ts`)를 사용 —
   실제로 인터넷 검색해서 답함. 브랜드별 채널 정보(`BRAND_CHANNELS`)를 컨텍스트로 같이 넘김
@@ -78,11 +81,14 @@
   다시 돌리면 그 결과는 반영됨). 필요하면 나중에 프론트엔드가 Supabase에서 최신 브레인 리포트를
   읽어오도록 확장 가능.
 
-## 코치 (스크린샷 분석)
-- 화면: `src/components/CoachPanel.tsx` (대시보드 화면 안에 포함)
+## 코치 (내 콘텐츠 분석 — 스크린샷 분석)
+- 화면: `src/components/CoachPanel.tsx` (블로그 탭의 "성과 분석" → "내 콘텐츠 분석" 아코디언,
+  2026-07-14부터 대시보드에서 옮김 — 블로그 전용이라 채널 탭 안이 더 자연스러움)
 - 로직: `src/agents/runCoach.ts`, `src/agents/coachPrompts.ts`
 - **비전(이미지) 분석** — 네이버 블로그 통계 등 스크린샷을 업로드하면 Claude가 직접 읽어서
   지표 추출 + 분석 + 다음 액션 제안. 사람이 이미지를 올려야 해서 자동화 불가능
+- 스레드·유튜브 탭에는 같은 자리에 "메타/유튜브 API 연동 필요" 안내만 있음 — 게시물 단위
+  성과 데이터를 가져올 방법이 아직 없어서 억지로 자동화하지 않음
 
 ## 모닝 (데일리 브리핑)
 - 화면: `src/components/MorningPanel.tsx` (대시보드 화면 안에 포함, 수동 실행 시 "오늘" 기준)
@@ -99,37 +105,26 @@
 - **오늘 일정표 + 사진 요청 알림 통합**(2026-07-14부터): content-schedule 크론이 오늘 만든
   블로그·유튜브 항목(제목 + 체크리스트 진행상황)을 카톡 메시지에 브랜드별로 붙여서 보낸다
   (`buildTodayScheduleText`). 또한 이틀 뒤 블로그 예정일에 아직 `content_photos`가 없으면
-  "사진함 탭에서 미리 올려달라"는 알림도 같이 보낸다(`buildPhotoReminderText`) — 하루 전이
-  아니라 이틀 전인 이유는 새벽 크론이 도는 당일 아침까지 여유를 주기 위함.
+  "블로그 탭 사진 업로드에서 미리 올려달라"는 알림도 같이 보낸다(`buildPhotoReminderText`) —
+  하루 전이 아니라 이틀 전인 이유는 새벽 크론이 도는 당일 아침까지 여유를 주기 위함.
 
 ## 캘린더 — 체크리스트
 - 콘텐츠 한 건마다 기획→컨펌→피드백→데이터 파악→레퍼런스 5단계 체크리스트가 붙는다
   (`src/types/calendar.ts`의 `ChecklistStage`). "기획"은 AI가 초안을 만드는 순간 자동으로
-  체크되고(`makeDefaultChecklist(true)`), 나머지 4단계는 캘린더 화면에서 대표님이 직접 클릭해서
-  체크한다 — 게시물 단위 조회수를 추적하는 인프라가 없어서 "데이터 파악"을 자동 감지할 방법이
-  없기 때문에, 억지로 가짜 자동화를 붙이는 대신 정직한 수동 체크리스트로 남겨뒀다.
+  체크되고(`makeDefaultChecklist(true)`), 나머지 4단계는 채널 탭의 "완성된 글 모아보기" 카드나
+  "이번 주 일정"에서 대표님이 직접 클릭해서 체크한다 — 게시물 단위 조회수를 추적하는 인프라가
+  없어서 "데이터 파악"을 자동 감지할 방법이 없기 때문에, 억지로 가짜 자동화를 붙이는 대신
+  정직한 수동 체크리스트로 남겨뒀다.
 - 서버 크론(content-schedule)이 만든 항목은 Supabase에만 쓰이므로, 화면 진입 시
   `syncEntriesFromSupabase()`로 끌어와야 보인다(대행 자동생성 때 겪은 문제와 동일 — 이미 해결된
   패턴 재사용).
 
-## 사진함 (블로그용 사진 업로드)
-- 화면: `src/components/screens/PhotoUploadScreen.tsx` (탭바 "사진함")
-- 앞으로 7일간 블로그 예정일(요일 고정 스케줄 기준)을 브랜드별로 보여주고, 그 날짜에 쓸 실제
-  사진을 미리 올려둘 수 있다. 저장소: `content_photos` 테이블(`src/lib/contentPhotoStore.ts`) —
-  아직 캘린더 항목이 없는 미래 날짜에도 올릴 수 있도록 `calendar_entries.id`가 아니라
-  (date, brand, channel) 조합으로 연결한다.
-- content-schedule 크론이 그날 아침 블로그를 생성할 때 이 사진들을 찾아서 있으면 비전 입력으로
-  쓰고, 없으면 텍스트만으로(웹서치 경로) 생성한다. 모닝 브리핑이 이틀 전부터 카톡으로 미리 알려줌.
-
-## 기획함 (완성 콘텐츠 모아보기)
-- 화면: `src/components/screens/PlanningLibraryScreen.tsx` (탭바 "기획함")
-- 별도 저장소 없음 — 캘린더(`calendar_entries`)에서 채널이 블로그/스레드/유튜브이고
-  본문(`contentHtml`)이나 메모가 있는 항목만 최신순으로 채널별 섹션에 나눠 보여준다.
-  라이터·버즈·리믹서가 콘텐츠를 만들 때마다 이미 캘린더에 자동 등록되므로 기획함은
-  그 데이터를 다른 관점(채널별 모아보기 + 검색 + 복사)으로 재구성해서 보여줄 뿐,
-  새로 생성/저장하는 로직은 없다.
-- 카드: 브랜드·날짜 → 제목/미리보기 → 펼치면 전체 본문 → 복사 버튼(업로드용 텍스트 그대로 복사,
-  `ApprovalScreen`의 복사 로직과 동일한 패턴)
+## 사진함 · 기획함은 채널 워크스페이스로 흡수됨 (2026-07-14)
+독립 탭이었던 사진함(`PhotoUploadScreen.tsx`)·기획함(`PlanningLibraryScreen.tsx`)은
+삭제됐고, 그 기능은 `ChannelWorkspaceScreen.tsx`(탭바 "블로그"/"스레드"/"유튜브") 안의
+"사진 업로드"·"완성된 글 모아보기" 섹션으로 그대로 옮겨갔다. 저장소(`content_photos`,
+`calendar_entries`)는 안 바뀜 — 화면 위치와 컴포넌트 구조만 재편했다. 자세한 구조는
+`docs/workflow.md`의 "채널 워크스페이스" 절 참고.
 
 ## 공통 인프라
 - `src/lib/claude.ts` — Anthropic 호출 3종(`callClaudeJson`, `callClaudeJsonWithWebSearch`,

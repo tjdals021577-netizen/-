@@ -21,14 +21,21 @@ const WEEKLY_SCHEDULE: Record<number, ScheduledSlot[]> = {
   6: [{ brand: '업메리', channel: 'blog' }, { brand: '마잘남', channel: 'blog' }],
 }
 
+// 이 파일의 모든 함수는 "실행 환경의 로컬 타임존이 UTC"라고 가정하고
+// kstNow()에서 +9시간을 더한 뒤, 그 결과를 UTC 게터(getUTCDay/getUTCDate 등)로
+// 읽는 방식으로 KST를 흉내낸다(서버 크론은 실제로 UTC라 이게 맞는다). 로컬
+// 게터(getDay/getDate, 로컬 타임존에 따라 달라짐)를 쓰면, 브라우저처럼 로컬
+// 타임존이 이미 Asia/Seoul(KST)인 환경에서는 +9시간이 중복 적용돼 요일이
+// 통째로 밀리는 문제가 실제로 있었다(예: 화요일이 수요일로 표시됨) — 그래서
+// 이 파일 안에서는 항상 getUTC* 게터만 쓴다.
 export function getScheduledSlots(date: Date): ScheduledSlot[] {
-  return WEEKLY_SCHEDULE[date.getDay()] ?? []
+  return WEEKLY_SCHEDULE[date.getUTCDay()] ?? []
 }
 
 const WEEKDAY_LABEL_KO = ['일', '월', '화', '수', '목', '금', '토']
 
 export function kstWeekdayLabel(date: Date): string {
-  return WEEKDAY_LABEL_KO[date.getDay()]
+  return WEEKDAY_LABEL_KO[date.getUTCDay()]
 }
 
 // 크론/모닝 브리핑은 전부 KST 기준으로 "오늘"을 계산해야 한다(서버는 UTC라

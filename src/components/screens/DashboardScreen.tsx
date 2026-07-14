@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { getWorkLog } from '../../lib/workLog'
 import { fetchLatestRadarSnapshot, type RadarSnapshot } from '../../lib/radarStore'
-import { CoachPanel } from '../CoachPanel'
+import { getEntries, syncEntriesFromSupabase } from '../../lib/calendarStore'
+import type { CalendarChannel } from '../../types/calendar'
 import { MorningPanel } from '../MorningPanel'
 import { PreviewBanner } from './PreviewBanner'
 import { BRANDS, type Brand } from '../../types/brand'
@@ -58,14 +59,160 @@ function BrandSection({ brand }: { brand: Brand }) {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <h3 className="mb-3 text-sm font-bold text-[var(--text)]">{brand}</h3>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-lg bg-[var(--surface-2)] p-3">
-            <p className="text-lg font-bold text-[var(--text)]">{s.value}</p>
-            <p className="text-[11px] text-[var(--text-faint)]">{s.label}</p>
+          <div key={s.label} className="min-w-0 rounded-lg bg-[var(--surface-2)] p-3">
+            <p className="break-words text-[15px] font-bold leading-snug text-[var(--text)]">{s.value}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--text-faint)]">{s.label}</p>
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+const CHANNEL_DOT_VAR: Record<CalendarChannel, string> = {
+  blog: 'var(--accent)',
+  thread: 'var(--ch-thread)',
+  youtube: 'var(--ch-yt)',
+  agency: 'var(--text-faint)',
+  etc: 'var(--text-faint)',
+}
+
+const CHANNEL_LEGEND_LABEL: Record<'blog' | 'thread' | 'youtube', string> = {
+  blog: '블로그',
+  thread: '스레드',
+  youtube: '유튜브',
+}
+
+function pad2(n: number): string {
+  return n.toString().padStart(2, '0')
+}
+
+function dateKey(y: number, m: number, d: number): string {
+  return `${y}-${pad2(m + 1)}-${pad2(d)}`
+}
+
+function todayKey(): string {
+  const t = new Date()
+  return dateKey(t.getFullYear(), t.getMonth(), t.getDate())
+}
+
+// 채널 탭에서 지금까지 하나씩 보던 걸 여기선 전체 브랜드·전체 채널을 색깔
+// 점으로 한눈에 보여준다 — 캘린더 화면(전체 월간 보기)이 없어지면서
+// "이번 달 전체 일정"을 볼 수 있는 유일한 자리라 여기 남겨둠.
+function MiniMonthCalendar() {
+  const today = new Date()
+  const [cursorYear, setCursorYear] = useState(today.getFullYear())
+  const [cursorMonth, setCursorMonth] = useState(today.getMonth())
+  const [, setVersion] = useState(0)
+
+  useEffect(() => {
+    void syncEntriesFromSupabase().then(() => setVersion((v) => v + 1))
+  }, [])
+
+  const entries = getEntries()
+  const entriesByDate = new Map<string, typeof entries>()
+  for (const e of entries) {
+    const list = entriesByDate.get(e.date) ?? []
+    list.push(e)
+    entriesByDate.set(e.date, list)
+  }
+
+  const firstWeekday = new Date(cursorYear, cursorMonth, 1).getDay()
+  const daysInMonth = new Date(cursorYear, cursorMonth + 1, 0).getDate()
+  const cells: (number | null)[] = [
+    ...Array(firstWeekday).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ]
+
+  function goPrevMonth() {
+    if (cursorMonth === 0) {
+      setCursorYear((y) => y - 1)
+      setCursorMonth(11)
+    } else {
+      setCursorMonth((m) => m - 1)
+    }
+  }
+  function goNextMonth() {
+    if (cursorMonth === 11) {
+      setCursorYear((y) => y + 1)
+      setCursorMonth(0)
+    } else {
+      setCursorMonth((m) => m + 1)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-2.5 flex items-center justify-between">
+        <button type="button" onClick={goPrevMonth} className="rounded-lg px-2 py-1 text-sm text-[var(--text-dim)] hover:bg-[var(--surface-2)]">
+          ◂
+        </button>
+        <p className="text-[12.5px] font-bold text-[var(--text)]">{cursorYear}년 {cursorMonth + 1}월</p>
+        <button type="button" onClick={goNextMonth} className="rounded-lg px-2 py-1 text-sm text-[var(--text-dim)] hover:bg-[var(--surface-2)]">
+          ▸
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[9.5px] font-bold text-[var(--text-faint)]">
+        {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
+          <div key={d} className="pb-1">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`empty-${i}`} />
+          const key = dateKey(cursorYear, cursorMonth, day)
+          const dayEntries = entriesByDate.get(key) ?? []
+          const isToday = key === todayKey()
+          return (
+            <div
+              key={key}
+              className={`rounded-md p-1 text-center ${isToday ? 'border border-[var(--accent)] bg-[var(--accent-soft)]' : 'bg-[var(--surface-2)]'}`}
+            >
+              <p className="text-[9.5px] text-[var(--text-dim)]">{day}</p>
+              <div className="mt-0.5 flex flex-wrap justify-center gap-0.5">
+                {dayEntries.slice(0, 4).map((e) => (
+                  <span
+                    key={e.id}
+                    className="h-1 w-1 rounded-full"
+                    style={{ background: CHANNEL_DOT_VAR[e.channel] }}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-2.5 text-[9.5px] text-[var(--text-faint)]">
+        {(Object.keys(CHANNEL_LEGEND_LABEL) as (keyof typeof CHANNEL_LEGEND_LABEL)[]).map((ch) => (
+          <span key={ch} className="flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: CHANNEL_DOT_VAR[ch] }} />
+            {CHANNEL_LEGEND_LABEL[ch]}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MorningAccordion({ brand }: { brand: Brand }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-[13px] font-bold text-[var(--text)]">☀️ {brand} — 모닝 브리핑</span>
+        <span className="text-[10px] text-[var(--text-faint)]">{open ? '▲ 접기' : '▼ 펼치기'}</span>
+      </button>
+      {open && (
+        <div className="border-t border-[var(--border)] p-4">
+          <MorningPanel brand={brand} />
+        </div>
+      )}
     </div>
   )
 }
@@ -78,12 +225,19 @@ export function DashboardScreen() {
       <PreviewBanner message="레이더가 연결된 브랜드는 매일 아침 실제 방문자·유입경로(GA4)·주문·매출(아임웹) 숫자가 채워집니다. 아직 연결 안 한 소스/브랜드는 '—'로 보입니다." />
 
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-[var(--text)]">
-          통합 대시보드 — 브랜드별
-        </h2>
+        <h2 className="text-sm font-semibold text-[var(--text)]">통합 대시보드</h2>
         <p className="text-[11px] text-[var(--text-faint)]">
           오늘 API 사용액(전체) ${todaySpendTotal.toFixed(3)} / ${DAILY_BUDGET_USD}
         </p>
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
+        <MiniMonthCalendar />
+        <div className="space-y-2">
+          {BRANDS.map((b) => (
+            <MorningAccordion key={b} brand={b} />
+          ))}
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -91,14 +245,6 @@ export function DashboardScreen() {
           <BrandSection key={b} brand={b} />
         ))}
       </div>
-
-      {BRANDS.map((b) => (
-        <div key={b} className="mt-4 space-y-4">
-          <h3 className="text-sm font-bold text-[var(--text)]">{b} — 모닝 · 코치</h3>
-          <MorningPanel brand={b} />
-          <CoachPanel brand={b} />
-        </div>
-      ))}
     </div>
   )
 }

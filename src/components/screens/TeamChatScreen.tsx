@@ -16,15 +16,19 @@ interface AgentMeta {
   dispatchable: boolean
 }
 
+// 브레인·코치는 "레퍼런스 분석"·"내 콘텐츠 분석" 결과가 이 피드로 모여서
+// 전략 카드로 강조 표시된다(STRATEGY_AGENT_KEYS 참고) — 채널 탭에서 실행하고
+// 결과·다음 기획 논의는 여기서 이어가는 구조.
+const STRATEGY_AGENT_KEYS = new Set(['brain', 'coach'])
+
 const AGENTS: AgentMeta[] = [
   { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '대시보드에서 실행', colorVar: '--agent-h', initial: '모', limit: '10분', dispatchable: false },
-  { key: 'brain', name: '브레인', primaryTag: '콘텐츠 전략팀', secondaryTag: '시장 벤치마킹', colorVar: '--agent-a', initial: '브', limit: '10분', dispatchable: true },
-  { key: 'calen', name: '캘린', primaryTag: '콘텐츠 기획팀', secondaryTag: '캘린더에서 실행', colorVar: '--accent', initial: '캘', limit: '15분', dispatchable: false },
+  { key: 'brain', name: '브레인', primaryTag: '레퍼런스 분석', secondaryTag: '채널 탭 성과 분석에서 실행', colorVar: '--agent-a', initial: '브', limit: '10분', dispatchable: true },
   { key: 'writer', name: '라이터', primaryTag: '블로그 SEO 위원회', secondaryTag: '3인 채점', colorVar: '--agent-c', initial: '라', limit: '20분', dispatchable: true },
   { key: 'buzz', name: '버즈', primaryTag: '스레드 위원회', secondaryTag: '대행 포함', colorVar: '--ch-thread', initial: '버', limit: '15분', dispatchable: true },
   { key: 'remix', name: '리믹서', primaryTag: '유튜브 대본 기획', secondaryTag: '벤치마킹 포함', colorVar: '--ch-yt', initial: '리', limit: '20분', dispatchable: true },
-  { key: 'coach', name: '코치', primaryTag: '분석·피드백', secondaryTag: '대시보드에서 실행', colorVar: '--agent-f', initial: '코', limit: '15분', dispatchable: false },
-  { key: 'radar', name: '레이더', primaryTag: '통합 대시보드', secondaryTag: '자동 수집(예정)', colorVar: '--agent-g', initial: '레', limit: '10분', dispatchable: false },
+  { key: 'coach', name: '코치', primaryTag: '내 콘텐츠 분석', secondaryTag: '블로그 탭 성과 분석에서 실행', colorVar: '--agent-f', initial: '코', limit: '15분', dispatchable: false },
+  { key: 'radar', name: '레이더', primaryTag: '통합 대시보드', secondaryTag: '매일 자동 수집', colorVar: '--agent-g', initial: '레', limit: '10분', dispatchable: false },
 ]
 
 const AGENT_BY_KEY = new Map(AGENTS.map((a) => [a.key, a]))
@@ -97,8 +101,19 @@ function ChatBubbles({ entries }: { entries: WorkLogEntry[] }) {
                     {agentMeta?.initial ?? '?'}
                   </span>
                   {agentName}
+                  {STRATEGY_AGENT_KEYS.has(entry.agent) && entry.status !== 'running' && (
+                    <span className="rounded-full bg-[var(--accent-soft)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--accent-strong)]">
+                      전략 카드
+                    </span>
+                  )}
                 </p>
-                <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-[var(--surface-2)] px-3.5 py-2 text-[13px] text-[var(--text)]">
+                <div
+                  className={`whitespace-pre-wrap px-3.5 py-2 text-[13px] text-[var(--text)] ${
+                    STRATEGY_AGENT_KEYS.has(entry.agent) && entry.status !== 'running'
+                      ? 'rounded-2xl border-[1.5px] border-[var(--accent)] bg-[var(--accent-soft)]'
+                      : 'rounded-2xl rounded-tl-sm bg-[var(--surface-2)]'
+                  }`}
+                >
                   {entry.status === 'running'
                     ? `${STATUS_ICON.running} 처리 중이에요…`
                     : `${STATUS_ICON[entry.status]} ${stripHtml(entry.detailHtml) || entry.statusLabel}`}
@@ -186,7 +201,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   return (
     <div>
-      <PreviewBanner message="라이터·버즈·리믹서·브레인은 여기서 바로 실행됩니다. 모닝·코치는 대시보드, 캘린은 캘린더 화면에서 직접 실행합니다. 레이더는 스케줄러(Phase 4)가 붙기 전까지 화면만 준비돼 있습니다." />
+      <PreviewBanner message="라이터·버즈·리믹서는 여기서 바로 실행되거나 블로그·스레드·유튜브 탭에서 실행됩니다. 브레인(레퍼런스 분석)·코치(내 콘텐츠 분석) 결과는 채널 탭에서 실행되고 여기 '전략 카드'로 모여서 다음 기획을 바로 이어서 논의할 수 있습니다. 모닝은 대시보드에서 실행합니다." />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr_240px]">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">

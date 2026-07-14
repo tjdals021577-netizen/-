@@ -3,10 +3,11 @@
 ## 브랜드 분리
 - `src/types/brand.ts`: `Brand = '업메리' | '마잘남'`, `BRAND_CONTEXT`(톤 설명 — 아직
   플레이스홀더), `BRAND_CHANNELS`(업메리=블로그만, 마잘남=스레드+블로그+유튜브)
-- 헤더의 브랜드 토글(`AppShell.tsx`)이 `brand` 상태를 갖고, 대부분의 화면(운영실/팀채팅/
-  캘린더/결재함)에 prop으로 내려가서 **그 브랜드의 데이터만** 보이게 필터링함
+- 헤더의 브랜드 토글(`AppShell.tsx`)이 `brand` 상태를 갖고, 대부분의 화면(블로그/스레드/유튜브
+  채널 탭·팀채팅·결재함)에 prop으로 내려가서 **그 브랜드의 데이터만** 보이게 필터링함
   (대시보드만 예외 — 항상 둘 다 보여줌, `workflow.md` 참고)
-- 업메리 선택 시 운영실에서 스레드/유튜브 기획 탭 자체가 안 보임 (`BRAND_CHANNELS` 기준)
+- 업메리 선택 시 스레드/유튜브 탭 자체가 탭바에서 안 보임 (`BRAND_CHANNELS` 기준,
+  `AppShell.tsx`의 `availableTabs` 필터)
 - 모든 저장 함수(`startWorkLog`, `submitForApproval`, `createEntry` 등)가 `brand`를 필수로 받음
 
 ## localStorage 키 (브라우저 저장)

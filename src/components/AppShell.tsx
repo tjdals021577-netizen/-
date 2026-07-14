@@ -1,34 +1,49 @@
-import { useState } from 'react'
-import { OpsScreen } from './screens/OpsScreen'
+import { useEffect, useState } from 'react'
 import { TeamChatScreen } from './screens/TeamChatScreen'
 import { DashboardScreen } from './screens/DashboardScreen'
 import { AgencyScreen } from './screens/AgencyScreen'
-import { CalendarScreen } from './screens/CalendarScreen'
-import { PlanningLibraryScreen } from './screens/PlanningLibraryScreen'
-import { PhotoUploadScreen } from './screens/PhotoUploadScreen'
+import { ChannelWorkspaceScreen, type WorkspaceChannel } from './screens/ChannelWorkspaceScreen'
 import { ApprovalScreen } from './screens/ApprovalScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { getApprovalQueue } from '../lib/approvalStore'
-import { BRANDS, type Brand } from '../types/brand'
+import { BRANDS, BRAND_CHANNELS, type Brand } from '../types/brand'
 
-type TabId = 'ops' | 'team' | 'dash' | 'agency' | 'calendar' | 'planning' | 'photos' | 'approval' | 'settings'
+type TabId = 'team' | 'dash' | 'agency' | 'blog' | 'thread' | 'youtube' | 'approval' | 'settings'
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'ops', label: '운영실' },
+const CHANNEL_BRAND_LABEL: Record<WorkspaceChannel, string> = {
+  blog: '블로그',
+  thread: '스레드',
+  youtube: '유튜브',
+}
+
+const TABS: { id: TabId; label: string; channel?: WorkspaceChannel }[] = [
   { id: 'team', label: '팀 채팅' },
   { id: 'dash', label: '대시보드' },
+  { id: 'blog', label: '블로그', channel: 'blog' },
+  { id: 'thread', label: '스레드', channel: 'thread' },
+  { id: 'youtube', label: '유튜브', channel: 'youtube' },
   { id: 'agency', label: '대행 관리' },
-  { id: 'calendar', label: '캘린더' },
-  { id: 'planning', label: '기획함' },
-  { id: 'photos', label: '사진함' },
   { id: 'approval', label: '결재함' },
   { id: 'settings', label: '설정' },
 ]
 
 export function AppShell() {
-  const [activeTab, setActiveTab] = useState<TabId>('ops')
+  const [activeTab, setActiveTab] = useState<TabId>('team')
   const [brand, setBrand] = useState<Brand>('마잘남')
   const pendingApprovalCount = getApprovalQueue('pending', brand).length
+
+  const availableTabs = TABS.filter(
+    (t) => !t.channel || BRAND_CHANNELS[brand].includes(CHANNEL_BRAND_LABEL[t.channel]),
+  )
+
+  // 브랜드를 바꿨는데 그 브랜드엔 없는 채널 탭을 보고 있었으면(예: 업메리로
+  // 바꿨는데 스레드 탭을 보던 중) 안전한 탭으로 돌아간다.
+  useEffect(() => {
+    if (!availableTabs.some((t) => t.id === activeTab)) {
+      setActiveTab('team')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand])
 
   return (
     <div className="mx-auto min-h-screen max-w-5xl px-4 py-5">
@@ -39,7 +54,7 @@ export function AppShell() {
         </div>
 
         <nav className="flex gap-1 rounded-lg bg-[var(--surface-2)] p-1">
-          {TABS.map((tab) => (
+          {availableTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -79,13 +94,12 @@ export function AppShell() {
       </header>
 
       <main>
-        {activeTab === 'ops' && <OpsScreen brand={brand} />}
         {activeTab === 'team' && <TeamChatScreen brand={brand} />}
         {activeTab === 'dash' && <DashboardScreen />}
         {activeTab === 'agency' && <AgencyScreen />}
-        {activeTab === 'calendar' && <CalendarScreen brand={brand} />}
-        {activeTab === 'planning' && <PlanningLibraryScreen brand={brand} />}
-        {activeTab === 'photos' && <PhotoUploadScreen />}
+        {activeTab === 'blog' && <ChannelWorkspaceScreen brand={brand} channel="blog" />}
+        {activeTab === 'thread' && <ChannelWorkspaceScreen brand={brand} channel="thread" />}
+        {activeTab === 'youtube' && <ChannelWorkspaceScreen brand={brand} channel="youtube" />}
         {activeTab === 'approval' && <ApprovalScreen brand={brand} />}
         {activeTab === 'settings' && <SettingsScreen />}
       </main>
