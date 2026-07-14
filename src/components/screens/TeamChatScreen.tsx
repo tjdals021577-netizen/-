@@ -28,9 +28,14 @@ interface AgentMeta {
 }
 
 // 브레인·코치는 "레퍼런스 분석"·"내 콘텐츠 분석" 결과가 이 피드로 모여서
-// 전략 카드로 강조 표시된다(STRATEGY_AGENT_KEYS 참고) — 채널 탭에서 실행하고
-// 결과·다음 기획 논의는 여기서 이어가는 구조.
+// 전략 카드로 강조 표시된다 — 채널 탭에서 실행하고 결과·다음 기획 논의는
+// 여기서 이어가는 구조. 리믹서는 유튜브 대본 기획(일반 작업)과 "유튜브
+// 콘텐츠 분석"(전략) 둘 다 만들어내므로, kind에 "분석"이 들어간 것만
+// 전략 카드로 구분한다 — 대본 기획 결과까지 전부 강조되면 오히려 혼란스러움.
 const STRATEGY_AGENT_KEYS = new Set(['brain', 'coach'])
+function isStrategyEntry(entry: WorkLogEntry): boolean {
+  return STRATEGY_AGENT_KEYS.has(entry.agent) || (entry.agent === 'remix' && entry.kind.includes('분석'))
+}
 
 const AGENTS: AgentMeta[] = [
   { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '대시보드에서 실행', colorVar: '--agent-h', initial: '모', limit: '10분', dispatchable: false },
@@ -176,7 +181,7 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                     {agentMeta?.initial ?? '?'}
                   </span>
                   {agentName}
-                  {STRATEGY_AGENT_KEYS.has(entry.agent) && entry.status !== 'running' && (
+                  {isStrategyEntry(entry) && entry.status !== 'running' && (
                     <span className="rounded-full bg-[var(--accent-soft)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--accent-strong)]">
                       전략 카드
                     </span>
@@ -184,7 +189,7 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                 </p>
                 <div
                   className={`whitespace-pre-wrap px-3.5 py-2 text-[13px] text-[var(--text)] ${
-                    STRATEGY_AGENT_KEYS.has(entry.agent) && entry.status !== 'running'
+                    isStrategyEntry(entry) && entry.status !== 'running'
                       ? 'rounded-2xl border-[1.5px] border-[var(--accent)] bg-[var(--accent-soft)]'
                       : 'rounded-2xl rounded-tl-sm bg-[var(--surface-2)]'
                   }`}

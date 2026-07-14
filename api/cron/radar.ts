@@ -3,7 +3,8 @@ import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { fetchGa4Report } from '../_lib/ga4.js'
 import { fetchImwebOrderSummary } from '../_lib/imweb.js'
 import { fetchRecentVideoStats } from '../_lib/youtube.js'
-import { BRANDS, type Brand } from '../../src/types/brand.js'
+import { analyzeYoutubeContent } from '../../src/agents/runYoutubeAnalysis.js'
+import { BRANDS, BRAND_CONTEXT, type Brand } from '../../src/types/brand.js'
 import { requireCronAuth, sendJson } from '../_lib/cronHandler.js'
 
 function makeId(): string {
@@ -39,6 +40,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (!requireCronAuth(req, res)) return
 
   const results: string[] = []
+  const apiKey = process.env.ANTHROPIC_API_KEY
   const ga4KeyJson = process.env.GA4_SERVICE_ACCOUNT_KEY
   const nowIso = new Date().toISOString()
   const yesterday = yesterdayIsoDate()
@@ -145,6 +147,48 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           ),
         )
         results.push(`${brand} 유튜브: 영상 ${stats.length}개 통계 갱신`)
+
+        // 통계만 쌓아두지 않고, 매일 AI가 어떤 영상이 잘 됐는지 분석해서
+        // 팀채팅(전략 카드)·결재함에 자동으로 올려준다 — 채널 탭 "내 콘텐츠
+        // 분석"은 숫자만 보여주고, 실제 해석·다음 기획 방향은 여기서 나온다.
+        if (apiKey && stats.length > 0) {
+          try {
+            const analysis = await analyzeYoutubeContent({ apiKey, brandContext: BRAND_CONTEXT[brand], stats })
+            const analysisHtml = `<b>${analysis.summary}</b><br/><br/><b>분석</b><br/>${analysis.findings
+              .map((f) => `- ${f}`)
+              .join('<br/>')}<br/><br/><b>다음 기획 추천</b><br/>${analysis.nextSteps
+              .map((n) => `- ${n}`)
+              .join('<br/>')}`
+            const analysisLogId = makeId()
+            await supabaseInsert('work_log', {
+              id: analysisLogId,
+              agent: 'remix',
+              brand,
+              kind: '유튜브 콘텐츠 분석(자동)',
+              status: 'done',
+              status_label: '완료',
+              started_at: nowIso,
+              ended_at: nowIso,
+              note: analysis.summary,
+              detail_html: analysisHtml,
+            })
+            await supabaseInsert('approval_queue', {
+              id: makeId(),
+              agent: 'remix',
+              brand,
+              title: `유튜브 콘텐츠 분석 — ${analysis.summary}`,
+              content_html: analysisHtml,
+              passed: true,
+              score_label: '분석 리포트',
+              created_at: nowIso,
+              status: 'pending',
+              source_work_log_id: analysisLogId,
+            })
+            results.push(`${brand} 유튜브 분석: 완료`)
+          } catch (err) {
+            results.push(`${brand} 유튜브 분석: 실패 (${err instanceof Error ? err.message : String(err)})`)
+          }
+        }
       } catch (err) {
         results.push(`${brand} 유튜브: 실패 (${err instanceof Error ? err.message : String(err)})`)
       }
