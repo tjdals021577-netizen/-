@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { ApiKeyBar } from '../ApiKeyBar'
-import { getStoredApiKey, setStoredApiKey } from '../../lib/apiKey'
 import { parseAgencyOnboarding } from '../../agents/agencyOnboarding'
 import {
   generateThreadDraft,
@@ -114,8 +112,9 @@ function chipClass(tone: 'done' | 'planned' | 'muted'): string {
   return 'bg-[var(--surface-3)] text-[var(--text-faint)]'
 }
 
+const apiKey = 'server-managed'
+
 export function AgencyScreen() {
-  const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [clients, setClients] = useState<AgencyClient[]>(() => listClients())
   const [references, setReferences] = useState(() => listReferences())
   const [onboardingText, setOnboardingText] = useState('')
@@ -153,13 +152,8 @@ export function AgencyScreen() {
     setClients(listClients())
   }
 
-  function handleApiKeyChange(key: string) {
-    setApiKey(key)
-    setStoredApiKey(key)
-  }
-
   async function handleOnboard() {
-    if (!apiKey || onboardingText.trim().length === 0) return
+    if (onboardingText.trim().length === 0) return
     setOnboarding(true)
     setOnboardError(null)
     try {
@@ -238,7 +232,7 @@ export function AgencyScreen() {
   }
 
   async function handleGenerateDrafts(client: AgencyClient) {
-    if (!apiKey || isOverDailyBudget()) return
+    if (isOverDailyBudget()) return
     setBusyClientId(client.id)
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
@@ -316,7 +310,7 @@ export function AgencyScreen() {
   // 바로 3개 시안을 받아서 그중 고르게 한다(반복 API 호출로 비용 쌓는 대신).
   async function handleReRequestVariants(client: AgencyClient) {
     const hasAnyReference = reRequestRefIds.length > 0 || reRequestAdhocFiles.length > 0
-    if (!apiKey || isOverDailyBudget() || !hasAnyReference) return
+    if (isOverDailyBudget() || !hasAnyReference) return
     setReRequesting(true)
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({
@@ -393,8 +387,6 @@ export function AgencyScreen() {
     <div>
       <PreviewBanner message="구글폼 응답 + 스레드 링크를 붙여넣으면 페르소나를 자동으로 정리해서 카드가 생성됩니다. 계약 날짜·연장·일시중단·초안 생성까지 실제로 동작합니다." />
 
-      <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
-
       <div className="mt-4 space-y-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="text-sm font-semibold text-[var(--text)]">새 대행 클라이언트 온보딩</p>
         <textarea
@@ -432,7 +424,7 @@ export function AgencyScreen() {
         </div>
         <button
           type="button"
-          disabled={!apiKey || onboardingText.trim().length === 0 || onboarding}
+          disabled={onboardingText.trim().length === 0 || onboarding}
           onClick={() => void handleOnboard()}
           className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -575,7 +567,6 @@ export function AgencyScreen() {
                       <button
                         type="button"
                         disabled={
-                          !apiKey ||
                           reRequesting ||
                           (reRequestRefIds.length === 0 && reRequestAdhocFiles.length === 0) ||
                           isOverDailyBudget()
@@ -613,7 +604,7 @@ export function AgencyScreen() {
                   </button>
                   <button
                     type="button"
-                    disabled={!apiKey || busyClientId === client.id || isOverDailyBudget()}
+                    disabled={busyClientId === client.id || isOverDailyBudget()}
                     onClick={() => void handleGenerateDrafts(client)}
                     className="flex-1 rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >

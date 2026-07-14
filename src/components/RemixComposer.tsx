@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { ApiKeyBar } from './ApiKeyBar'
-import { getStoredApiKey, setStoredApiKey } from '../lib/apiKey'
 import { generateRemixPlan } from '../agents/runRemix'
 import type { RemixPlan } from '../types/remix'
 import {
@@ -28,8 +26,9 @@ function buildApprovalHtml(plan: RemixPlan): string {
   return `<b>훅 후보</b><br/>${hooksList}<br/><br/><b>대본 구성안</b><br/>${outline}${notes}`
 }
 
+const apiKey = 'server-managed'
+
 export function RemixComposer({ brand }: { brand: Brand }) {
-  const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [topic, setTopic] = useState('')
   const [referenceText, setReferenceText] = useState('')
 
@@ -38,11 +37,6 @@ export function RemixComposer({ brand }: { brand: Brand }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
   const brainReport = getLatestBrainReport(brand)
-
-  function handleApiKeyChange(key: string) {
-    setApiKey(key)
-    setStoredApiKey(key)
-  }
 
   const overBudget = isOverDailyBudget()
   const canStart =
@@ -124,8 +118,6 @@ export function RemixComposer({ brand }: { brand: Brand }) {
         </p>
       </header>
 
-      <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
-
       <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <div>
           <label className="mb-1 block text-xs font-medium text-[var(--text-dim)]">
@@ -166,11 +158,6 @@ export function RemixComposer({ brand }: { brand: Brand }) {
         >
           {running ? '기획안 작성 중… (유튜브 검색 포함, 시간이 조금 더 걸릴 수 있어요)' : '기획안 생성'}
         </button>
-        {!apiKey && (
-          <p className="text-center text-[11px] text-[var(--planned)]">
-            먼저 위에서 Anthropic API 키를 저장하세요.
-          </p>
-        )}
         {overBudget && (
           <p className="text-center text-[11px] text-[var(--open)]">
             오늘 예산 한도(${DAILY_BUDGET_USD})를 초과해서 중단했습니다. 내일

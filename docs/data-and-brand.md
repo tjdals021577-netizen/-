@@ -10,9 +10,11 @@
 - 모든 저장 함수(`startWorkLog`, `submitForApproval`, `createEntry` 등)가 `brand`를 필수로 받음
 
 ## localStorage 키 (브라우저 저장)
+Anthropic API 키는 더 이상 브라우저에 저장하지 않는다(2026-07-14부터 — `api/claude-proxy.ts`가
+서버의 키로 대신 호출). 아래는 그 외 남아있는 키들.
+
 | 키 | 내용 | 관련 파일 |
 |---|---|---|
-| `ai-ops:anthropic-api-key` | Anthropic API 키 | `src/lib/apiKey.ts` |
 | `ai-ops:daily-spend` | 오늘 날짜별 누적 사용액 | `src/lib/budgetGuard.ts` |
 | `ai-ops:work-log` | 전체 근무기록 | `src/lib/workLog.ts` |
 | `ai-ops:approval-queue` | 결재함 | `src/lib/approvalStore.ts` |
@@ -23,7 +25,7 @@
 
 **주의**: 전부 브라우저별로 따로 저장됨. 다른 컴퓨터/다른 브라우저에서 접속하면 이 데이터가
 안 보임 (Supabase 연결 전까지는 이게 한계). `localhost`와 실제 배포 주소도 서로 다른
-"사이트"라 데이터가 공유되지 않음(API 키도 각자 다시 넣어야 함).
+"사이트"라 데이터가 공유되지 않음.
 
 ## Supabase (서버 저장, 선택사항)
 - `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`가 설정된 경우에만 동작. 없으면 완전히 조용히

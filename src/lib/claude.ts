@@ -24,20 +24,67 @@ function extractJson(raw: string): string {
   return candidate.slice(start, end + 1)
 }
 
+// 브라우저에서는 진짜 Anthropic 키를 절대 갖고 있지 않는다(2026-07-14부터) —
+// 대신 서버의 api/claude-proxy.ts가 대신 호출해준다. 이전엔 각자 브라우저에
+// BYOK 키를 localStorage로 저장했는데, 사파리 프라이빗 모드나 저장공간 자동
+// 삭제 때문에 "들어갈 때마다 키가 없어진다"는 문제가 반복돼서 없앴다. apiKey
+// 파라미터는 서버(크론)에서 호출할 때만 실제로 쓰인다.
+type ProxyResponse = {
+  content: { type: string; text?: string }[]
+  usage: { input_tokens: number; output_tokens: number }
+}
+
+async function createMessageViaProxy(
+  body: MessageCreateParamsNonStreaming,
+  timeoutMs: number,
+): Promise<ProxyResponse> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const password = import.meta.env.VITE_APP_PASSWORD
+    const res = await fetch('/api/claude-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(password ? { 'X-App-Password': password } : {}),
+      },
+      body: JSON.stringify({ body }),
+      signal: controller.signal,
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      throw new ClaudeCallError(typeof data.error === 'string' ? data.error : `서버 오류 (${res.status})`)
+    }
+    return data as ProxyResponse
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ClaudeCallError(
+        `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
+      )
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function createMessage(
   apiKey: string,
   body: MessageCreateParamsNonStreaming,
   timeoutMs: number,
 ) {
+  if (typeof window !== 'undefined') {
+    return createMessageViaProxy(body, timeoutMs)
+  }
   if (!apiKey) {
-    throw new ClaudeCallError('Anthropic API 키가 설정되지 않았습니다.')
+    throw new ClaudeCallError('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
   }
   // maxRetries: 0 — SDK 기본값(최대 2회 자동 재시도)을 끈다. 재시도가 켜져
   // 있으면 타임아웃 1건마다 timeoutMs를 최대 3번(최초 시도 + 재시도 2회)
   // 반복해서 크론의 300초 실행 제한을 넘기는 문제가 실제로 있었다(브레인
   // 크론이 병렬화해도 계속 타임아웃 났던 원인) — 재시도가 필요하면 각
   // 호출부에서 사람이 다시 누르거나 크론이 다음 스케줄에 다시 시도한다.
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 })
+  const client = new Anthropic({ apiKey, maxRetries: 0 })
   try {
     return await client.messages.create(body, { timeout: timeoutMs })
   } catch (err) {

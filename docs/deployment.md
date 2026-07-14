@@ -26,13 +26,30 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
 | `VITE_SUPABASE_ANON_KEY` | 위와 동일 (Publishable key) | Supabase → Settings → API |
 | `SUPABASE_URL` | `/api/cron/*` 서버 함수용 (프론트와 동일 URL) | 위와 동일 |
 | `SUPABASE_SERVICE_ROLE_KEY` | 서버 함수가 RLS 우회해서 읽고 쓸 때 사용 (Secret key) | Supabase → Settings → API |
-| `ANTHROPIC_API_KEY` | `/api/cron/*`가 서버에서 직접 Claude 호출할 때 사용 | Anthropic 콘솔 |
+| `ANTHROPIC_API_KEY` | `/api/cron/*`와 `/api/claude-proxy`가 서버에서 직접 Claude 호출할 때 사용 | Anthropic 콘솔 |
 | `CRON_SECRET` | Vercel Cron이 자동으로 `Authorization: Bearer $CRON_SECRET`을 붙여 호출 — 외부에서 함부로 못 부르게 막는 용도 | 아무 랜덤 문자열 (레포에 없음, 직접 생성) |
 | `VITE_APP_PASSWORD` | (선택) 앱 전체 비밀번호 게이트. 안 넣으면 게이트 자체가 꺼짐 | 원하는 문자열 |
 
 **주의**: `VITE_` 접두사가 붙은 값은 빌드 시 클라이언트 번들에 그대로 노출된다(원래 그렇게 설계됨 —
 `VITE_SUPABASE_ANON_KEY`는 공개돼도 되는 키). `VITE_` 없는 값(`SUPABASE_SERVICE_ROLE_KEY`,
 `ANTHROPIC_API_KEY`, `CRON_SECRET`)은 서버(`/api`)에서만 쓰이고 브라우저로 절대 안 나간다.
+
+### 브라우저는 API 키를 안 갖는다 — `api/claude-proxy.ts` (2026-07-14부터)
+예전엔 운영실 화면들이 각자 브라우저 localStorage에 Anthropic API 키를 저장하는 BYOK
+방식이었다. 사파리 프라이빗 모드·저장공간 자동 정리 등으로 "들어갈 때마다 키가 없어진다"는
+문제가 반복돼서(실제로 겪은 문제), 브라우저는 아예 키를 안 갖게 바꿨다.
+
+- `src/lib/claude.ts`의 `createMessage()`가 브라우저에서 실행 중이면(`typeof window !==
+  'undefined'`) Anthropic SDK를 직접 안 부르고 `POST /api/claude-proxy`로 요청 바디를
+  그대로 넘긴다. 그 함수가 서버의 `ANTHROPIC_API_KEY`로 대신 호출해서 결과만 돌려준다.
+- 인증: `VITE_APP_PASSWORD`가 설정돼 있으면 프론트가 같은 값을 `X-App-Password` 헤더로
+  같이 보내고, 프록시가 이를 검증한다. 이 비밀번호는 프론트 번들에 그대로 보이는 수준이라
+  (`appPassword.ts` 주석 참고) 진짜 인증은 아니고 최소한의 필터링일 뿐이다.
+- **진짜 방어선은 일일 예산 캡**: `api/claude-proxy.ts`가 호출 전에 오늘 KST 기준
+  `work_log.cost_usd` 합계를 Supabase에서 조회해서 $5(기존 `budgetGuard.ts`와 같은 한도)를
+  넘으면 즉시 429로 거절한다 — 누가 URL을 알아내서 마구 호출해도 하루 손실이 $5로 제한됨.
+- 서버(크론)에서 호출할 때는 이 경로를 안 타고 예전처럼 `ANTHROPIC_API_KEY`로 Anthropic SDK를
+  직접 부른다(`typeof window === 'undefined'`이므로 분기가 자동으로 서버 경로를 탐).
 
 ## 연결 확인 방법
 사이트 접속 → **설정** 탭 → **"지금 연결 테스트"** 버튼. Supabase에 테스트 행 1건을

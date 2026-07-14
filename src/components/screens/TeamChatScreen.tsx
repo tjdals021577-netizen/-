@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { ApiKeyBar } from '../ApiKeyBar'
-import { getStoredApiKey, setStoredApiKey } from '../../lib/apiKey'
 import { getWorkLog, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
@@ -119,8 +117,9 @@ function ChatBubbles({ entries }: { entries: WorkLogEntry[] }) {
   )
 }
 
+const apiKey = 'server-managed'
+
 export function TeamChatScreen({ brand }: { brand: Brand }) {
-  const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   // 피드 필터('all'이면 전체 팀 활동을 시간순으로 섞어서 보여줌)와
   // 메시지를 보낼 대상 에이전트를 분리했다 — 예전에는 하나의 selectedKey가
   // 둘 다 겸해서, 다른 에이전트에게 지시하려면 먼저 그 에이전트를 클릭해
@@ -145,17 +144,8 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
   }, [feedFilter, logVersion])
 
-  function handleApiKeyChange(key: string) {
-    setApiKey(key)
-    setStoredApiKey(key)
-  }
-
   async function handleDispatch() {
     setDispatchMessage(null)
-    if (!apiKey) {
-      setDispatchMessage('먼저 Anthropic API 키를 저장하세요.')
-      return
-    }
     if (instruction.trim().length === 0) {
       setDispatchMessage(
         '지시 내용을 입력해주세요 — 아직 콘텐츠 캘린더 연동 전이라 비워두면 자동으로 주제를 고르지 못합니다.',
@@ -197,8 +187,6 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   return (
     <div>
       <PreviewBanner message="라이터·버즈·리믹서·브레인은 여기서 바로 실행됩니다. 모닝·코치는 대시보드, 캘린은 캘린더 화면에서 직접 실행합니다. 레이더는 스케줄러(Phase 4)가 붙기 전까지 화면만 준비돼 있습니다." />
-
-      <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr_240px]">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">

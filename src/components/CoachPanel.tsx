@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { ApiKeyBar } from './ApiKeyBar'
-import { getStoredApiKey, setStoredApiKey } from '../lib/apiKey'
 import { analyzeScreenshot } from '../agents/runCoach'
 import type { CoachAnalysis } from '../types/coach'
 import {
@@ -19,8 +17,9 @@ function buildDetailHtml(analysis: CoachAnalysis): string {
   return `${stats}<br/>${analysis.summary}`
 }
 
+const apiKey = 'server-managed'
+
 export function CoachPanel({ brand }: { brand: Brand }) {
-  const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [context, setContext] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -28,11 +27,6 @@ export function CoachPanel({ brand }: { brand: Brand }) {
   const [running, setRunning] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
-
-  function handleApiKeyChange(key: string) {
-    setApiKey(key)
-    setStoredApiKey(key)
-  }
 
   function handleFileSelect(f: File | null) {
     if (previewUrl) URL.revokeObjectURL(previewUrl)
@@ -104,8 +98,6 @@ export function CoachPanel({ brand }: { brand: Brand }) {
         </p>
       </div>
 
-      <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
-
       <div>
         <label className="mb-1 block text-xs font-medium text-[var(--text-dim)]">
           어떤 콘텐츠인지 (선택)
@@ -146,11 +138,6 @@ export function CoachPanel({ brand }: { brand: Brand }) {
       >
         {running ? '분석 중…' : '스크린샷 분석'}
       </button>
-      {!apiKey && (
-        <p className="text-center text-[11px] text-[var(--planned)]">
-          먼저 위에서 Anthropic API 키를 저장하세요.
-        </p>
-      )}
       {overBudget && (
         <p className="text-center text-[11px] text-[var(--open)]">
           오늘 예산 한도(${DAILY_BUDGET_USD})를 초과해서 중단했습니다.

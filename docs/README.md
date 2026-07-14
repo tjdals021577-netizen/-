@@ -10,6 +10,8 @@
 
 ## 기술 스택 한눈에
 - React 19 + Vite + TypeScript + Tailwind CSS v4
-- BYOK(Bring Your Own Key) — Anthropic API 키를 브라우저에만 저장, 서버 없이 직접 호출
+- Anthropic 호출은 서버가 대행(`api/claude-proxy.ts`) — 브라우저는 실제 API 키를 갖지 않는다
+  (2026-07-14 이전엔 BYOK 방식으로 브라우저 localStorage에 키를 저장했는데, 사파리 프라이빗
+  모드 등으로 "들어갈 때마다 키가 없어진다"는 문제가 반복돼서 없앴다)
 - 데이터는 브라우저 localStorage가 기본, Supabase 연결 시 자동으로 서버에도 복제(dual-write)
-- 배포: Vercel (프론트엔드 + `/api` 크론 함수)
+- 배포: Vercel (프론트엔드 + `/api` 크론 함수 + `/api/claude-proxy` 중계 함수)

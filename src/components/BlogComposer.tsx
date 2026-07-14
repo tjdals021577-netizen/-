@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { ApiKeyBar } from './ApiKeyBar'
 import { BlogAgentCard, type BlogAgentStatus } from './BlogAgentCard'
-import { getStoredApiKey, setStoredApiKey } from '../lib/apiKey'
 import { generateBlogDraft, runBlogAgentReview } from '../agents/runBlogReview'
 import type { BlogDraft, BlogReview, BlogRole } from '../types/blog'
 import { PASS_THRESHOLD } from '../types/domain'
@@ -67,9 +65,13 @@ function buildApprovalHtml(draft: BlogDraft, reviews: BlogReview[]): string {
   return `<span style="opacity:.7">${scores}</span><br/><br/>${body}${photos}${flagsBlock}`
 }
 
-export function BlogComposer({ brand }: { brand: Brand }) {
-  const [apiKey, setApiKey] = useState(() => getStoredApiKey())
+// 서버가 Anthropic 호출을 대신 처리해서(api/claude-proxy.ts) 브라우저는 실제
+// API 키를 몰라도 된다 — 이 문자열은 진짜 키가 아니라 기존 함수 시그니처를
+// 안 건드리려고 남겨둔 자리표시자일 뿐이며, claude.ts가 브라우저에서는 이
+// 값을 아예 안 쓴다.
+const apiKey = 'server-managed'
 
+export function BlogComposer({ brand }: { brand: Brand }) {
   const [topic, setTopic] = useState('')
   const [keyPoints, setKeyPoints] = useState('')
   const [photoDescriptions, setPhotoDescriptions] = useState('')
@@ -82,11 +84,6 @@ export function BlogComposer({ brand }: { brand: Brand }) {
   const [draftError, setDraftError] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
   const brainReport = getLatestBrainReport(brand)
-
-  function handleApiKeyChange(key: string) {
-    setApiKey(key)
-    setStoredApiKey(key)
-  }
 
   const doneReviews = ROLES.map((r) => roleStates[r].review).filter(
     (r): r is NonNullable<typeof r> => !!r,
@@ -259,8 +256,6 @@ export function BlogComposer({ brand }: { brand: Brand }) {
         </p>
       </header>
 
-      <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
-
       <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <div>
           <label className="mb-1 block text-xs font-medium text-[var(--text-dim)]">
@@ -338,11 +333,6 @@ export function BlogComposer({ brand }: { brand: Brand }) {
               : '작성 + 3인 AI 심사 진행 중… (검색 포함, 시간이 조금 더 걸릴 수 있어요)'
             : '초안 작성 + 심사 시작'}
         </button>
-        {!apiKey && (
-          <p className="text-center text-[11px] text-[var(--planned)]">
-            먼저 위에서 Anthropic API 키를 저장하세요.
-          </p>
-        )}
         {overBudget && (
           <p className="text-center text-[11px] text-[var(--open)]">
             오늘 예산 한도(${DAILY_BUDGET_USD})를 초과해서 중단했습니다. 내일

@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { ApiKeyBar } from './ApiKeyBar'
-import { getStoredApiKey, setStoredApiKey } from '../lib/apiKey'
 import { generateMorningBriefing } from '../agents/runMorning'
 import type { MorningBriefing } from '../types/morning'
 import { getTodaySpendUsd, isOverDailyBudget, DAILY_BUDGET_USD } from '../lib/budgetGuard'
@@ -26,18 +24,14 @@ function buildDetailHtml(briefing: MorningBriefing): string {
   return `<b>${briefing.headline}</b><br/>${summaries}`
 }
 
+const apiKey = 'server-managed'
+
 export function MorningPanel({ brand }: { brand: Brand }) {
-  const [apiKey, setApiKey] = useState(() => getStoredApiKey())
   const [briefing, setBriefing] = useState<MorningBriefing | null>(null)
   const [running, setRunning] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
   const doneToday = ranMorningToday(brand)
-
-  function handleApiKeyChange(key: string) {
-    setApiKey(key)
-    setStoredApiKey(key)
-  }
 
   const overBudget = isOverDailyBudget()
   const canRun = !!apiKey && !running && !overBudget
@@ -99,8 +93,6 @@ export function MorningPanel({ brand }: { brand: Brand }) {
         </p>
       </div>
 
-      <ApiKeyBar apiKey={apiKey} onChange={handleApiKeyChange} />
-
       {!doneToday && !briefing && (
         <div className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] p-3 text-sm font-semibold text-[var(--accent)]">
           오늘 아직 {brand} 브리핑을 만들지 않으셨어요 — 아래 버튼으로 지금 만들어보세요.
@@ -115,11 +107,6 @@ export function MorningPanel({ brand }: { brand: Brand }) {
       >
         {running ? '브리핑 만드는 중…' : '지금 브리핑 만들기'}
       </button>
-      {!apiKey && (
-        <p className="text-center text-[11px] text-[var(--planned)]">
-          먼저 위에서 Anthropic API 키를 저장하세요.
-        </p>
-      )}
       {overBudget && (
         <p className="text-center text-[11px] text-[var(--open)]">
           오늘 예산 한도(${DAILY_BUDGET_USD})를 초과해서 중단했습니다.
