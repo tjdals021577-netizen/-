@@ -40,17 +40,37 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
 `src/lib/remoteSync.ts`의 `testSupabaseConnection()` 참고.
 
 ## 크론 작업 (`/api/cron`)
-- `morning.ts`: 매일 08:00 KST(23:00 UTC) — 브랜드별로 오늘 근무기록을 모아 브리핑 생성
+- `agency.ts`: 매일 07:30 KST(22:30 UTC) — 진행 중인 대행 클라이언트마다 초안 5개 자동 생성
+  (레퍼런스 이미지 있으면 반영) + 결재함/캘린더 자동 등록
+- `radar.ts`: 매일 07:50 KST(22:50 UTC) — GA4 방문자/유입경로 스냅샷을 브랜드별로 수집
+- `morning.ts`: 매일 08:00 KST(23:00 UTC) — 브랜드별로 어제 근무기록 + 레이더 데이터를 모아 브리핑 생성
 - `brain.ts`: 매월 1일 09:00 KST(00:00 UTC) — 브랜드별로 "이번 달 트렌드" 기본 주제로 웹서치 리서치
 - 스케줄은 저장소 루트의 `vercel.json` 참고
-- 이 둘은 Supabase에 실제로 데이터가 쌓이고 있어야 의미가 있다(`work_log` 테이블을 읽어서 씀) —
-  즉 Supabase 연결이 실제로 되고 있는지 먼저 확인 필수
+- 이 넷은 전부 Supabase에 실제로 데이터가 쌓이고 있어야 의미가 있다(각자 `work_log`/`agency_clients`/
+  `radar_snapshots` 등을 읽고 쓴다) — 즉 Supabase 연결이 실제로 되고 있는지 먼저 확인 필수
 - `캘린` `코치`는 크론 없음: 캘린은 콘텐츠 생성 자체가 아직 로컬/수동이라 크론이 읽을 서버
   데이터가 마땅치 않고, 코치는 사람이 스크린샷을 직접 올려야 해서 애초에 자동화 불가능
 
+### 레이더(GA4) 연결 — 2026-07-13 진행
+서비스 계정(Google Cloud) 방식으로 연결한다. OAuth 로그인 없이 정적 키 하나로 끝나서 이 방식을 씀.
+
+1. Google Cloud Console에서 프로젝트 생성 → **Analytics Data API** 활성화
+2. IAM 및 관리자 → 서비스 계정 만들기(역할 부여 불필요) → 키 탭에서 JSON 키 생성/다운로드
+3. GA4 속성(브랜드별로 각각) → 관리 → 속성 액세스 관리 → 서비스 계정 이메일을 **뷰어**로 추가
+4. Vercel 환경변수에 아래 추가(전부 Production, Sensitive 체크):
+   - `GA4_SERVICE_ACCOUNT_KEY` — 다운로드한 JSON 키 파일 **전체 내용**(브랜드 공용, 하나만 있으면 됨)
+   - `GA4_PROPERTY_ID_UPMERY` — 업메리 GA4 속성 ID(숫자)
+   - `GA4_PROPERTY_ID_MAJALNAM` — 마잘남 GA4 속성 ID(숫자)
+5. 새 브랜드를 추가로 연결하려면 그 브랜드 GA4 속성에도 같은 서비스 계정을 뷰어로 추가하고,
+   `api/cron/radar.ts`의 `PROPERTY_ID_ENV_KEY`에 해당 브랜드→환경변수 이름 매핑을 한 줄 추가하면 됨
+   (속성 ID 환경변수가 비어있는 브랜드는 자동으로 건너뜀 — 에러 아님)
+- 구현: `api/_lib/ga4.ts`(서비스 계정 JWT로 GA4 Data API 직접 호출, 별도 SDK 없음 — Node
+  내장 `crypto`로 RS256 서명)
+
 ## DB 스키마
 `db/schema.sql` — Supabase SQL Editor에 그대로 붙여넣어 실행. 6개 테이블
-(`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`, `reference_images`, `brain_reports`),
+(`work_log`, `approval_queue`, `calendar_entries`, `agency_clients`, `reference_images`, `brain_reports`,
+`radar_snapshots`),
 select/insert/update 전부 공개 키로 가능(아래 겪었던 문제 참고 — upsert 때문에 select도 열어둠).
 
 **주의**: `schema.sql` 파일에 새 테이블/정책을 추가해도 이미 만들어진 라이브 DB에는

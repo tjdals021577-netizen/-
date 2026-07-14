@@ -3,6 +3,16 @@ import { syncToSupabase } from './remoteSync'
 
 const STORAGE_KEY = 'ai-ops:agency-clients'
 
+function sanitizeEnvValue(raw: string | undefined): string | undefined {
+  if (!raw) return raw
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.trim().replace(/[^\x20-\x7E]/g, '')
+  return cleaned || undefined
+}
+
+const SUPABASE_URL = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_URL)
+const SUPABASE_ANON_KEY = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
+
 function readAll(): AgencyClient[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -103,7 +113,7 @@ function updateClient(
 
 export function extendClient(id: string): AgencyClient | undefined {
   const now = new Date().toISOString()
-  return updateClient(id, (c) => ({
+  const result = updateClient(id, (c) => ({
     ...c,
     endDate: addMonths(c.endDate, 1),
     history: [
@@ -111,23 +121,27 @@ export function extendClient(id: string): AgencyClient | undefined {
       { date: now, type: 'extend', note: '1개월 연장' },
     ],
   }))
+  if (result) syncToSupabase('agency_clients', result)
+  return result
 }
 
 export function pauseClient(id: string): AgencyClient | undefined {
   const now = new Date().toISOString()
   const today = toIsoDate(new Date())
-  return updateClient(id, (c) => ({
+  const result = updateClient(id, (c) => ({
     ...c,
     status: 'paused',
     pausedAt: today,
     history: [...c.history, { date: now, type: 'pause', note: '일시중단' }],
   }))
+  if (result) syncToSupabase('agency_clients', result)
+  return result
 }
 
 export function resumeClient(id: string): AgencyClient | undefined {
   const now = new Date().toISOString()
   const today = toIsoDate(new Date())
-  return updateClient(id, (c) => {
+  const result = updateClient(id, (c) => {
     const pausedDays = c.pausedAt ? daysBetween(c.pausedAt, today) : 0
     return {
       ...c,
@@ -144,10 +158,14 @@ export function resumeClient(id: string): AgencyClient | undefined {
       ],
     }
   })
+  if (result) syncToSupabase('agency_clients', result)
+  return result
 }
 
 export function saveMemo(id: string, memo: string): AgencyClient | undefined {
-  return updateClient(id, (c) => ({ ...c, memo }))
+  const result = updateClient(id, (c) => ({ ...c, memo }))
+  if (result) syncToSupabase('agency_clients', result)
+  return result
 }
 
 export function saveReferenceImages(
@@ -165,7 +183,7 @@ export function saveTodayDrafts(
   id: string,
   drafts: DraftAttempt[],
 ): AgencyClient | undefined {
-  return updateClient(id, (c) => ({
+  const result = updateClient(id, (c) => ({
     ...c,
     todayDrafts: drafts,
     todayDraftsDate: toIsoDate(new Date()),
@@ -174,10 +192,59 @@ export function saveTodayDrafts(
       ...c.recentDraftTexts,
     ].slice(0, MAX_RECENT_DRAFTS),
   }))
+  if (result) syncToSupabase('agency_clients', result)
+  return result
 }
 
 export function deleteClient(id: string): void {
   writeAll(readAll().filter((c) => c.id !== id))
+}
+
+function fromSupabaseRow(row: Record<string, unknown>): AgencyClient {
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.name ?? ''),
+    business: String(row.business ?? ''),
+    persona: String(row.persona ?? ''),
+    threadUrl: String(row.thread_url ?? ''),
+    memo: String(row.memo ?? ''),
+    status: row.status === 'paused' ? 'paused' : 'active',
+    startDate: String(row.start_date ?? ''),
+    endDate: String(row.end_date ?? ''),
+    pausedAt: typeof row.paused_at === 'string' ? row.paused_at : undefined,
+    monthlyFeeKrw: typeof row.monthly_fee_krw === 'number' ? row.monthly_fee_krw : undefined,
+    history: Array.isArray(row.history) ? (row.history as AgencyClient['history']) : [],
+    todayDrafts: Array.isArray(row.today_drafts) ? (row.today_drafts as DraftAttempt[]) : [],
+    todayDraftsDate: typeof row.today_drafts_date === 'string' ? row.today_drafts_date : undefined,
+    recentDraftTexts: Array.isArray(row.recent_draft_texts)
+      ? (row.recent_draft_texts as string[])
+      : [],
+    referenceImageIds: Array.isArray(row.reference_image_ids)
+      ? (row.reference_image_ids as string[])
+      : [],
+    createdAt: String(row.created_at ?? ''),
+  }
+}
+
+// 크론(api/cron/agency.ts)이 매일 아침 서버에서 직접 초안을 생성해 Supabase에
+// 저장한다 — 이 함수는 화면 진입 시 그 결과를 로컬로 끌어와 병합한다(원격에
+// 있는 클라이언트가 우선, 로컬에만 있고 아직 동기화 안 된 것은 그대로 유지).
+export async function syncClientsFromSupabase(): Promise<void> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/agency_clients?select=*`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+    })
+    if (!res.ok) return
+    const rows = (await res.json()) as Record<string, unknown>[]
+    if (rows.length === 0) return
+    const remote = rows.map(fromSupabaseRow)
+    const remoteIds = new Set(remote.map((c) => c.id))
+    const localOnly = readAll().filter((c) => !remoteIds.has(c.id))
+    writeAll([...remote, ...localOnly])
+  } catch {
+    // 네트워크 실패는 조용히 무시 — 로컬 데이터로 계속 동작
+  }
 }
 
 export function daysRemaining(client: AgencyClient): number {

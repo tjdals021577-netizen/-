@@ -20,6 +20,7 @@ import {
   daysRemaining,
   daysElapsed,
   pausedDaysSoFar,
+  syncClientsFromSupabase,
 } from '../../lib/agencyStore'
 import { listReferences, getReferencesByIds, addReference } from '../../lib/referenceStore'
 import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
@@ -137,6 +138,13 @@ export function AgencyScreen() {
     const drafts: Record<string, string> = {}
     for (const c of clients) drafts[c.id] = c.memo
     setMemoDrafts((prev) => ({ ...drafts, ...prev }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 레이더/모닝과 같은 패턴 — 화면 진입 시 크론(api/cron/agency.ts)이 밤새
+  // 만들어둔 초안을 Supabase에서 끌어와 화면에 바로 보이게 한다.
+  useEffect(() => {
+    syncClientsFromSupabase().then(() => refresh())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
