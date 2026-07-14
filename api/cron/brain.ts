@@ -44,55 +44,62 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
-  const results: string[] = []
+  // 브랜드별로 순차 실행하면(웹서치 포함 Claude 호출 2번) 300초 크론 제한을
+  // 넘겨서 타임아웃이 났다(실제로 겪은 문제) — 브랜드끼리는 서로 의존관계가
+  // 없으므로 병렬로 돌려서 전체 시간을 절반 가까이 줄인다.
+  const results = await Promise.all(
+    BRANDS.map(async (brand) => {
+      const topic = `이번 달 ${brand} 콘텐츠 트렌드 및 벤치마킹`
+      try {
+        let costUsd = 0
+        const raw = await callClaudeJsonWithWebSearch({
+          apiKey,
+          system: buildBrainSystemPrompt(),
+          user: buildBrainUserPrompt({
+            topic,
+            context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
+          }),
+          maxTokens: 4096,
+          onUsage: (usage) => {
+            costUsd = estimateCostUsd(usage)
+          },
+        })
+        const report = parseBrainReport(raw)
+        const nowIso = new Date().toISOString()
 
-  for (const brand of BRANDS) {
-    const topic = `이번 달 ${brand} 콘텐츠 트렌드 및 벤치마킹`
-    let costUsd = 0
-    const raw = await callClaudeJsonWithWebSearch({
-      apiKey,
-      system: buildBrainSystemPrompt(),
-      user: buildBrainUserPrompt({
-        topic,
-        context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
-      }),
-      maxTokens: 4096,
-      onUsage: (usage) => {
-        costUsd = estimateCostUsd(usage)
-      },
-    })
-    const report = parseBrainReport(raw)
-    const nowIso = new Date().toISOString()
-
-    await supabaseInsert('work_log', {
-      id: makeId(),
-      agent: 'brain',
-      brand,
-      kind: '월간 리서치(자동)',
-      status: 'done',
-      status_label: '완료',
-      started_at: nowIso,
-      ended_at: nowIso,
-      cost_usd: costUsd,
-      note: `발견 ${report.findings.length}건`,
-      detail_html: `<b>발견 사항</b><br/>${report.findings
-        .map((f) => `- [${f.source}] ${f.insight}`)
-        .join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`,
-    })
-    // 라이터/버즈/리믹서가 다시 찾아 쓸 수 있게 구조화해서도 저장한다
-    // (src/lib/brainStore.ts와 같은 테이블 — 이쪽은 localStorage가 없는
-    // 서버 환경이라 직접 insert한다).
-    await supabaseInsert('brain_reports', {
-      id: makeId(),
-      brand,
-      topic,
-      findings: report.findings,
-      summary: report.summary,
-      recommendations: report.recommendations,
-      created_at: nowIso,
-    })
-    results.push(`${brand}: 발견 ${report.findings.length}건`)
-  }
+        await supabaseInsert('work_log', {
+          id: makeId(),
+          agent: 'brain',
+          brand,
+          kind: '월간 리서치(자동)',
+          status: 'done',
+          status_label: '완료',
+          started_at: nowIso,
+          ended_at: nowIso,
+          cost_usd: costUsd,
+          note: `발견 ${report.findings.length}건`,
+          detail_html: `<b>발견 사항</b><br/>${report.findings
+            .map((f) => `- [${f.source}] ${f.insight}`)
+            .join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`,
+        })
+        // 라이터/버즈/리믹서가 다시 찾아 쓸 수 있게 구조화해서도 저장한다
+        // (src/lib/brainStore.ts와 같은 테이블 — 이쪽은 localStorage가 없는
+        // 서버 환경이라 직접 insert한다).
+        await supabaseInsert('brain_reports', {
+          id: makeId(),
+          brand,
+          topic,
+          findings: report.findings,
+          summary: report.summary,
+          recommendations: report.recommendations,
+          created_at: nowIso,
+        })
+        return `${brand}: 발견 ${report.findings.length}건`
+      } catch (err) {
+        return `${brand}: 실패 (${err instanceof Error ? err.message : String(err)})`
+      }
+    }),
+  )
 
   sendJson(res, 200, { ok: true, results })
 }
