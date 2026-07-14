@@ -89,6 +89,16 @@
   자동으로 읽어서(`buildRadarText`) "어제 뭘 했는지" 뿐 아니라 "그 콘텐츠 반응이 어땠는지 보고
   다음 방향" 추천까지 브리핑에 포함한다. 유튜브·메타는 아직 미연결.
 
+## 기획함 (완성 콘텐츠 모아보기)
+- 화면: `src/components/screens/PlanningLibraryScreen.tsx` (탭바 "기획함")
+- 별도 저장소 없음 — 캘린더(`calendar_entries`)에서 채널이 블로그/스레드/유튜브이고
+  본문(`contentHtml`)이나 메모가 있는 항목만 최신순으로 채널별 섹션에 나눠 보여준다.
+  라이터·버즈·리믹서가 콘텐츠를 만들 때마다 이미 캘린더에 자동 등록되므로 기획함은
+  그 데이터를 다른 관점(채널별 모아보기 + 검색 + 복사)으로 재구성해서 보여줄 뿐,
+  새로 생성/저장하는 로직은 없다.
+- 카드: 브랜드·날짜 → 제목/미리보기 → 펼치면 전체 본문 → 복사 버튼(업로드용 텍스트 그대로 복사,
+  `ApprovalScreen`의 복사 로직과 동일한 패턴)
+
 ## 공통 인프라
 - `src/lib/claude.ts` — Anthropic 호출 3종(`callClaudeJson`, `callClaudeJsonWithWebSearch`,
   `callClaudeVisionJson`) 전부 여기서 관리. 서버(`/api/cron`)에서도 그대로 재사용 중
