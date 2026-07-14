@@ -1,8 +1,10 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { callClaudeJsonWithWebSearch } from '../../src/lib/claude.js'
 import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
 import { buildBrainSystemPrompt, buildBrainUserPrompt } from '../../src/agents/brainPrompts.js'
 import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS } from '../../src/types/brand.js'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 
 interface BrainReport {
   findings: { source: string; insight: string }[]
@@ -34,13 +36,12 @@ function parseBrainReport(raw: unknown): BrainReport {
 // 사용자가 매번 주제를 입력하는 수동 리서치와 달리, 자동 실행은 주제가
 // 없으므로 "이번 달 트렌드"라는 기본 주제로 돈다 — 리서치 품질보다는
 // 매달 놓치지 않고 한 번씩 시장을 훑는 데 의의가 있다.
-export default async function handler(req: Request): Promise<Response> {
-  if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!requireCronAuth(req, res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    return new Response('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.', { status: 500 })
+    sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
+    return
   }
 
   const results: string[] = []
@@ -93,7 +94,5 @@ export default async function handler(req: Request): Promise<Response> {
     results.push(`${brand}: 발견 ${report.findings.length}건`)
   }
 
-  return new Response(JSON.stringify({ ok: true, results }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+  sendJson(res, 200, { ok: true, results })
 }

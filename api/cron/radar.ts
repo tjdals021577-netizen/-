@@ -1,7 +1,9 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { fetchGa4Report } from '../_lib/ga4.js'
 import { fetchImwebOrderSummary } from '../_lib/imweb.js'
 import { BRANDS, type Brand } from '../../src/types/brand.js'
+import { requireCronAuth, sendJson } from '../_lib/cronHandler.js'
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -27,10 +29,8 @@ const IMWEB_ENV_KEYS: Record<Brand, { apiKey: string; secret: string }> = {
 // 매일 07:50 KST에 돌아서(모닝 크론 10분 전, vercel.json 참고), 어제 하루치
 // GA4 방문자 데이터 + 아임웹 주문/매출 데이터를 브랜드별로 Supabase radar_snapshots에
 // 저장한다. 모닝 크론이 이 값을 읽어서 브리핑에 반영하고, 대시보드도 이 테이블을 읽는다.
-export default async function handler(req: Request): Promise<Response> {
-  if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!requireCronAuth(req, res)) return
 
   const results: string[] = []
   const ga4KeyJson = process.env.GA4_SERVICE_ACCOUNT_KEY
@@ -117,7 +117,5 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, results }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+  sendJson(res, 200, { ok: true, results })
 }

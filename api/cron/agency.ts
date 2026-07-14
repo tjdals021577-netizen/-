@@ -1,8 +1,10 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { generateThreadDraft, runThreadReview } from '../../src/agents/runThreadReview.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import type { DraftAttempt } from '../../src/types/agency.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
 
 const DRAFT_COUNT = 5
 const MAX_RECENT_DRAFTS = 30
@@ -48,13 +50,12 @@ async function fetchReferenceImages(ids: string[]): Promise<VisionImageInput[]> 
 // 클라이언트마다 사람이 대시보드에서 "오늘 초안 5개 생성"을 누른 것과
 // 완전히 동일한 결과물(초안 5개 + 채점 + 결재함/캘린더 등록)을 자동으로 만든다.
 // 레퍼런스 이미지가 등록된 클라이언트는 그 스타일을 참고해서 쓴다.
-export default async function handler(req: Request): Promise<Response> {
-  if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!requireCronAuth(req, res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    return new Response('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.', { status: 500 })
+    sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
+    return
   }
 
   const clients = await supabaseSelect<AgencyClientRow>(
@@ -148,7 +149,5 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, results }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+  sendJson(res, 200, { ok: true, results })
 }
