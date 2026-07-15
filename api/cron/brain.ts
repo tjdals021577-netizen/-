@@ -32,10 +32,11 @@ function parseBrainReport(raw: unknown): BrainReport {
   }
 }
 
-// Vercel Cron이 매월 1일 09:00 KST(00:00 UTC)에 호출한다 — vercel.json 참고.
-// 사용자가 매번 주제를 입력하는 수동 리서치와 달리, 자동 실행은 주제가
-// 없으므로 "이번 달 트렌드"라는 기본 주제로 돈다 — 리서치 품질보다는
-// 매달 놓치지 않고 한 번씩 시장을 훑는 데 의의가 있다.
+// Vercel Cron이 매주 월요일 09:00 KST(월 00:00 UTC)에 호출한다 — vercel.json 참고.
+// (원래 매월 1회였는데, 라이터·리믹서가 이 결과를 공유해 쓰는 구조라 자료가
+// 신선할수록 좋아서 주 1회로 늘렸다 — 대표님 결정.) 사용자가 매번 주제를
+// 입력하는 수동 리서치와 달리, 자동 실행은 주제가 없으므로 "이번 주 트렌드"
+// 기본 주제로 돌아서 매주 놓치지 않고 시장을 한 번씩 훑는다.
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
@@ -49,7 +50,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // 없으므로 병렬로 돌려서 전체 시간을 절반 가까이 줄인다.
   const results = await Promise.all(
     BRANDS.map(async (brand) => {
-      const topic = `이번 달 ${brand} 콘텐츠 트렌드 및 벤치마킹`
+      const topic = `이번 주 ${brand} 콘텐츠 트렌드 및 벤치마킹`
       try {
         let costUsd = 0
         const raw = await callClaudeJsonWithWebSearch({

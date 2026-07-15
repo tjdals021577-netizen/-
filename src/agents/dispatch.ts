@@ -19,6 +19,70 @@ export type DispatchableAgent = 'writer' | 'buzz' | 'remix' | 'brain'
 
 export const DISPATCHABLE_AGENTS: DispatchableAgent[] = ['writer', 'buzz', 'remix', 'brain']
 
+// (B) 브레인 리서치 자동 연결 — 브레인에게 유튜브/레퍼런스 조사를 시키면, 사람이
+// "그걸로 기획해줘"라고 다시 말하지 않아도 방금 찾은 자료로 곧바로 리믹서 대본
+// 기획까지 만들어 결재함·캘린더에 올린다(대표님 요청). 실패해도 브레인 리서치
+// 자체는 성공으로 남기려고 이 함수 안에서 에러를 삼킨다.
+async function autoPlanYoutubeFromBrain(params: {
+  apiKey: string
+  brand: Brand
+  topic: string
+  marketFindings?: string
+}): Promise<void> {
+  const { apiKey, brand, topic, marketFindings } = params
+  const today = new Date().toISOString().slice(0, 10)
+  const spendBefore = getTodaySpendUsd()
+  const logId = startWorkLog({
+    agent: 'remix',
+    brand,
+    kind: '브레인 리서치 자동 연결',
+    note: topic,
+  })
+  try {
+    const plan = await generateRemixPlan({
+      apiKey,
+      topic,
+      referenceText: '',
+      brandContext: BRAND_CONTEXT[brand],
+      marketFindings,
+    })
+    const contentHtml = `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`
+    finishWorkLog(logId, {
+      status: 'done',
+      statusLabel: '완료',
+      costUsd: Math.max(0, getTodaySpendUsd() - spendBefore),
+      note: `브레인 자료 반영 · 훅 후보 ${plan.hooks.length}개`,
+      detailHtml: `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}`,
+    })
+    submitForApproval({
+      agent: 'remix',
+      brand,
+      title: topic,
+      contentHtml,
+      passed: true,
+      scoreLabel: '채점 없음',
+      sourceWorkLogId: logId,
+    })
+    createEntry({
+      date: today,
+      brand,
+      channel: 'youtube',
+      title: topic,
+      status: 'planned',
+      note: `브레인 자료 반영 · 훅 후보 ${plan.hooks.length}개`,
+      contentHtml,
+      sourceWorkLogId: logId,
+    })
+  } catch (err) {
+    finishWorkLog(logId, {
+      status: 'error',
+      statusLabel: '오류',
+      note: '자동 기획 실패(브레인 리서치는 완료됨)',
+      detailHtml: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 // 팀 채팅의 "일 시키기"에서 호출하는 경량 실행기 — 각 컴포저의 내부 상태는
 // 건드리지 않고, 같은 생성·채점 로직만 재사용해 근무기록에 결과를 남긴다.
 export async function dispatchJob(params: {
@@ -220,6 +284,16 @@ export async function dispatchJob(params: {
       note: `발견 ${report.findings.length}건`,
       detailHtml: `<b>발견 사항</b><br/>${report.findings.map((f) => `- [${f.source}] ${f.insight}`).join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`,
     })
+
+    // (B) 유튜브/레퍼런스 관련 리서치면, 방금 저장한 자료로 곧바로 대본 기획까지
+    // 자동 연결한다 — 사람이 "그걸로 기획해줘"라고 다시 말할 필요 없음. 유튜브를
+    // 운영하지 않는 브랜드거나 유튜브와 무관한 리서치면 연결하지 않는다(불필요한
+    // API 소모 방지).
+    const wantsYoutubePlan = /유튜브|대본|영상|기획|레퍼런스|퍼널|벤치마킹/.test(topic)
+    if (wantsYoutubePlan && BRAND_CHANNELS[brand].includes('유튜브')) {
+      const freshFindings = formatBrainFindingsForPrompt(getLatestBrainReport(brand))
+      await autoPlanYoutubeFromBrain({ apiKey, brand, topic, marketFindings: freshFindings })
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     finishWorkLog(logId, {
