@@ -192,6 +192,31 @@ create table if not exists youtube_video_stats (
 );
 create index if not exists youtube_video_stats_brand_idx on youtube_video_stats (brand, published_at desc);
 
+-- 스레드(메타) 성과 수집 — 마잘남 본인 계정 글별 조회수·좋아요·답글·리포스트·인용.
+-- 레이더 크론이 매일 갱신(upsert)하고, 대시보드/채널 탭이 읽는다. AI 분석은
+-- 하지 않으므로(대표님 결정: 성과 수집만) 순수 통계 저장 테이블이다.
+create table if not exists thread_post_stats (
+  thread_id text primary key,
+  brand text not null,
+  text text,
+  permalink text,
+  posted_at timestamptz,
+  views integer not null default 0,
+  likes integer not null default 0,
+  replies integer not null default 0,
+  reposts integer not null default 0,
+  quotes integer not null default 0,
+  updated_at timestamptz not null default now()
+);
+create index if not exists thread_post_stats_brand_idx on thread_post_stats (brand, posted_at desc);
+
+-- 스레드 계정 팔로워 수 — 브랜드당 한 행으로 매일 덮어쓴다(upsert).
+create table if not exists thread_account_stats (
+  brand text primary key,
+  follower_count integer,
+  updated_at timestamptz not null default now()
+);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -223,6 +248,8 @@ alter table content_photos enable row level security;
 alter table agent_chat_messages enable row level security;
 alter table agent_memory enable row level security;
 alter table youtube_video_stats enable row level security;
+alter table thread_post_stats enable row level security;
+alter table thread_account_stats enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -272,3 +299,11 @@ create policy "update agent_memory" on agent_memory for update to public using (
 create policy "select youtube_video_stats" on youtube_video_stats for select to public using (true);
 create policy "insert youtube_video_stats" on youtube_video_stats for insert to public with check (true);
 create policy "update youtube_video_stats" on youtube_video_stats for update to public using (true) with check (true);
+
+create policy "select thread_post_stats" on thread_post_stats for select to public using (true);
+create policy "insert thread_post_stats" on thread_post_stats for insert to public with check (true);
+create policy "update thread_post_stats" on thread_post_stats for update to public using (true) with check (true);
+
+create policy "select thread_account_stats" on thread_account_stats for select to public using (true);
+create policy "insert thread_account_stats" on thread_account_stats for insert to public with check (true);
+create policy "update thread_account_stats" on thread_account_stats for update to public using (true) with check (true);

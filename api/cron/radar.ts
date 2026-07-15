@@ -3,8 +3,9 @@ import { supabaseInsert, supabaseSelect } from '../_lib/supabaseAdmin.js'
 import { fetchGa4Report } from '../_lib/ga4.js'
 import { fetchImwebOrderSummary } from '../_lib/imweb.js'
 import { fetchRecentVideoStats } from '../_lib/youtube.js'
+import { fetchThreadStats } from '../_lib/threads.js'
 import { analyzeYoutubeContent } from '../../src/agents/runYoutubeAnalysis.js'
-import { BRANDS, BRAND_CONTEXT, type Brand } from '../../src/types/brand.js'
+import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../../src/types/brand.js'
 import { requireCronAuth, sendJson } from '../_lib/cronHandler.js'
 
 function makeId(): string {
@@ -31,6 +32,13 @@ const IMWEB_ENV_KEYS: Record<Brand, { apiKey: string; secret: string }> = {
 const YOUTUBE_CHANNEL_ID_ENV_KEY: Record<Brand, string> = {
   업메리: 'YOUTUBE_CHANNEL_ID_UPMERY',
   마잘남: 'YOUTUBE_CHANNEL_ID_MAJALNAM',
+}
+
+// 스레드(메타) 액세스 토큰 — 대표님 결정: 성과 수집만, 마잘남 본인 계정만.
+// 업메리는 스레드를 운영하지 않아 값이 비어 있고 조용히 건너뛴다.
+const THREADS_TOKEN_ENV_KEY: Record<Brand, string> = {
+  업메리: 'THREADS_ACCESS_TOKEN_UPMERY',
+  마잘남: 'THREADS_ACCESS_TOKEN_MAJALNAM',
 }
 
 // 매일 07:50 KST에 돌아서(모닝 크론 10분 전, vercel.json 참고), 어제 하루치
@@ -210,6 +218,59 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
     } else {
       results.push(`${brand} 유튜브: 건너뜀 (미설정)`)
+    }
+
+    // 스레드(메타) — 성과 수집만(AI 분석 없음, 토큰 0). 스레드를 운영하는
+    // 브랜드(마잘남)이면서 액세스 토큰이 있을 때만 돈다. 조회수·좋아요·답글·
+    // 리포스트·인용 + 계정 팔로워 수를 저장한다.
+    const threadsToken = process.env[THREADS_TOKEN_ENV_KEY[brand]]
+    if (BRAND_CHANNELS[brand].includes('스레드') && threadsToken) {
+      try {
+        const { posts, followerCount, rawSample } = await fetchThreadStats({ accessToken: threadsToken })
+        await Promise.all(
+          posts.map((p) =>
+            supabaseInsert('thread_post_stats', {
+              thread_id: p.threadId,
+              brand,
+              text: p.text,
+              permalink: p.permalink,
+              posted_at: p.timestamp || null,
+              views: p.views,
+              likes: p.likes,
+              replies: p.replies,
+              reposts: p.reposts,
+              quotes: p.quotes,
+              updated_at: nowIso,
+            }),
+          ),
+        )
+        if (followerCount !== null) {
+          await supabaseInsert('thread_account_stats', {
+            brand,
+            follower_count: followerCount,
+            updated_at: nowIso,
+          })
+        }
+        // 첫 실행 때 인사이트 응답 필드가 예상과 다를 수 있어 원본 샘플을
+        // work_log에 남긴다(아임웹과 동일 — 필드 다르면 바로 확인·수정).
+        await supabaseInsert('work_log', {
+          id: makeId(),
+          agent: 'radar',
+          brand,
+          kind: '스레드 성과 응답 샘플(디버그)',
+          status: 'done',
+          status_label: '완료',
+          started_at: nowIso,
+          ended_at: nowIso,
+          note: `글 ${posts.length}개 · 팔로워 ${followerCount ?? '?'}명`,
+          detail_html: rawSample,
+        })
+        results.push(`${brand} 스레드: 글 ${posts.length}개 통계 갱신 / 팔로워 ${followerCount ?? '?'}명`)
+      } catch (err) {
+        results.push(`${brand} 스레드: 실패 (${err instanceof Error ? err.message : String(err)})`)
+      }
+    } else {
+      results.push(`${brand} 스레드: 건너뜀 (미설정)`)
     }
   }
 
