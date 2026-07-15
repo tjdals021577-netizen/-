@@ -9,7 +9,7 @@ import { getTodaySpendUsd } from '../lib/budgetGuard.js'
 import { submitForApproval } from '../lib/approvalStore.js'
 import { createEntry } from '../lib/calendarStore.js'
 import { PASS_THRESHOLD } from '../types/domain.js'
-import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand.js'
+import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from '../types/brand.js'
 import type { BlogRole } from '../types/blog.js'
 import { getLatestBrainReport, formatBrainFindingsForPrompt, saveBrainReport } from '../lib/brainStore.js'
 
@@ -205,6 +205,7 @@ export async function dispatchJob(params: {
       apiKey,
       topic,
       context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
+      focus: BRAND_RESEARCH_FOCUS[brand],
     })
     saveBrainReport({
       brand,

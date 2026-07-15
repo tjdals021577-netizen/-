@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { callClaudeJsonWithWebSearch } from '../../src/lib/claude.js'
 import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
 import { buildBrainSystemPrompt, buildBrainUserPrompt } from '../../src/agents/brainPrompts.js'
-import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS } from '../../src/types/brand.js'
+import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS } from '../../src/types/brand.js'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 
@@ -59,7 +59,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           user: buildBrainUserPrompt({
             topic,
             context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
+            focus: BRAND_RESEARCH_FOCUS[brand],
           }),
+          // 검색 범위를 브랜드 키워드로 좁혔으니 과도한 수집을 막기 위해 검색
+          // 횟수도 3회로 제한한다(기본값과 동일하지만 명시적으로 못박음).
+          maxSearches: 3,
           maxTokens: 4096,
           onUsage: (usage) => {
             costUsd = estimateCostUsd(usage)

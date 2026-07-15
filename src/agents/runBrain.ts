@@ -29,12 +29,15 @@ export async function researchMarket(params: {
   apiKey: string
   topic: string
   context: string
+  focus?: string
 }): Promise<BrainReport> {
-  const { apiKey, topic, context } = params
+  const { apiKey, topic, context, focus } = params
   const raw = await callClaudeJsonWithWebSearch({
     apiKey,
     system: buildBrainSystemPrompt(),
-    user: buildBrainUserPrompt({ topic, context }),
+    user: buildBrainUserPrompt({ topic, context, focus }),
+    // 브랜드 키워드 범위로 좁혔으니 과도한 수집을 막기 위해 검색 3회로 제한.
+    maxSearches: 3,
     maxTokens: 4096,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })

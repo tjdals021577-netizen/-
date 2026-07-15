@@ -217,6 +217,8 @@ export async function callClaudeJsonWithWebSearch(params: {
       messages: [{ role: 'user', content: user }],
       tools: [
         {
+          // web_search_20260318 — 설치된 SDK가 인식하는 유효한(최신) 웹서치
+          // 도구 버전. (20260209도 유효하지만 이게 더 최신이라 그대로 둔다.)
           name: 'web_search',
           type: 'web_search_20260318',
           max_uses: maxSearches,
