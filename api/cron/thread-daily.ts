@@ -48,12 +48,20 @@ interface ReferenceImageRow {
 // 필요 없이 최근 등록된 것들을 그대로 쓴다 — 라이팅 시스템 프롬프트가 이
 // 글들의 "후킹 문장 구조"만 재사용하고 주제만 이번 topic에 맞게 바꿔쓰도록
 // 지시한다(threadPrompts.ts의 buildThreadFullFormatSystemPrompt 참고).
+// 레퍼런스 조회 실패(테이블 없음 등)가 시안 생성 전체를 막으면 안 된다 —
+// 2026-07-15 아침 첫 실행에서 reference_images 테이블이 라이브 DB에 아직
+// 없어서(404 PGRST205) 시안 8개가 통째로 실패한 사고가 실제로 있었다.
+// 레퍼런스는 어디까지나 보너스 재료라, 실패하면 그냥 없이 진행한다.
 async function pickReferenceImages(): Promise<VisionImageInput[]> {
-  const rows = await supabaseSelect<ReferenceImageRow>(
-    'reference_images',
-    'order=created_at.desc&limit=3&select=id,image_base64,media_type',
-  )
-  return rows.map((r) => ({ imageBase64: r.image_base64, imageMediaType: r.media_type }))
+  try {
+    const rows = await supabaseSelect<ReferenceImageRow>(
+      'reference_images',
+      'order=created_at.desc&limit=3&select=id,image_base64,media_type',
+    )
+    return rows.map((r) => ({ imageBase64: r.image_base64, imageMediaType: r.media_type }))
+  } catch {
+    return []
+  }
 }
 
 function buildDetailHtml(drafts: { format: string; text: string }[]): string {

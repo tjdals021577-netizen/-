@@ -187,6 +187,11 @@ export async function runBlogAgentReview(params: {
     apiKey,
     system: buildReviewSystemPrompt(role),
     user: buildReviewUserPrompt(draft),
+    // 채점은 검색 없는 단순 호출이라 보통 1분 안에 끝난다 — 기본값(260초)을
+    // 그대로 두면 채점 하나가 걸렸을 때 260초를 통째로 기다리다가 크론
+    // 함수 제한(300초)까지 같이 넘겨버리는 문제가 실제로 있었다("260초 안에
+    // 응답이 없어 중단" 에러가 주간 자동 기획에서 확인됨). 120초면 충분.
+    timeoutMs: 120_000,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   return parseBlogReview(role, raw)

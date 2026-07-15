@@ -40,7 +40,10 @@ export async function generateRemixPlan(params: {
       apiKey,
       system,
       user,
-      maxTokens: 4096,
+      // 4096으로는 검색 블록이 예산을 다 먹고 최종 JSON이 잘려서 "모델
+      // 응답에서 JSON을 찾지 못했습니다" 에러가 실제로 났다(2026-07-15
+      // 크론·수동 지시 양쪽에서 확인) — 블로그와 동일하게 8192로 상향.
+      maxTokens: 8192,
       maxSearches: 5,
       timeoutMs: 150_000,
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
@@ -54,8 +57,8 @@ export async function generateRemixPlan(params: {
       apiKey,
       system,
       user: `${user}\n\n(실시간 검색 없이, 알고 있는 지식만으로 작성해주세요.)`,
-      maxTokens: 2048,
-      timeoutMs: 45_000,
+      maxTokens: 4096,
+      timeoutMs: 60_000,
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })
     return parseRemixPlan(raw)
