@@ -66,41 +66,37 @@ export async function fetchImwebOrderSummary(params: {
     | undefined
   const list = Array.isArray(listCandidate) ? listCandidate : []
 
+  // 실제 결제 금액 = payment.payment_amount(할인 반영). total_price는 할인 전
+  // 정가라 그걸 합치면 매출이 부풀려진다(실사용에서 8배 부풀려짐을 확인).
+  const orderAmount = (o: unknown): number => {
+    const rec = o as Record<string, unknown>
+    const p = (rec.payment ?? {}) as Record<string, unknown>
+    const v = firstDefined(p.payment_amount, p.paymentAmount, rec.payment_amount)
+    const n = typeof v === 'number' ? v : Number(v)
+    return Number.isFinite(n) ? n : NaN
+  }
+  // order_time(유닉스 초, KST 기준 날짜)로 조회 범위 안 주문만 센다 — 아임웹의
+  // order-date 파라미터가 안 먹혀 다른 달 주문까지 섞여 오는 경우를 여기서 확실히 거른다.
+  const orderKstDate = (o: unknown): string | null => {
+    const rec = o as Record<string, unknown>
+    const t = Number(rec.order_time ?? rec.orderTime)
+    if (!Number.isFinite(t) || t <= 0) return null
+    return new Date(t * 1000 + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  }
+
+  const inRange = list.filter((o) => {
+    const d = orderKstDate(o)
+    return d !== null && d >= params.dateFrom && d <= params.dateTo
+  })
+
   let revenueKrw: number | null = null
-  if (list.length > 0) {
-    const amounts = list.map((o) => {
-      const rec = o as Record<string, unknown>
-      // 아임웹 v2는 결제 금액을 주문 객체 안 payment(중첩) 객체에 snake_case로
-      // 넣어준다(payment.total_price 등). 예전엔 최상위 카멜케이스 필드만 찾아서
-      // 못 읽고 매출이 null로 떨어졌다 — 중첩 payment + snake_case 후보를 모두 시도한다.
-      const payment = (rec.payment ?? rec.pay ?? rec.payment_info ?? {}) as Record<string, unknown>
-      const val = firstDefined(
-        // 중첩 payment 우선(실제 구조)
-        payment.total_price,
-        payment.totalPrice,
-        payment.price,
-        payment.paymentAmount,
-        payment.payment_price,
-        payment.amount,
-        // 최상위 폴백(스키마가 평면일 때)
-        rec.total_price,
-        rec.order_price,
-        rec.paymentAmount,
-        rec.totalPrice,
-        rec.finalPrice,
-        rec.amount,
-        rec.price,
-      )
-      return typeof val === 'number' ? val : Number(val)
-    })
-    // 일부 주문만 금액이 파싱돼도 그걸 합산한다(예전엔 하나라도 NaN이면 전체 null이라
-    // 매출이 통째로 안 보였다). 하나도 못 읽으면 그때만 null(필드 재확인 필요).
-    const finite = amounts.filter((n) => Number.isFinite(n))
+  if (inRange.length > 0) {
+    const finite = inRange.map(orderAmount).filter((n) => Number.isFinite(n))
     revenueKrw = finite.length > 0 ? finite.reduce((sum, n) => sum + n, 0) : null
   }
 
   return {
-    orderCount: list.length,
+    orderCount: inRange.length,
     revenueKrw,
     rawSample: list.length > 0 ? JSON.stringify(list[0]).slice(0, 1000) : '(해당 기간 주문 없음)',
   }
