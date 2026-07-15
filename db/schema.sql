@@ -119,6 +119,7 @@ create table if not exists radar_snapshots (
   blog_referrers jsonb not null default '[]',
   order_count integer,
   revenue_krw numeric,
+  daily_revenue jsonb not null default '[]',
   created_at timestamptz not null,
   synced_at timestamptz not null default now()
 );

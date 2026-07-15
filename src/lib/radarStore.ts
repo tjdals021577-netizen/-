@@ -26,6 +26,7 @@ export interface RadarSnapshot {
   blogReferrers: { referrer: string; views: number }[]
   orderCount: number | null
   revenueKrw: number | null
+  dailyRevenue: { date: string; orderCount: number; revenue: number }[]
   createdAt: string
 }
 
@@ -49,6 +50,9 @@ function fromRow(row: Record<string, unknown>): RadarSnapshot {
       : [],
     orderCount: typeof row.order_count === 'number' ? row.order_count : null,
     revenueKrw: typeof row.revenue_krw === 'number' ? row.revenue_krw : null,
+    dailyRevenue: Array.isArray(row.daily_revenue)
+      ? (row.daily_revenue as RadarSnapshot['dailyRevenue'])
+      : [],
     createdAt: String(row.created_at ?? ''),
   }
 }

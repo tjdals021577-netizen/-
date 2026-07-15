@@ -296,6 +296,13 @@ interface HeroData {
   visitorsDelta: number | null
   revenue: number | null
   orders: number
+  revenueDelta: number | null // 오늘 매출 - 어제 매출 (합산)
+}
+
+function kstDateStr(offsetDays = 0): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000 + offsetDays * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
 }
 
 // 히어로 요약 바 — 두 브랜드 합산 핵심 숫자를 가로로. 어제 방문자를 가장 크게,
@@ -325,6 +332,11 @@ function HeroSummary({
       let revenue = 0
       let revKnown = false
       let orders = 0
+      let revToday = 0
+      let revYest = 0
+      let dailyKnown = false
+      const today = kstDateStr(0)
+      const yest = kstDateStr(-1)
       for (const b of BRANDS) {
         const [ga4list, imweb] = await Promise.all([
           fetchRecentRadarSnapshots(b, 'ga4', 8),
@@ -339,6 +351,11 @@ function HeroSummary({
           revKnown = true
         }
         orders += imweb?.orderCount ?? 0
+        if (imweb && imweb.dailyRevenue.length > 0) {
+          dailyKnown = true
+          revToday += imweb.dailyRevenue.find((d) => d.date === today)?.revenue ?? 0
+          revYest += imweb.dailyRevenue.find((d) => d.date === yest)?.revenue ?? 0
+        }
       }
       if (!cancelled) {
         setData({
@@ -346,6 +363,7 @@ function HeroSummary({
           visitorsDelta: prevKnown ? vToday - vPrev : null,
           revenue: revKnown ? revenue : null,
           orders,
+          revenueDelta: dailyKnown ? revToday - revYest : null,
         })
       }
     }
@@ -388,7 +406,17 @@ function HeroSummary({
           </div>
         </div>
 
-        <HeroStat label="이번 달 매출" value={revenueText} />
+        <div>
+          <p className="text-[11px] font-bold text-[var(--text-faint)]">이번 달 매출</p>
+          <p className="mt-0.5 font-extrabold leading-none text-[var(--text)]" style={{ fontSize: 'var(--fs-xl)' }}>
+            {revenueText}
+          </p>
+          {data && data.revenueDelta != null && data.revenueDelta !== 0 && (
+            <p className="mt-1 text-[11px] font-bold" style={{ color: data.revenueDelta > 0 ? 'var(--up)' : 'var(--down)' }}>
+              {data.revenueDelta > 0 ? '▲' : '▼'} 오늘 {Math.abs(data.revenueDelta).toLocaleString('ko-KR')}원
+            </p>
+          )}
+        </div>
         <HeroStat label="이번 달 주문" value={data ? `${data.orders}건` : '—'} />
         <HeroStat label="오늘 API 사용액" value={`$${apiSpend.toFixed(3)}`} />
       </div>
@@ -396,6 +424,174 @@ function HeroSummary({
       {refreshMsg && (
         <p className="mt-3 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">{refreshMsg}</p>
       )}
+    </section>
+  )
+}
+
+// GA4 스냅샷은 "어제치"를 오늘 수집한다 — 방문자의 실제 날짜 = 수집일(KST) - 1일.
+function ga4VisitorDate(createdAt: string): string {
+  const t = new Date(createdAt).getTime()
+  if (!Number.isFinite(t)) return ''
+  return new Date(t + 9 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+// 방문자 추이 area 스파크라인 — 채운 영역 + 라인 + 끝점 강조(dataviz 원칙).
+function AreaSpark({ values, color }: { values: number[]; color: string }) {
+  if (values.length < 2) {
+    return <p className="py-4 text-center text-[11px] text-[var(--text-faint)]">데이터 쌓이는 중… (며칠 지나면 그래프가 그려져요)</p>
+  }
+  const W = 300
+  const H = 66
+  const pad = 5
+  const max = Math.max(1, ...values)
+  const n = values.length
+  const x = (i: number) => pad + (i / (n - 1)) * (W - 2 * pad)
+  const y = (v: number) => H - pad - (v / max) * (H - 2 * pad)
+  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
+  const area = `${line} L${x(n - 1).toFixed(1)},${H} L${x(0).toFixed(1)},${H} Z`
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label="방문자 추이">
+      <path d={area} fill={color} opacity="0.14" />
+      <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(n - 1)} cy={y(values[n - 1])} r="3.5" fill={color} vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}
+
+// 월별 매출 막대.
+function MonthlyBars({ data, color }: { data: { month: string; revenue: number }[]; color: string }) {
+  if (data.length === 0) {
+    return <p className="py-4 text-center text-[11px] text-[var(--text-faint)]">데이터 쌓이는 중…</p>
+  }
+  const max = Math.max(1, ...data.map((d) => d.revenue))
+  return (
+    <div className="flex items-end gap-2" style={{ height: 80 }}>
+      {data.map((d) => {
+        const h = Math.max(3, Math.round((d.revenue / max) * 60))
+        return (
+          <div key={d.month} className="flex flex-1 flex-col items-center gap-1" title={`${d.month}: ${d.revenue.toLocaleString('ko-KR')}원`}>
+            <span className="text-[9px] text-[var(--text-faint)]">{d.revenue > 0 ? `${Math.round(d.revenue / 10000)}만` : '0'}</span>
+            <div className="w-full rounded-t-[3px]" style={{ height: h, background: color }} />
+            <span className="text-[9px] text-[var(--text-faint)]">{Number(d.month.slice(5))}월</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+interface DailyRow {
+  date: string
+  visitors: number | null
+  source: string | null
+  orders: number
+  revenue: number
+}
+
+// 브랜드별 "기간별 분석" — 방문자 추이 그래프 + 월별 매출 그래프 + 일자별 표.
+// 방문자·유입경로는 기존 GA4 스냅샷(읽기 전용), 주문·매출은 아임웹 일별 분해에서.
+function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: number }) {
+  const [rows, setRows] = useState<DailyRow[] | null>(null)
+  const [visitorSeries, setVisitorSeries] = useState<number[]>([])
+  const [monthly, setMonthly] = useState<{ month: string; revenue: number }[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const [ga4list, imweb] = await Promise.all([
+        fetchRecentRadarSnapshots(brand, 'ga4', 30),
+        fetchLatestRadarSnapshot(brand, 'imweb'),
+      ])
+      const ga4days = dedupeByDay(ga4list) // desc
+      const visitorByDate = new Map<string, { visitors: number; source: string | null }>()
+      for (const s of ga4days) {
+        const d = ga4VisitorDate(s.createdAt)
+        if (d && !visitorByDate.has(d)) {
+          visitorByDate.set(d, { visitors: s.activeUsers, source: s.trafficSources[0]?.source ?? null })
+        }
+      }
+      const imwebDaily = imweb?.dailyRevenue ?? []
+      const imwebByDate = new Map(imwebDaily.map((d) => [d.date, d]))
+
+      const allDates = new Set<string>([...visitorByDate.keys(), ...imwebByDate.keys()])
+      const sorted = [...allDates].sort((a, b) => b.localeCompare(a)) // desc
+      const tableRows: DailyRow[] = sorted.slice(0, 10).map((date) => ({
+        date,
+        visitors: visitorByDate.get(date)?.visitors ?? null,
+        source: visitorByDate.get(date)?.source ?? null,
+        orders: imwebByDate.get(date)?.orderCount ?? 0,
+        revenue: imwebByDate.get(date)?.revenue ?? 0,
+      }))
+
+      // 방문자 그래프(오름차순, 최근 14일)
+      const vAsc = [...visitorByDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-14)
+      // 월별 매출(오름차순, 최근 6개월)
+      const byMonth = new Map<string, number>()
+      for (const d of imwebDaily) {
+        const m = d.date.slice(0, 7)
+        byMonth.set(m, (byMonth.get(m) ?? 0) + d.revenue)
+      }
+      const monthlyArr = [...byMonth.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .slice(-6)
+        .map(([month, revenue]) => ({ month, revenue }))
+
+      if (!cancelled) {
+        setRows(tableRows)
+        setVisitorSeries(vAsc.map(([, v]) => v.visitors))
+        setMonthly(monthlyArr)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [brand, refreshKey])
+
+  return (
+    <section className="card p-4">
+      <p className="mb-3 text-[13px] font-bold text-[var(--text)]">📊 {brand} — 기간별 분석</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-lg bg-[var(--surface-2)] p-3">
+          <p className="mb-1.5 text-[11px] font-bold text-[var(--text-faint)]">방문자 추이 (최근 14일)</p>
+          <AreaSpark values={visitorSeries} color="var(--ch-yt)" />
+        </div>
+        <div className="rounded-lg bg-[var(--surface-2)] p-3">
+          <p className="mb-1.5 text-[11px] font-bold text-[var(--text-faint)]">월별 매출 (최근 6개월)</p>
+          <MonthlyBars data={monthly} color="var(--accent)" />
+        </div>
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="text-[10.5px] uppercase tracking-wide text-[var(--text-faint)]">
+              <th className="py-1.5 pr-3 text-left font-bold">일자</th>
+              <th className="py-1.5 pr-3 text-right font-bold">주문수</th>
+              <th className="py-1.5 pr-3 text-right font-bold">매출액</th>
+              <th className="py-1.5 pr-3 text-right font-bold">방문자</th>
+              <th className="py-1.5 text-left font-bold">유입경로</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows === null ? (
+              <tr><td colSpan={5} className="py-3 text-center text-[var(--text-faint)]">불러오는 중…</td></tr>
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={5} className="py-3 text-center text-[var(--text-faint)]">데이터 쌓이는 중…</td></tr>
+            ) : (
+              rows.map((r) => (
+                <tr key={r.date} className="border-t border-[var(--border)]">
+                  <td className="py-1.5 pr-3 tabular-nums text-[var(--text-dim)]">{r.date.slice(5)}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums text-[var(--text)]">{r.orders}건</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums font-semibold text-[var(--text)]">{r.revenue.toLocaleString('ko-KR')}원</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums text-[var(--text)]">{r.visitors ?? '—'}</td>
+                  <td className="py-1.5 truncate text-[var(--text-dim)]">{r.source ?? '—'}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   )
 }
@@ -444,6 +640,11 @@ export function DashboardScreen() {
           <BrandSection key={b} brand={b} refreshKey={refreshKey} />
         ))}
       </div>
+
+      {/* 기간별 분석 — 방문자 추이·월별 매출 그래프 + 일자별 표 (브랜드별) */}
+      {BRANDS.map((b) => (
+        <PerformanceSection key={b} brand={b} refreshKey={refreshKey} />
+      ))}
 
       {/* 달력·모닝은 시야 방해 안 하게 하단으로 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">

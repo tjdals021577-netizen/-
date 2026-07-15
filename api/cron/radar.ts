@@ -20,6 +20,12 @@ function kstToday(): string {
 function kstMonthStart(): string {
   return `${kstToday().slice(0, 7)}-01`
 }
+// 월별 매출 그래프용으로 최근 몇 달치까지 조회한다(이번 달 총액은 이 중 이번 달만 합산).
+function kstMonthsAgoStart(months: number): string {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  d.setUTCMonth(d.getUTCMonth() - months, 1)
+  return d.toISOString().slice(0, 10)
+}
 
 // 브랜드별 GA4 속성 ID / 아임웹 API 키 환경변수 — 공용 자격증명(GA4 서비스 계정,
 // 아임웹은 브랜드마다 발급받음)은 재사용하고 브랜드별 값만 다르다. 특정 브랜드의
@@ -96,12 +102,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const imwebSecret = process.env[imwebKeys.secret]
     if (imwebApiKey && imwebSecret) {
       try {
+        // 최근 6개월치를 가져와서(월별 그래프용) 그중 이번 달만 합산해 카드 총액으로,
+        // 전체 일별 분해(daily_revenue)는 그래프·표용으로 저장한다.
         const summary = await fetchImwebOrderSummary({
           apiKey: imwebApiKey,
           secretKey: imwebSecret,
-          dateFrom: kstMonthStart(),
+          dateFrom: kstMonthsAgoStart(5),
           dateTo: kstToday(),
         })
+        const monthStart = kstMonthStart()
+        const thisMonth = summary.daily.filter((d) => d.date >= monthStart)
+        const monthRevenue = thisMonth.reduce((s, d) => s + d.revenue, 0)
+        const monthOrders = thisMonth.reduce((s, d) => s + d.orderCount, 0)
         await supabaseInsert('radar_snapshots', {
           id: makeId(),
           brand,
@@ -112,8 +124,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           conversions: 0,
           top_pages: [],
           traffic_sources: [],
-          order_count: summary.orderCount,
-          revenue_krw: summary.revenueKrw,
+          order_count: monthOrders,
+          revenue_krw: monthRevenue,
+          daily_revenue: summary.daily,
           created_at: nowIso,
         })
         // 첫 실행 때 응답 필드명이 예상과 다를 수 있어 원본 샘플을 work_log에 남겨서
@@ -127,10 +140,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           status_label: '완료',
           started_at: nowIso,
           ended_at: nowIso,
-          note: `주문 ${summary.orderCount}건, 매출 ${summary.revenueKrw ?? '(필드 확인 필요)'}원`,
+          note: `이번 달 주문 ${monthOrders}건, 매출 ${monthRevenue}원`,
           detail_html: summary.rawSample,
         })
-        results.push(`${brand} 아임웹: 주문 ${summary.orderCount}건 / 매출 ${summary.revenueKrw ?? '?'}원`)
+        results.push(`${brand} 아임웹: 이번 달 주문 ${monthOrders}건 / 매출 ${monthRevenue}원`)
       } catch (err) {
         results.push(`${brand} 아임웹: 실패 (${err instanceof Error ? err.message : String(err)})`)
       }

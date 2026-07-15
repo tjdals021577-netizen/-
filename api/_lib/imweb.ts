@@ -37,9 +37,16 @@ async function getAccessToken(apiKey: string, secretKey: string): Promise<string
   return token
 }
 
+export interface ImwebDailyRevenue {
+  date: string // YYYY-MM-DD (KST)
+  orderCount: number
+  revenue: number
+}
+
 export interface ImwebOrderSummary {
   orderCount: number
   revenueKrw: number | null
+  daily: ImwebDailyRevenue[]
   rawSample: string
 }
 
@@ -95,9 +102,25 @@ export async function fetchImwebOrderSummary(params: {
     revenueKrw = finite.length > 0 ? finite.reduce((sum, n) => sum + n, 0) : null
   }
 
+  // 날짜별 분해 — 대시보드의 일자별 표·월별 매출 그래프·매출 증감에 쓴다.
+  const byDate = new Map<string, { orderCount: number; revenue: number }>()
+  for (const o of inRange) {
+    const d = orderKstDate(o)
+    if (!d) continue
+    const amt = orderAmount(o)
+    const cur = byDate.get(d) ?? { orderCount: 0, revenue: 0 }
+    cur.orderCount += 1
+    if (Number.isFinite(amt)) cur.revenue += amt
+    byDate.set(d, cur)
+  }
+  const daily: ImwebDailyRevenue[] = [...byDate.entries()]
+    .map(([date, v]) => ({ date, orderCount: v.orderCount, revenue: v.revenue }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
   return {
     orderCount: inRange.length,
     revenueKrw,
+    daily,
     rawSample: list.length > 0 ? JSON.stringify(list[0]).slice(0, 1000) : '(해당 기간 주문 없음)',
   }
 }

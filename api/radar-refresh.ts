@@ -22,6 +22,11 @@ function kstToday(): string {
 function kstMonthStart(): string {
   return `${kstToday().slice(0, 7)}-01`
 }
+function kstMonthsAgoStart(months: number): string {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  d.setUTCMonth(d.getUTCMonth() - months, 1)
+  return d.toISOString().slice(0, 10)
+}
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method !== 'POST') {
@@ -48,9 +53,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const summary = await fetchImwebOrderSummary({
         apiKey,
         secretKey,
-        dateFrom: kstMonthStart(),
+        dateFrom: kstMonthsAgoStart(5),
         dateTo: kstToday(),
       })
+      const monthStart = kstMonthStart()
+      const thisMonth = summary.daily.filter((d) => d.date >= monthStart)
+      const monthRevenue = thisMonth.reduce((s, d) => s + d.revenue, 0)
+      const monthOrders = thisMonth.reduce((s, d) => s + d.orderCount, 0)
       await supabaseInsert('radar_snapshots', {
         id: makeId(),
         brand,
@@ -61,11 +70,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         conversions: 0,
         top_pages: [],
         traffic_sources: [],
-        order_count: summary.orderCount,
-        revenue_krw: summary.revenueKrw,
+        order_count: monthOrders,
+        revenue_krw: monthRevenue,
+        daily_revenue: summary.daily,
         created_at: nowIso,
       })
-      results.push(`${brand}: 주문 ${summary.orderCount}건 / 매출 ${summary.revenueKrw ?? '?'}원`)
+      results.push(`${brand}: 이번 달 주문 ${monthOrders}건 / 매출 ${monthRevenue}원`)
     } catch (err) {
       results.push(`${brand}: 실패 (${err instanceof Error ? err.message : String(err)})`)
     }
