@@ -245,10 +245,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           ),
         )
         if (followerCount !== null) {
-          await supabaseInsert('thread_account_stats', {
+          // 날짜별(KST 기준)로 한 행씩 쌓는다 — 같은 날 재실행은 덮어쓰고,
+          // 날이 바뀌면 새 행이 생겨 "어제 대비 오늘 증감"을 계산할 수 있다.
+          const kstDate = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          await supabaseInsert('thread_follower_daily', {
             brand,
+            date: kstDate,
             follower_count: followerCount,
-            updated_at: nowIso,
+            created_at: nowIso,
           })
         }
         // 첫 실행 때 인사이트 응답 필드가 예상과 다를 수 있어 원본 샘플을

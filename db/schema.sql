@@ -210,12 +210,17 @@ create table if not exists thread_post_stats (
 );
 create index if not exists thread_post_stats_brand_idx on thread_post_stats (brand, posted_at desc);
 
--- 스레드 계정 팔로워 수 — 브랜드당 한 행으로 매일 덮어쓴다(upsert).
-create table if not exists thread_account_stats (
-  brand text primary key,
-  follower_count integer,
-  updated_at timestamptz not null default now()
+-- 스레드 계정 팔로워 수 — 날짜별로 한 행씩 쌓는다(brand+date 복합키). 하루
+-- 단위로 upsert하므로 같은 날 여러 번 돌아도 덮어쓰고, 날이 바뀌면 새 행이
+-- 쌓여서 "어제 대비 오늘 +N" 증감을 계산할 수 있다(대표님 요청: 일일 성장 지표).
+create table if not exists thread_follower_daily (
+  brand text not null,
+  date date not null,
+  follower_count integer not null,
+  created_at timestamptz not null default now(),
+  primary key (brand, date)
 );
+create index if not exists thread_follower_daily_brand_idx on thread_follower_daily (brand, date desc);
 
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
@@ -249,7 +254,7 @@ alter table agent_chat_messages enable row level security;
 alter table agent_memory enable row level security;
 alter table youtube_video_stats enable row level security;
 alter table thread_post_stats enable row level security;
-alter table thread_account_stats enable row level security;
+alter table thread_follower_daily enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -304,6 +309,6 @@ create policy "select thread_post_stats" on thread_post_stats for select to publ
 create policy "insert thread_post_stats" on thread_post_stats for insert to public with check (true);
 create policy "update thread_post_stats" on thread_post_stats for update to public using (true) with check (true);
 
-create policy "select thread_account_stats" on thread_account_stats for select to public using (true);
-create policy "insert thread_account_stats" on thread_account_stats for insert to public with check (true);
-create policy "update thread_account_stats" on thread_account_stats for update to public using (true) with check (true);
+create policy "select thread_follower_daily" on thread_follower_daily for select to public using (true);
+create policy "insert thread_follower_daily" on thread_follower_daily for insert to public with check (true);
+create policy "update thread_follower_daily" on thread_follower_daily for update to public using (true) with check (true);

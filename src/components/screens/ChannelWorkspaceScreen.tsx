@@ -29,6 +29,12 @@ import {
 } from '../../lib/contentPhotoStore'
 import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
 import { fetchYoutubeVideoStats, type YoutubeVideoStatRow } from '../../lib/youtubeStatsStore'
+import {
+  fetchThreadPostStats,
+  fetchThreadFollowerDaily,
+  type ThreadPostStatRow,
+  type ThreadFollowerDayRow,
+} from '../../lib/threadsStatsStore'
 import { analyzeYoutubeContent, type YoutubeAnalysis } from '../../agents/runYoutubeAnalysis'
 import { startWorkLog, finishWorkLog } from '../../lib/workLog'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
@@ -521,6 +527,147 @@ function YoutubeStatsPanel({ brand }: { brand: Brand }) {
   )
 }
 
+// 스레드(메타) 성과표 — 레이더가 매일 모은 데이터를 읽어서 (1)팔로워 현재 수 +
+// 오늘 증감 + 최근 일일 성장 막대, (2)최근 글별 좋아요·답글·조회수를 보여준다.
+// AI 분석은 없다(성과 수집만 — 대표님 결정). 데이터 job이 "숫자 요약 + 목록"이라
+// 차트가 아니라 스탯 타일 + 리스트가 맞는 형태(dataviz 원칙).
+function ThreadsStatsPanel({ brand }: { brand: Brand }) {
+  const [posts, setPosts] = useState<ThreadPostStatRow[] | null>(null)
+  const [follower, setFollower] = useState<ThreadFollowerDayRow[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setPosts(null)
+    setFollower(null)
+    void fetchThreadPostStats(brand).then((rows) => {
+      if (!cancelled) setPosts(rows)
+    })
+    void fetchThreadFollowerDaily(brand).then((rows) => {
+      if (!cancelled) setFollower(rows)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [brand])
+
+  if (posts === null || follower === null) {
+    return <p className="text-[12px] text-[var(--text-faint)]">불러오는 중…</p>
+  }
+
+  const hasAny = posts.length > 0 || follower.length > 0
+  if (!hasAny) {
+    return (
+      <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-4 text-[12px] text-[var(--text-faint)]">
+        아직 데이터가 없습니다 — 메타(스레드) API 연동(THREADS_ACCESS_TOKEN) 후 매일 새벽 레이더 크론이 자동으로 채웁니다.
+      </div>
+    )
+  }
+
+  // 팔로워: [0]=오늘(최신). 오늘 증감 = 오늘값 - 어제값.
+  const current = follower[0]?.followerCount ?? null
+  const todayDelta = follower.length >= 2 ? follower[0].followerCount - follower[1].followerCount : null
+  // 일일 성장 막대(오래된→최신 순). 각 날의 "그날 늘어난 수".
+  const growth: { date: string; delta: number }[] = []
+  for (let i = follower.length - 1; i > 0; i--) {
+    growth.push({ date: follower[i - 1].date, delta: follower[i - 1].followerCount - follower[i].followerCount })
+  }
+  const maxAbs = Math.max(1, ...growth.map((g) => Math.abs(g.delta)))
+
+  const totalLikes = posts.reduce((s, p) => s + p.likes, 0)
+  const totalReplies = posts.reduce((s, p) => s + p.replies, 0)
+
+  const deltaText = (d: number | null) =>
+    d === null ? '어제 데이터 없음' : d > 0 ? `▲ +${formatCount(d)}` : d < 0 ? `▼ ${formatCount(d)}` : '→ 변동 없음'
+  const deltaColor = (d: number | null) =>
+    d === null || d === 0 ? 'var(--text-faint)' : d > 0 ? 'var(--done)' : 'var(--open)'
+
+  return (
+    <div className="space-y-3">
+      {/* 팔로워 성과 타일 */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3.5">
+        <p className="text-[11px] font-bold text-[var(--text-faint)]">팔로워</p>
+        <div className="mt-0.5 flex items-baseline gap-2">
+          <span className="text-[26px] font-extrabold leading-none text-[var(--text)]">
+            {current === null ? '—' : formatCount(current)}
+          </span>
+          <span className="text-[13px] font-bold" style={{ color: deltaColor(todayDelta) }}>
+            {deltaText(todayDelta)}
+          </span>
+          <span className="text-[10.5px] text-[var(--text-faint)]">오늘</span>
+        </div>
+        {growth.length > 0 && (
+          <div className="mt-3">
+            <p className="mb-1 text-[10px] text-[var(--text-faint)]">최근 일일 성장</p>
+            <div className="flex items-end gap-1.5" style={{ height: 44 }}>
+              {growth.map((g) => {
+                const h = Math.max(3, Math.round((Math.abs(g.delta) / maxAbs) * 40))
+                const up = g.delta >= 0
+                return (
+                  <div key={g.date} className="flex flex-1 flex-col items-center gap-1" title={`${g.date}: ${up ? '+' : ''}${g.delta}`}>
+                    <div
+                      className="w-full rounded-[3px]"
+                      style={{ height: h, backgroundColor: up ? 'var(--done)' : 'var(--open)' }}
+                    />
+                    <span className="text-[9px] text-[var(--text-faint)]">{g.date.slice(5)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 콘텐츠 합계 타일 2개 */}
+      {posts.length > 0 && (
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
+            <p className="text-[11px] font-bold text-[var(--text-faint)]">최근 {posts.length}개 글 · 좋아요</p>
+            <p className="mt-0.5 text-[20px] font-extrabold text-[var(--text)]">👍 {formatCount(totalLikes)}</p>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
+            <p className="text-[11px] font-bold text-[var(--text-faint)]">최근 {posts.length}개 글 · 댓글</p>
+            <p className="mt-0.5 text-[20px] font-extrabold text-[var(--text)]">💬 {formatCount(totalReplies)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* 글별 성과 리스트 */}
+      {posts.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-bold text-[var(--text-faint)]">글별 성과 (최신순)</p>
+          {posts.map((p) => {
+            const preview = (p.text || '(본문 없음)').replace(/\n/g, ' ').slice(0, 42)
+            const body = (
+              <>
+                <p className="truncate text-[12px] font-medium text-[var(--text)]">{preview || '(본문 없음)'}</p>
+                <p className="text-[10.5px] text-[var(--text-faint)]">
+                  👍 {formatCount(p.likes)} · 💬 {formatCount(p.replies)} · 🔁 {formatCount(p.reposts)} · 👁️ {formatCount(p.views)}
+                  {p.postedAt ? ` · ${p.postedAt.slice(0, 10)}` : ''}
+                </p>
+              </>
+            )
+            return p.permalink ? (
+              <a
+                key={p.threadId}
+                href={p.permalink}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-lg bg-[var(--surface-2)] p-2 hover:bg-[var(--surface)]"
+              >
+                {body}
+              </a>
+            ) : (
+              <div key={p.threadId} className="rounded-lg bg-[var(--surface-2)] p-2">
+                {body}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; channel: WorkspaceChannel }) {
   const [, setVersion] = useState(0)
   const [query, setQuery] = useState('')
@@ -625,10 +772,9 @@ export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; chann
                 <YoutubeStatsPanel brand={brand} />
               </Accordion>
             ) : (
-              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-4 text-[12px] text-[var(--text-faint)]">
-                내 콘텐츠 분석은 메타(스레드) API 연동 후 여기에 추가될 예정입니다.
-                지금은 게시물 단위 조회수·반응 데이터를 가져올 방법이 없어서 비워둡니다.
-              </div>
+              <Accordion title="내 콘텐츠 성과" status="팔로워 성장·좋아요·댓글 (매일 자동 수집)">
+                <ThreadsStatsPanel brand={brand} />
+              </Accordion>
             )}
           </div>
         </section>
