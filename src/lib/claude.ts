@@ -19,6 +19,33 @@ export type UsageCallback = (usage: {
   output_tokens: number
 }) => void
 
+// ── 프롬프트 캐싱 ──────────────────────────────────────────────────────────
+// 전자책·유튜브 지식·페르소나 프롬프트처럼 "호출마다 똑같은 거대한 앞부분"은
+// 매번 전체 입력 토큰으로 과금된다. cache_control을 붙이면 그 앞부분을 앤트로픽
+// 서버가 5분간 캐시해서, 다음 호출(같은 앞부분)은 그 부분을 ~10% 값(90% 할인)으로
+// 읽는다. 특히 대행 크론(클라이언트 3~5명을 연달아 도는)·채점 배치·UI에서 짧은
+// 시간에 같은 프롬프트를 여러 번 부를 때 크게 아낀다.
+//
+// 캐시는 "앞부분이 토큰 단위로 완전히 같을 때"만 적중하므로, 변하는 값(브랜드
+// 목소리·최근 글·클라이언트 정보·시장 리서치)은 반드시 캐시 블록 "뒤"로 빼야 한다.
+export type SystemBlock = {
+  type: 'text'
+  text: string
+  cache_control?: { type: 'ephemeral' }
+}
+export type SystemPrompt = string | SystemBlock[]
+
+// staticText: 호출마다 100% 동일한 부분 → 캐시 대상(앞).
+// dynamicText: 호출마다 바뀌는 부분 → 캐시 안 됨(뒤). 없으면 생략.
+export function cachedSystem(staticText: string, dynamicText?: string): SystemBlock[] {
+  const blocks: SystemBlock[] = [
+    { type: 'text', text: staticText, cache_control: { type: 'ephemeral' } },
+  ]
+  const dyn = dynamicText?.trim()
+  if (dyn) blocks.push({ type: 'text', text: dyn })
+  return blocks
+}
+
 function extractJson(raw: string): string {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const candidate = fenced ? fenced[1] : raw
@@ -126,7 +153,7 @@ function parseJsonResponse(text: string): unknown {
 
 export async function callClaudeJson(params: {
   apiKey: string
-  system: string
+  system: SystemPrompt
   user: string
   maxTokens?: number
   timeoutMs?: number
@@ -164,7 +191,7 @@ export async function callClaudeJson(params: {
 // 웹서치 도구를 붙여서 호출한다(클라이언트에서 별도 검색 루프를 구현할 필요 없음).
 export async function callClaudeJsonWithWebSearch(params: {
   apiKey: string
-  system: string
+  system: SystemPrompt
   user: string
   maxTokens?: number
   maxSearches?: number
@@ -216,7 +243,7 @@ export interface VisionImageInput {
 // 이미지를 읽어야 하는 호출용. 이미지 여러 장을 한 번에 참고시킬 수 있다.
 export async function callClaudeVisionJson(params: {
   apiKey: string
-  system: string
+  system: SystemPrompt
   user: string
   images: VisionImageInput[]
   maxTokens?: number

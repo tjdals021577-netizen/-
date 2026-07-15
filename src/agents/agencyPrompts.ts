@@ -1,3 +1,5 @@
+import { cachedSystem, type SystemBlock } from '../lib/claude.js'
+
 // 대행 관리(AgencyScreen, 클라이언트별 스레드 글) 전용 프롬프트. 대표님이
 // 만들어 쓰던 "마잘남 – 글쓰기" GPT 페르소나를 그대로 반영한 것으로,
 // 스레드 위원회(threadPrompts.ts)와는 완전히 별개로 대행 관리에서만 쓴다
@@ -65,13 +67,11 @@ export function buildAgencyDraftSystemPrompt(params: {
   persona: string
   recentPosts?: string[]
   marketFindings?: string
-}): string {
+}): SystemBlock[] {
   const { business, persona, recentPosts, marketFindings } = params
-  const marketBlock = marketFindings ? `\n\n[참고할 만한 최근 리서치]\n${marketFindings}` : ''
 
-  return `${AGENCY_IDENTITY}
-
-${buildClientContextBlock({ business, persona, recentPosts })}${marketBlock}
+  // 캐시되는 고정부("마잘남 – 글쓰기" 페르소나·원칙) — 클라이언트가 달라도 동일.
+  const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
 
@@ -88,6 +88,14 @@ ${CONFIDENTIALITY_RULE}
 
 JSON 스키마:
 { "text": string }`
+
+  // 캐시 안 되는 변동부 — 클라이언트별 정보·리서치.
+  const marketBlock = marketFindings ? `[참고할 만한 최근 리서치]\n${marketFindings}` : ''
+  const dynamicText = [buildClientContextBlock({ business, persona, recentPosts }), marketBlock]
+    .filter(Boolean)
+    .join('\n\n')
+
+  return cachedSystem(staticText, dynamicText)
 }
 
 export function buildAgencyDraftUserPrompt(params: {
@@ -108,11 +116,9 @@ export function buildAgencyReferenceSystemPrompt(params: {
   persona: string
   variantCount: number
   recentPosts?: string[]
-}): string {
+}): SystemBlock[] {
   const { business, persona, variantCount, recentPosts } = params
-  return `${AGENCY_IDENTITY}
-
-${buildClientContextBlock({ business, persona, recentPosts })}
+  const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
 
@@ -135,6 +141,8 @@ ${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해�
 
 JSON 스키마:
 { "drafts": [ { "text": string } ] }`
+
+  return cachedSystem(staticText, buildClientContextBlock({ business, persona, recentPosts }))
 }
 
 export function buildAgencyReferenceUserPrompt(params: {
@@ -160,11 +168,12 @@ const AGENCY_FORMAT_LIST = [
   '궁금증 유발형',
 ]
 
-export function buildAgencyFullFormatSystemPrompt(params: { business: string; persona: string }): string {
+export function buildAgencyFullFormatSystemPrompt(params: {
+  business: string
+  persona: string
+}): SystemBlock[] {
   const { business, persona } = params
-  return `${AGENCY_IDENTITY}
-
-${buildClientContextBlock({ business, persona })}
+  const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
 
@@ -182,6 +191,8 @@ ${CONFIDENTIALITY_RULE}
 
 JSON 스키마:
 { "drafts": [ { "format": string, "text": string } ] }`
+
+  return cachedSystem(staticText, buildClientContextBlock({ business, persona }))
 }
 
 export function buildAgencyFullFormatUserPrompt(params: { topic: string; note?: string }): string {

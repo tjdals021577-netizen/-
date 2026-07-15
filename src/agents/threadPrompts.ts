@@ -1,3 +1,4 @@
+import { cachedSystem, type SystemBlock } from '../lib/claude.js'
 import { THREAD_RUBRIC } from './threadRubric.js'
 
 const ALGO_KNOWLEDGE = `[스레드 알고리즘 우대 신호]
@@ -135,22 +136,10 @@ export function buildThreadDraftSystemPrompt(params: {
   brandVoice?: string
   recentPosts?: string[]
   marketFindings?: string
-}): string {
+}): SystemBlock[] {
   const { brandVoice, recentPosts, marketFindings } = params
-  const voiceBlock = brandVoice
-    ? `[브랜드 목소리]\n${brandVoice}`
-    : '[브랜드 목소리]\n(아직 설정되지 않음 — 마잘남 특유의 실용적이고 직설적인 톤으로 작성)'
-  const historyBlock =
-    recentPosts && recentPosts.length > 0
-      ? `\n\n[최근 게시 이력 — 문장 패턴·소재가 겹치지 않게 참고]\n${recentPosts.join('\n---\n')}`
-      : ''
-  const marketBlock = marketFindings
-    ? `\n\n[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}`
-    : ''
-
-  return `당신은 마잘남의 스레드 콘텐츠 작가입니다.
-
-${voiceBlock}
+  // 캐시되는 고정부(전자책 노하우 포함) — 호출마다 100% 동일.
+  const staticText = `당신은 마잘남의 스레드 콘텐츠 작가입니다.
 
 ${ALGO_KNOWLEDGE}
 
@@ -158,7 +147,7 @@ ${THREAD_KNOWLEDGE}
 
 ${ANTI_HALLUCINATION_RULE}
 
-${CONFIDENTIALITY_RULE}${historyBlock}${marketBlock}
+${CONFIDENTIALITY_RULE}
 
 주어진 주제로 스레드 포스트 한 편을 작성하세요.
 
@@ -169,6 +158,21 @@ ${CONFIDENTIALITY_RULE}${historyBlock}${marketBlock}
 
 JSON 스키마:
 { "text": string }`
+
+  // 캐시 안 되는 변동부 — 호출마다 바뀌는 값(브랜드 목소리·최근 글·시장 리서치).
+  const voiceBlock = brandVoice
+    ? `[브랜드 목소리]\n${brandVoice}`
+    : '[브랜드 목소리]\n(아직 설정되지 않음 — 마잘남 특유의 실용적이고 직설적인 톤으로 작성)'
+  const historyBlock =
+    recentPosts && recentPosts.length > 0
+      ? `[최근 게시 이력 — 문장 패턴·소재가 겹치지 않게 참고]\n${recentPosts.join('\n---\n')}`
+      : ''
+  const marketBlock = marketFindings
+    ? `[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}`
+    : ''
+  const dynamicText = [voiceBlock, historyBlock, marketBlock].filter(Boolean).join('\n\n')
+
+  return cachedSystem(staticText, dynamicText)
 }
 
 export function buildThreadDraftUserPrompt(params: {
@@ -187,15 +191,9 @@ export function buildThreadDraftUserPrompt(params: {
 export function buildThreadReferenceSystemPrompt(params: {
   brandVoice?: string
   variantCount: number
-}): string {
+}): SystemBlock[] {
   const { brandVoice, variantCount } = params
-  const voiceBlock = brandVoice
-    ? `[브랜드 목소리]\n${brandVoice}`
-    : '[브랜드 목소리]\n(아직 설정되지 않음 — 마잘남 특유의 실용적이고 직설적인 톤으로 작성)'
-
-  return `당신은 마잘남의 스레드 콘텐츠 작가입니다.
-
-${voiceBlock}
+  const staticText = `당신은 마잘남의 스레드 콘텐츠 작가입니다.
 
 ${ALGO_KNOWLEDGE}
 
@@ -221,6 +219,12 @@ ${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해�
 
 JSON 스키마:
 { "drafts": [ { "text": string } ] }`
+
+  const dynamicText = brandVoice
+    ? `[브랜드 목소리]\n${brandVoice}`
+    : '[브랜드 목소리]\n(아직 설정되지 않음 — 마잘남 특유의 실용적이고 직설적인 톤으로 작성)'
+
+  return cachedSystem(staticText, dynamicText)
 }
 
 export function buildThreadReferenceUserPrompt(params: {
@@ -251,8 +255,10 @@ export const THREAD_FULL_FORMATS = [
   '질문형 후킹 버전',
 ]
 
-export function buildThreadFullFormatSystemPrompt(formats: string[] = THREAD_FULL_FORMATS): string {
-  return `당신은 세계적인 스레드 마케팅 대행 전문가이자 카피라이팅 멘토입니다.
+export function buildThreadFullFormatSystemPrompt(
+  formats: string[] = THREAD_FULL_FORMATS,
+): SystemBlock[] {
+  return cachedSystem(`당신은 세계적인 스레드 마케팅 대행 전문가이자 카피라이팅 멘토입니다.
 
 ${MAJALNAM_THREAD_VOICE}
 
@@ -280,7 +286,7 @@ ${CONFIDENTIALITY_RULE}
 4. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
 
 JSON 스키마:
-{ "drafts": [ { "format": string, "text": string } ] }`
+{ "drafts": [ { "format": string, "text": string } ] }`)
 }
 
 export function buildThreadFullFormatUserPrompt(params: {
@@ -293,12 +299,12 @@ export function buildThreadFullFormatUserPrompt(params: {
   return `[주제]\n${params.topic}${noteBlock}\n\n위 주제로 지정된 형식 ${count}개를 전부 작성하고 JSON으로만 답하세요.`
 }
 
-export function buildThreadReviewSystemPrompt(): string {
+export function buildThreadReviewSystemPrompt(): SystemBlock[] {
   const rubricText = THREAD_RUBRIC.map(
     (c) => `- ${c.label} (${c.weight}점): ${c.description}`,
   ).join('\n')
 
-  return `${ALGO_KNOWLEDGE}
+  return cachedSystem(`${ALGO_KNOWLEDGE}
 
 ${THREAD_KNOWLEDGE}
 
@@ -323,7 +329,7 @@ JSON 스키마:
   "flags": [ { "quote": string, "reason": string, "severity": "info"|"check"|"risk" } ]
 }
 
-criteriaScores의 criterionId는 반드시 다음 중에서만 사용: ${THREAD_RUBRIC.map((c) => `"${c.id}"`).join(', ')}`
+criteriaScores의 criterionId는 반드시 다음 중에서만 사용: ${THREAD_RUBRIC.map((c) => `"${c.id}"`).join(', ')}`)
 }
 
 export function buildThreadReviewUserPrompt(draft: { text: string }): string {
@@ -332,12 +338,12 @@ export function buildThreadReviewUserPrompt(draft: { text: string }): string {
 
 // 초안 여러 개를 채점할 때 초안마다 API를 따로 부르면(대행 크론에서 5번씩)
 // 이 거대한 시스템 프롬프트가 매번 반복 과금된다 — 한 번에 묶어서 채점한다.
-export function buildThreadReviewBatchSystemPrompt(count: number): string {
+export function buildThreadReviewBatchSystemPrompt(count: number): SystemBlock[] {
   const rubricText = THREAD_RUBRIC.map(
     (c) => `- ${c.label} (${c.weight}점): ${c.description}`,
   ).join('\n')
 
-  return `${ALGO_KNOWLEDGE}
+  return cachedSystem(`${ALGO_KNOWLEDGE}
 
 ${THREAD_KNOWLEDGE}
 
@@ -367,7 +373,7 @@ JSON 스키마:
   ]
 }
 
-criteriaScores의 criterionId는 반드시 다음 중에서만 사용: ${THREAD_RUBRIC.map((c) => `"${c.id}"`).join(', ')}`
+criteriaScores의 criterionId는 반드시 다음 중에서만 사용: ${THREAD_RUBRIC.map((c) => `"${c.id}"`).join(', ')}`)
 }
 
 export function buildThreadReviewBatchUserPrompt(drafts: { text: string }[]): string {

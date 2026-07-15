@@ -1,3 +1,5 @@
+import { cachedSystem, type SystemBlock } from '../lib/claude.js'
+
 const YOUTUBE_KNOWLEDGE = `[유튜브 대본 기획 지식 베이스 — 대표님 실전 자료 기반]
 
 ■ 대전제 (모든 기획의 출발점)
@@ -43,13 +45,13 @@ const YOUTUBE_KNOWLEDGE = `[유튜브 대본 기획 지식 베이스 — 대표�
 ■ 마잘남 채널 정체성 (절대 벗어나지 말 것)
 - 마잘남 유튜브는 "스레드 마케팅·퍼스널 브랜딩"(1인사업가 대상) 주제로만 기획한다. 위 방법론을 이 주제 범위 안에서 적용한다.`
 
-export function buildRemixSystemPrompt(brandContext?: string, marketFindings?: string): string {
-  const brandBlock = brandContext ? `\n[브랜드]\n${brandContext}\n` : ''
-  const marketBlock = marketFindings
-    ? `\n[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}\n`
-    : ''
-  return `당신은 유튜브 대본 기획자입니다.
-${brandBlock}${marketBlock}
+export function buildRemixSystemPrompt(
+  brandContext?: string,
+  marketFindings?: string,
+): SystemBlock[] {
+  // 캐시되는 고정부(유튜브 기획 지식 베이스) — 호출마다 동일.
+  const staticText = `당신은 유튜브 대본 기획자입니다.
+
 ${YOUTUBE_KNOWLEDGE}
 
 주어진 자료(주제, 참고 텍스트)를 바탕으로 유튜브 영상 기획안을 만드세요. 촬영·편집은 하지 않고 기획안까지만 작성합니다.
@@ -68,6 +70,15 @@ JSON 스키마:
   "outline": string,
   "benchmarkNotes": [ string ]
 }`
+
+  // 캐시 안 되는 변동부 — 브랜드·시장 리서치.
+  const brandBlock = brandContext ? `[브랜드]\n${brandContext}` : ''
+  const marketBlock = marketFindings
+    ? `[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}`
+    : ''
+  const dynamicText = [brandBlock, marketBlock].filter(Boolean).join('\n\n')
+
+  return cachedSystem(staticText, dynamicText)
 }
 
 export function buildRemixUserPrompt(params: {
