@@ -24,7 +24,7 @@ function formatBlogReferrer(referrer: string): string {
   return match[2] ? `${blogId}의 블로그 (글 ${match[2]})` : `${blogId}의 블로그`
 }
 
-function BrandSection({ brand }: { brand: Brand }) {
+function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number }) {
   const spend = todaySpendForBrand(brand)
   const [radar, setRadar] = useState<RadarSnapshot | null>(null)
   const [imweb, setImweb] = useState<RadarSnapshot | null>(null)
@@ -40,7 +40,7 @@ function BrandSection({ brand }: { brand: Brand }) {
     return () => {
       cancelled = true
     }
-  }, [brand])
+  }, [brand, refreshKey])
 
   const topSource = radar?.trafficSources[0]
   const topPage = radar?.topPages[0]
@@ -59,7 +59,7 @@ function BrandSection({ brand }: { brand: Brand }) {
       value: imweb ? `${imweb.orderCount ?? 0}건` : '—',
     },
     {
-      label: '매출(아임웹)',
+      label: `${imweb?.periodLabel ?? '이번 달'} 매출(아임웹)`,
       value: imweb?.revenueKrw != null ? `${imweb.revenueKrw.toLocaleString('ko-KR')}원` : '—',
     },
     { label: '오늘 사용액(추정)', value: `$${spend.toFixed(3)}` },
@@ -262,17 +262,54 @@ function MorningAccordion({ brand }: { brand: Brand }) {
 
 export function DashboardScreen() {
   const todaySpendTotal = getTodaySpendUsd()
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null)
+
+  async function refreshRevenue() {
+    if (refreshing) return
+    setRefreshing(true)
+    setRefreshMsg(null)
+    try {
+      const password = import.meta.env.VITE_APP_PASSWORD
+      const res = await fetch('/api/radar-refresh', {
+        method: 'POST',
+        headers: password ? { 'X-App-Password': password } : {},
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || `서버 오류 (${res.status})`)
+      setRefreshKey((k) => k + 1)
+      setRefreshMsg(Array.isArray(data?.results) ? data.results.join(' · ') : '새로고침 완료')
+    } catch (err) {
+      setRefreshMsg(`실패: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   return (
     <div>
-      <PreviewBanner message="레이더가 연결된 브랜드는 매일 아침 실제 방문자·유입경로(GA4)·주문·매출(아임웹) 숫자가 채워집니다. 아직 연결 안 한 소스/브랜드는 '—'로 보입니다." />
+      <PreviewBanner message="레이더가 연결된 브랜드는 매일 아침 실제 방문자·유입경로(GA4)·주문·매출(아임웹) 숫자가 채워집니다. 매출은 '이번 달 누적(오늘 포함)'이고, 아래 버튼으로 지금 바로 새로고침할 수 있습니다." />
 
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-[var(--text)]">통합 대시보드</h2>
-        <p className="text-[11px] text-[var(--text-faint)]">
-          오늘 API 사용액(전체) ${todaySpendTotal.toFixed(3)} / ${DAILY_BUDGET_USD}
-        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void refreshRevenue()}
+            disabled={refreshing}
+            className="rounded-lg border border-[var(--accent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {refreshing ? '매출 불러오는 중…' : '🔄 지금 매출 새로고침'}
+          </button>
+          <p className="text-[11px] text-[var(--text-faint)]">
+            오늘 API 사용액(전체) ${todaySpendTotal.toFixed(3)} / ${DAILY_BUDGET_USD}
+          </p>
+        </div>
       </div>
+      {refreshMsg && (
+        <p className="mb-3 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">{refreshMsg}</p>
+      )}
 
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
         <MiniMonthCalendar />
@@ -285,7 +322,7 @@ export function DashboardScreen() {
 
       <div className="space-y-3">
         {BRANDS.map((b) => (
-          <BrandSection key={b} brand={b} />
+          <BrandSection key={b} brand={b} refreshKey={refreshKey} />
         ))}
       </div>
     </div>

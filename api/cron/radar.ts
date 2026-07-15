@@ -12,13 +12,13 @@ function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function yesterdayIsoDate(): string {
-  // 아임웹 주문 날짜는 한국시간(KST) 기준이라, UTC로 "어제"를 구하면 자정 근처에서
-  // 하루가 어긋나 매출이 안 잡힐 수 있다(레이더는 22:50 UTC=익일 07:50 KST에 돎).
-  // KST 기준으로 어제 날짜를 구한다.
-  return new Date(Date.now() + 9 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10)
+// 아임웹 매출은 "어제 하루"가 아니라 "이번 달 누적(오늘 포함)"으로 보여준다
+// (대표님 요청) — 이번 달 1일 00:00 ~ 오늘까지, 전부 KST 기준.
+function kstToday(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+function kstMonthStart(): string {
+  return `${kstToday().slice(0, 7)}-01`
 }
 
 // 브랜드별 GA4 속성 ID / 아임웹 API 키 환경변수 — 공용 자격증명(GA4 서비스 계정,
@@ -56,7 +56,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const apiKey = process.env.ANTHROPIC_API_KEY
   const ga4KeyJson = process.env.GA4_SERVICE_ACCOUNT_KEY
   const nowIso = new Date().toISOString()
-  const yesterday = yesterdayIsoDate()
 
   for (const brand of BRANDS) {
     // GA4
@@ -100,14 +99,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         const summary = await fetchImwebOrderSummary({
           apiKey: imwebApiKey,
           secretKey: imwebSecret,
-          dateFrom: yesterday,
-          dateTo: yesterday,
+          dateFrom: kstMonthStart(),
+          dateTo: kstToday(),
         })
         await supabaseInsert('radar_snapshots', {
           id: makeId(),
           brand,
           source: 'imweb',
-          period_label: '어제',
+          period_label: '이번 달',
           sessions: 0,
           active_users: 0,
           conversions: 0,
