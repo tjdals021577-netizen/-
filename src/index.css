@@ -25,6 +25,43 @@
   --agent-f: #5b6b7a;
   --agent-g: #5a5fa0;
   --agent-h: #b3862a;
+
+  /* ── 리디자인 토큰 (2026-07, 관리자 UI 개선) ─────────────────────────────
+     기존 색/컴포넌트는 그대로 두고 새 토큰만 추가한다. 2·3단계에서 사용. */
+
+  /* 증감 의미색 별칭 — 증가=녹색, 감소=빨강 (var로 라이트/다크 자동 대응) */
+  --up: var(--done);
+  --up-soft: var(--done-soft);
+  --down: var(--open);
+  --down-soft: var(--open-soft);
+
+  /* 간격 스케일 (4·8·12·16·24·32px) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* 폰트 사이즈 스케일 */
+  --fs-hero: 34px; /* 히어로 요약 최대 숫자 */
+  --fs-xl: 22px;
+  --fs-lg: 17px;
+  --fs-base: 14px;
+  --fs-sm: 12.5px;
+  --fs-xs: 11px;
+  /* 히어로 숫자 전용 굵기·자간 */
+  --fw-hero: 800;
+  --tracking-hero: -0.02em;
+
+  /* 카드 공통 스타일 */
+  --card-radius: 14px;
+  --card-border: 1px solid var(--border);
+  --card-shadow: 0 1px 2px rgba(24, 22, 18, 0.05), 0 6px 20px rgba(24, 22, 18, 0.05);
+
+  /* 본문 최대폭 — 지금 1024px에서 넓혀 밀도 있는 관리자 폭으로(적용은 2단계) */
+  --content-max: 1200px;
+
   color-scheme: light;
 }
 
@@ -54,6 +91,10 @@
     --agent-f: #a7b6c4;
     --agent-g: #a3a6d9;
     --agent-h: #e0b968;
+
+    /* 다크에선 그림자를 더 진하게(리디자인 토큰) */
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.3);
+
     color-scheme: dark;
   }
 }
@@ -65,4 +106,12 @@ body {
   font-family:
     -apple-system, "Apple SD Gothic Neo", "Pretendard Variable", Pretendard,
     "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+}
+
+/* 카드 공통 유틸 — 새 컴포넌트에서 재사용(기존 화면엔 영향 없음). */
+.card {
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
 }
