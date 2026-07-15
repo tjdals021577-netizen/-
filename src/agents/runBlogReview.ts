@@ -1,6 +1,5 @@
 import {
   callClaudeJson,
-  callClaudeJsonWithWebSearch,
   callClaudeVisionJson,
   type VisionImageInput,
 } from '../lib/claude.js'
@@ -140,41 +139,20 @@ export async function generateBlogDraft(params: {
     })
     return parseDraft(raw)
   }
-  // maxTokens는 최종 글 본문뿐 아니라 웹서치 도구 호출(tool_use/tool_result)
-  // 블록까지 같은 토큰 예산을 나눠 쓴다 — 4096으로는 검색을 여러 번 돌면
-  // 본문을 쓰기 전에 예산이 바닥나서 "모델 응답에 텍스트가 없습니다" 에러가
-  // 실제로 발생했다(content-schedule 크론에서 발견). 8192로 넉넉하게 늘림.
-  //
-  // 타임아웃은 일부러 기본값(260초)보다 짧은 170초로 잡는다 — 이 호출이
-  // 실패해도 아래 검색 없는 재시도가 있으니, 여기서 너무 오래 버티다가
-  // 크론 함수 전체 제한(300초)에 재시도할 시간도 없이 잘리는 것보다,
-  // 적당히 빨리 포기하고 재시도로 넘어가는 게 전체적으로 더 안전하다.
-  try {
-    const raw = await callClaudeJsonWithWebSearch({
-      apiKey,
-      system: buildDraftSystemPrompt(brandContext, marketFindings, false),
-      user,
-      maxTokens: 8192,
-      maxSearches: 3,
-      timeoutMs: 170_000,
-      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-    })
-    return parseDraft(raw)
-  } catch {
-    // 웹서치 경로가 타임아웃/응답 이상 등으로 실패하면(주제에 따라 검색이
-    // 오래 걸리거나 꼬이는 경우가 실제로 있었다), 검색 없이 지식 기반으로만
-    // 한 번 더 시도한다 — "최신 트렌드 반영은 놓치더라도 아예 실패하는 것보단
-    // 낫다"는 판단. 크론처럼 사람이 재시도를 못 누르는 경로에서 특히 중요함.
-    const raw = await callClaudeJson({
-      apiKey,
-      system: buildDraftSystemPrompt(brandContext, marketFindings, false),
-      user: `${user}\n\n(실시간 검색 없이, 알고 있는 지식만으로 작성해주세요.)`,
-      maxTokens: 4096,
-      timeoutMs: 60_000,
-      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-    })
-    return parseDraft(raw)
-  }
+  // 라이터는 이제 직접 웹 검색을 하지 않는다(대표님 결정: 검색은 브레인
+  // 한 명만, 나머지는 그 결과를 공유). 브레인이 조사해둔 최신 리서치는
+  // marketFindings로 이미 프롬프트에 들어간다 — 매번 같은 걸 새로 크롤링해서
+  // 토큰을 반복 과금하던 게 비용의 최대 요인이었어서, 이걸 없애는 게 검색
+  // 비용 절감의 핵심이다. 검색이 빠지니 타임아웃/토큰도 여유 있게 줄인다.
+  const raw = await callClaudeJson({
+    apiKey,
+    system: buildDraftSystemPrompt(brandContext, marketFindings, false),
+    user,
+    maxTokens: 4096,
+    timeoutMs: 120_000,
+    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+  })
+  return parseDraft(raw)
 }
 
 export async function runBlogAgentReview(params: {

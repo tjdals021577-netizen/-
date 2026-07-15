@@ -25,7 +25,19 @@ const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
 interface BrainReportRow {
   topic: string
+  summary: string
   recommendations: string[]
+  findings: { source: string; insight: string }[]
+}
+
+// 브레인이 조사해둔 최신 리서치를 라이터·리믹서가 참고할 프롬프트 텍스트로
+// 만든다 — 이제 이들은 직접 검색하지 않고 이 자료를 공유받는다(비용 절감).
+function formatBrainFindings(report: BrainReportRow | undefined): string | undefined {
+  if (!report) return undefined
+  const findingsText = (report.findings ?? [])
+    .map((f) => `- [${f.source}] ${f.insight}`)
+    .join('\n')
+  return `주제: ${report.topic}\n요약: ${report.summary}\n${findingsText}`
 }
 
 interface CalendarTitleRow {
@@ -50,32 +62,34 @@ function buildBlogHtml(draft: BlogDraft, reviews: BlogReview[]): string {
 
 // 최근 14일간 같은 브랜드·채널에 이미 쓴 제목과 안 겹치는 추천 주제를 브레인
 // 리포트에서 하나 골라온다 — 브레인 리포트가 없으면 브랜드 톤 기반 기본 주제로.
-async function pickTopic(brand: Brand, channel: 'blog' | 'youtube'): Promise<string> {
+async function pickTopic(
+  brand: Brand,
+  channel: 'blog' | 'youtube',
+): Promise<{ topic: string; brainFindings?: string }> {
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
   const [reports, recentEntries] = await Promise.all([
     supabaseSelect<BrainReportRow>(
       'brain_reports',
-      `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1&select=topic,recommendations`,
+      `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1&select=topic,summary,recommendations,findings`,
     ),
     supabaseSelect<CalendarTitleRow>(
       'calendar_entries',
       `brand=eq.${encodeURIComponent(brand)}&channel=eq.${channel}&created_at=gte.${encodeURIComponent(since)}&select=title`,
     ),
   ])
+  const brainFindings = formatBrainFindings(reports[0])
   const usedTitles = new Set(recentEntries.map((e) => e.title))
   const recommendations = reports[0]?.recommendations ?? []
   const fresh = recommendations.find((r) => !usedTitles.has(r))
-  if (fresh) return fresh
-  if (recommendations.length > 0) return recommendations[0]
-  // 브레인 리포트가 아직 없을 때의 기본 주제 — 예전엔 BRAND_CONTEXT 전체
-  // 문장(브랜드 톤 설명 + 괄호 안 메타 설명)을 그대로 "주제"로 넘겨서, 웹서치
-  // 모델이 이상하게 긴 문장을 검색어처럼 다루다가 시간을 너무 오래 쓰는
-  // 문제가 실제로 있었다(업메리가 계속 타임아웃 났던 원인). 검색어로 쓰기
-  // 좋은 짧고 자연스러운 주제 하나만 준다 — 톤/맥락은 brandContext로 이미
-  // 별도 전달되니 여기서 다시 설명할 필요 없음.
-  return channel === 'blog'
-    ? `${brand} 고객들이 요즘 궁금해할 만한 블로그 주제 하나`
-    : `${brand} 관련 요즘 반응 좋은 숏폼 유튜브 주제 하나`
+  if (fresh) return { topic: fresh, brainFindings }
+  if (recommendations.length > 0) return { topic: recommendations[0], brainFindings }
+  // 브레인 리포트가 아직 없을 때의 기본 주제 — 짧고 자연스러운 주제 하나만
+  // 준다(톤/맥락은 brandContext로 별도 전달).
+  const topic =
+    channel === 'blog'
+      ? `${brand} 고객들이 요즘 궁금해할 만한 블로그 주제 하나`
+      : `${brand} 관련 요즘 반응 좋은 숏폼 유튜브 주제 하나`
+  return { topic, brainFindings }
 }
 
 async function fetchTodayPhotos(date: string, brand: Brand): Promise<VisionImageInput[]> {
@@ -87,14 +101,15 @@ async function fetchTodayPhotos(date: string, brand: Brand): Promise<VisionImage
 }
 
 async function generateBlogForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
-  const topic = await pickTopic(brand, 'blog')
+  const { topic, brainFindings } = await pickTopic(brand, 'blog')
   const photoImages = await fetchTodayPhotos(date, brand)
   const draft = await generateBlogDraft({
     apiKey,
     topic,
     keyPoints: '',
-    photoDescriptions: photoImages.length > 0 ? '' : '(사진 없음 — 실제 상위노출 글 구조를 검색해서 참고)',
+    photoDescriptions: photoImages.length > 0 ? '' : '(사진 없음 — 지식 베이스와 브레인 리서치 기반으로 상위노출 구조를 참고)',
     brandContext: BRAND_CONTEXT[brand],
+    marketFindings: brainFindings,
     photoImages: photoImages.length > 0 ? photoImages : undefined,
   })
 
@@ -151,12 +166,13 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
 }
 
 async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
-  const topic = await pickTopic(brand, 'youtube')
+  const { topic, brainFindings } = await pickTopic(brand, 'youtube')
   const plan = await generateRemixPlan({
     apiKey,
     topic,
     referenceText: '',
     brandContext: BRAND_CONTEXT[brand],
+    marketFindings: brainFindings,
   })
   const nowIso = new Date().toISOString()
   const logId = makeId()
