@@ -7,7 +7,7 @@ import type { DraftAttempt } from '../../src/types/agency.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
 
-const DRAFT_COUNT = 5
+const DRAFT_COUNT = 3
 const MAX_RECENT_DRAFTS = 30
 
 interface AgencyClientRow {
@@ -48,8 +48,8 @@ async function fetchReferenceImages(ids: string[]): Promise<VisionImageInput[]> 
 }
 
 // 매일 07:30 KST(모닝 크론 전)에 돌아서, 진행 중인(일시중단 아닌) 대행
-// 클라이언트마다 사람이 대시보드에서 "오늘 초안 5개 생성"을 누른 것과
-// 완전히 동일한 결과물(초안 5개 + 채점 + 결재함/캘린더 등록)을 자동으로 만든다.
+// 클라이언트마다 사람이 대시보드에서 "오늘 초안 생성"을 누른 것과
+// 완전히 동일한 결과물(초안 N개 + 채점 + 결재함/캘린더 등록)을 자동으로 만든다.
 // 레퍼런스 이미지가 등록된 클라이언트는 그 스타일을 참고해서 쓴다.
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
@@ -69,8 +69,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     try {
       const referenceImages = await fetchReferenceImages(client.reference_image_ids ?? [])
       const recentPosts = client.recent_draft_texts ?? []
-      // 초안 5개를 한 번에 생성 + 채점도 한 번에 — 예전엔 클라이언트당 API를
-      // 10번(생성5+채점5) 불러서 시스템 프롬프트·레퍼런스 이미지 토큰이 매번
+      // 초안 N개를 한 번에 생성 + 채점도 한 번에 — 예전엔 클라이언트당 API를
+      // 10번(생성N+채점N) 불러서 시스템 프롬프트·레퍼런스 이미지 토큰이 매번
       // 반복 과금됐다. 2번으로 줄여 비용 ~75% 절감(대표님 결정). 프롬프트도
       // 대행 전용("마잘남 – 글쓰기")으로 통일 — 화면(AgencyScreen)과 동일.
       const drafts = await generateAgencyDraftBatch({

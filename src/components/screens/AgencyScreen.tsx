@@ -31,7 +31,7 @@ import { PASS_THRESHOLD } from '../../types/domain'
 import type { AgencyClient, DraftAttempt } from '../../types/agency'
 import type { ThreadDraft, ThreadFormatDraft } from '../../types/thread'
 
-const DRAFT_COUNT = 5
+const DRAFT_COUNT = 3
 const REREQUEST_VARIANT_COUNT = 3
 
 function buildDraftsHtml(attempts: DraftAttempt[]): string {
@@ -252,11 +252,11 @@ export function AgencyScreen() {
       agent: 'buzz',
       brand: '마잘남', // 대행 서비스는 마잘남 사업의 일부라 항상 마잘남으로 기록
       kind: `대행 — ${client.name}`,
-      note: '오늘 초안 5건 생성',
+      note: `오늘 초안 ${DRAFT_COUNT}건 생성`,
     })
     try {
       const referenceImages = toVisionImages(client.referenceImageIds)
-      // 초안 5개 생성 1번 + 채점 1번으로 묶음 — 따로따로 10번 부르면 시스템
+      // 초안 여러 개 생성 1번 + 채점 1번으로 묶음 — 따로따로 10번 부르면 시스템
       // 프롬프트·레퍼런스 이미지 토큰이 매번 반복 과금된다(비용 ~75% 절감).
       const drafts = await generateAgencyDraftBatch({
         apiKey,
@@ -698,7 +698,7 @@ export function AgencyScreen() {
                     onClick={() => void handleGenerateDrafts(client)}
                     className="flex-1 rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {busyClientId === client.id ? '생성 중…' : '오늘 초안 5개 생성'}
+                    {busyClientId === client.id ? '생성 중…' : `오늘 초안 ${DRAFT_COUNT}개 생성`}
                   </button>
                   <button
                     type="button"
