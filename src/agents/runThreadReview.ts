@@ -5,6 +5,8 @@ import {
   buildThreadDraftUserPrompt,
   buildThreadReferenceSystemPrompt,
   buildThreadReferenceUserPrompt,
+  buildThreadReferenceTextSystemPrompt,
+  buildThreadReferenceTextUserPrompt,
   buildThreadFullFormatSystemPrompt,
   buildThreadFullFormatUserPrompt,
   buildThreadReviewSystemPrompt,
@@ -139,6 +141,34 @@ export async function generateThreadVariantsWithReferences(params: {
     system: buildThreadReferenceSystemPrompt({ brandVoice, variantCount }),
     user: buildThreadReferenceUserPrompt({ topic, variantCount, note }),
     images: referenceImages,
+    maxTokens: 2048,
+    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+  })
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+  }
+  const rec = raw as Record<string, unknown>
+  if (!Array.isArray(rec.drafts)) {
+    throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+  }
+  return rec.drafts.map((d) => parseDraft(d))
+}
+
+// 레퍼런스 "글 텍스트"를 붙여넣어 시안을 받는 버전. 이미지 비전 호출 대신
+// 순수 텍스트 호출(callClaudeJson)이라 토큰이 훨씬 덜 든다(대표님 결정). 후킹·
+// 구조만 따서 마잘남 목소리로 리라이팅, 점수 루프 없이 후보 여러 개만 제시한다.
+export async function generateThreadVariantsFromText(params: {
+  apiKey: string
+  topic: string
+  referenceText: string
+  variantCount?: number
+  note?: string
+}): Promise<ThreadDraft[]> {
+  const { apiKey, topic, referenceText, variantCount = 3, note } = params
+  const raw = await callClaudeJson({
+    apiKey,
+    system: buildThreadReferenceTextSystemPrompt(variantCount),
+    user: buildThreadReferenceTextUserPrompt({ topic, variantCount, referenceText, note }),
     maxTokens: 2048,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })

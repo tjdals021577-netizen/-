@@ -238,6 +238,56 @@ export function buildThreadReferenceUserPrompt(params: {
   return `[주제]\n${params.topic}${noteBlock}\n\n첨부된 레퍼런스 이미지의 카피라이팅 스타일을 참고해서 서로 다른 시안 ${params.variantCount}개를 작성하고 JSON으로만 답하세요.`
 }
 
+// 레퍼런스 "글 텍스트"를 붙여넣어서 시안을 받는 버전(이미지 비전 대신 텍스트라
+// 토큰이 훨씬 덜 든다 — 대표님 결정). 오직 스레드 위원회(마잘남 본인)용이라 항상
+// MAJALNAM_THREAD_VOICE를 쓴다. 레퍼런스 글 원문·주제는 매번 바뀌므로 캐시 안 되게
+// 유저 프롬프트에 넣고, 여기(시스템)엔 고정 지식·규칙만 담아 캐시가 적중하게 한다.
+export function buildThreadReferenceTextSystemPrompt(variantCount: number): SystemBlock[] {
+  return cachedSystem(`당신은 마잘남의 스레드 콘텐츠 작가입니다.
+
+${MAJALNAM_THREAD_VOICE}
+
+${ALGO_KNOWLEDGE}
+
+${THREAD_KNOWLEDGE}
+
+${ANTI_HALLUCINATION_RULE}
+
+${CONFIDENTIALITY_RULE}
+
+유저 메시지의 [레퍼런스 글]은 실제로 잘 터진 스레드 글입니다. 이 글들의 "후킹 문장·구조·전개
+패턴"만 가져와서 재사용하되, 주제·소재·내용은 이번 [주제]와 마잘남 실제 정보(위 [반영해야 하는
+실제 정보])로 바꿔서 쓰세요. 레퍼런스의 문구·에피소드·숫자를 그대로 베끼면 안 됩니다 — 오직
+"틀(구조)"만 재사용하고 내용은 전부 마잘남 것으로 채웁니다(카피 금지, 모방 O).
+
+주어진 주제로 서로 다른 접근의 스레드 포스트 시안을 정확히 ${variantCount}개 작성하세요.
+${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해야 합니다.
+
+규칙:
+1. 각 시안은 스레드 특성에 맞게 짧고 임팩트 있게. 첫 줄이 훅이 되어야 한다. 마지막 문장에 CTA를 넣는다.
+2. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
+
+JSON 스키마:
+{ "drafts": [ { "text": string } ] }`)
+}
+
+export function buildThreadReferenceTextUserPrompt(params: {
+  topic: string
+  variantCount: number
+  referenceText: string
+  note?: string
+}): string {
+  const { topic, variantCount, referenceText, note } = params
+  const noteBlock = note?.trim() ? `\n\n[추가 요청사항 — 반드시 반영]\n${note.trim()}` : ''
+  return `[레퍼런스 글 — 후킹·구조만 참고, 내용은 베끼지 말 것]
+${referenceText.trim() || '(레퍼런스 글이 제공되지 않음 — 스레드 노하우의 7가지 유형만 참고해서 작성)'}
+
+[주제]
+${topic}${noteBlock}
+
+위 레퍼런스 글의 후킹·구조를 참고해서 서로 다른 시안 ${variantCount}개를 마잘남 목소리로 작성하고 JSON으로만 답하세요.`
+}
+
 // 대표님이 직접 쓰던 프롬프트 그대로 — 형식 7개(공감형/숫자 리스트형/
 // 통찰형/반전형/비틀기형/통합형+자연스러운 CTA/궁금증유발형) + 질문형 후킹
 // 버전까지 총 8개 풀. 매일 아침 크론은 이 중 5개를 날마다 순환해서 쓴다

@@ -3,6 +3,7 @@ import {
   generateThreadDraft,
   runThreadReview,
   generateThreadVariantsWithReferences,
+  generateThreadVariantsFromText,
 } from '../agents/runThreadReview'
 import { THREAD_RUBRIC } from '../agents/threadRubric'
 import { MAJALNAM_THREAD_VOICE } from '../agents/threadPrompts'
@@ -77,6 +78,7 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
   // 라이브러리에 저장 안 하고 이번 한 번만 참고시킬 이미지
   const [adhocFiles, setAdhocFiles] = useState<File[]>([])
   const [variantNote, setVariantNote] = useState('')
+  const [refText, setRefText] = useState('')
   const [variants, setVariants] = useState<ThreadDraft[] | null>(null)
   const [variantRunning, setVariantRunning] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
@@ -175,6 +177,71 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
 
   function toggleRef(id: string) {
     setRefIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]))
+  }
+
+  // 레퍼런스 "글 텍스트"를 붙여넣어 시안을 받는다 — 이미지 비전 대신 텍스트라
+  // 토큰이 훨씬 덜 든다. 결과 처리(결재함·캘린더·근무기록)는 이미지 버전과 동일.
+  async function runTextVariantCycle() {
+    if (refText.trim().length === 0 || topic.trim().length === 0) return
+    if (isOverDailyBudget()) {
+      setErrorMessage(`오늘 예산 한도($${DAILY_BUDGET_USD})를 초과해서 중단했습니다. 내일 다시 시도해주세요.`)
+      return
+    }
+    setVariantRunning(true)
+    setErrorMessage(null)
+    setVariants(null)
+    const spendBefore = getTodaySpendUsd()
+    const logId = startWorkLog({ agent: 'buzz', brand, kind: '레퍼런스 글 시안', note: topic })
+    try {
+      const drafts = await generateThreadVariantsFromText({
+        apiKey,
+        topic,
+        referenceText: refText,
+        variantCount: VARIANT_COUNT,
+        note: variantNote,
+      })
+      setVariants(drafts)
+      const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
+      const title = `레퍼런스 글 시안 — ${topic}`
+      const contentHtml = buildVariantsHtml(drafts)
+      finishWorkLog(logId, {
+        status: 'done',
+        statusLabel: '완료',
+        costUsd: cycleCost,
+        note: `레퍼런스 글 시안 ${drafts.length}개`,
+        detailHtml: contentHtml,
+      })
+      submitForApproval({
+        agent: 'buzz',
+        brand,
+        title,
+        contentHtml,
+        passed: false,
+        scoreLabel: `레퍼런스 글 시안 ${drafts.length}개`,
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand,
+        channel: 'thread',
+        title,
+        status: 'open',
+        note: '레퍼런스 글 시안 — 결재함에서 확인 후 선택',
+        contentHtml,
+        sourceWorkLogId: logId,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setErrorMessage(message)
+      finishWorkLog(logId, {
+        status: 'error',
+        statusLabel: '오류',
+        note: '레퍼런스 글 시안 생성 실패',
+        detailHtml: message,
+      })
+    } finally {
+      setVariantRunning(false)
+    }
   }
 
   async function runVariantCycle() {
@@ -311,6 +378,28 @@ export function ThreadComposer({ brand }: { brand: Brand }) {
 
         <div className="border-t border-[var(--border)] pt-3">
           <p className="mb-1 text-xs font-medium text-[var(--text-dim)]">
+            레퍼런스 글(텍스트)로 시안 {VARIANT_COUNT}개 받기 (추천 — 이미지보다 토큰 적게 듦)
+          </p>
+          <p className="mb-1.5 text-[11px] text-[var(--text-faint)]">
+            잘 된 스레드 글을 복사해서 붙여넣으세요(여러 개면 빈 줄로 구분). 후킹·구조만 따서 마잘남 톤으로 다시 씁니다 — 내용은 베끼지 않아요.
+          </p>
+          <textarea
+            value={refText}
+            onChange={(e) => setRefText(e.target.value)}
+            placeholder={'예) 스레드 6개월 만에 조회수 100만 찍은 방법 딱 1가지…\n\n(다음 레퍼런스 글은 빈 줄로 구분해서 붙여넣기)'}
+            rows={5}
+            className="mb-2 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+          />
+          <button
+            type="button"
+            disabled={refText.trim().length === 0 || topic.trim().length === 0 || variantRunning || overBudget}
+            onClick={() => void runTextVariantCycle()}
+            className="mb-4 w-full rounded-lg bg-[var(--accent)] py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {variantRunning ? '시안 생성 중…' : `레퍼런스 글로 시안 ${VARIANT_COUNT}개 받기`}
+          </button>
+
+          <p className="mb-1 border-t border-[var(--border)] pt-3 text-xs font-medium text-[var(--text-dim)]">
             레퍼런스 이미지로 시안 {VARIANT_COUNT}개 받기 (선택 — 채점 없이 스타일만 참고해서 후보만 제시)
           </p>
           {references.length === 0 ? (
