@@ -71,3 +71,38 @@ export async function fetchLatestRadarSnapshot(
     return null
   }
 }
+
+// 최근 스냅샷 여러 개를 최신순으로 읽는다(읽기 전용) — 방문자 "어제 대비 증감"을
+// 계산하려고 최신 것과 그 이전 것을 비교하기 위함. 수집/ API 로직은 건드리지 않는다.
+export async function fetchRecentRadarSnapshots(
+  brand: Brand,
+  source: string,
+  limit = 8,
+): Promise<RadarSnapshot[]> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return []
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/radar_snapshots?brand=eq.${encodeURIComponent(brand)}&source=eq.${encodeURIComponent(source)}&order=created_at.desc&limit=${limit}`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
+    )
+    if (!res.ok) return []
+    const rows = (await res.json()) as Record<string, unknown>[]
+    return rows.map(fromRow)
+  } catch {
+    return []
+  }
+}
+
+// GA4 스냅샷은 매일 한 번 "어제치"로 쌓인다. 같은 날 수동으로 여러 번 돌리면
+// 중복이 생기므로 created_at 날짜별로 첫 행만 남겨(=하루 1개) 최신·이전을 고른다.
+export function dedupeByDay(snaps: RadarSnapshot[]): RadarSnapshot[] {
+  const seen = new Set<string>()
+  const out: RadarSnapshot[] = []
+  for (const s of snaps) {
+    const day = s.createdAt.slice(0, 10)
+    if (seen.has(day)) continue
+    seen.add(day)
+    out.push(s)
+  }
+  return out
+}

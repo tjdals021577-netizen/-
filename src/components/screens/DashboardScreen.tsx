@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { getWorkLog } from '../../lib/workLog'
-import { fetchLatestRadarSnapshot, type RadarSnapshot } from '../../lib/radarStore'
+import {
+  fetchLatestRadarSnapshot,
+  fetchRecentRadarSnapshots,
+  dedupeByDay,
+  type RadarSnapshot,
+} from '../../lib/radarStore'
 import { getEntries, syncEntriesFromSupabase } from '../../lib/calendarStore'
 import type { CalendarChannel } from '../../types/calendar'
 import { MorningPanel } from '../MorningPanel'
-import { PreviewBanner } from './PreviewBanner'
 import { BRANDS, type Brand } from '../../types/brand'
 
 function todaySpendForBrand(brand: Brand): number {
@@ -260,6 +264,142 @@ function MorningAccordion({ brand }: { brand: Brand }) {
   )
 }
 
+// 증감 칩 — 증가=녹색 ▲, 감소=빨강 ▼, 변동 없음/데이터 없음은 회색. 색만이 아니라
+// 화살표+숫자로도 구분해서 색맹에도 읽히게 한다.
+function DeltaChip({ delta, suffix }: { delta: number | null; suffix?: string }) {
+  if (delta === null) {
+    return <span className="text-[11px] text-[var(--text-faint)]">비교할 어제 데이터 없음</span>
+  }
+  const color = delta > 0 ? 'var(--up)' : delta < 0 ? 'var(--down)' : 'var(--text-faint)'
+  const mark = delta > 0 ? `▲ +${delta}` : delta < 0 ? `▼ ${delta}` : '→ 0'
+  return (
+    <span className="text-[12.5px] font-bold" style={{ color }}>
+      {mark}
+      {suffix ? <span className="ml-1 text-[10.5px] font-normal text-[var(--text-faint)]">{suffix}</span> : null}
+    </span>
+  )
+}
+
+function HeroStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-bold text-[var(--text-faint)]">{label}</p>
+      <p className="mt-0.5 text-[var(--fs-xl)] font-extrabold leading-none text-[var(--text)]" style={{ fontSize: 'var(--fs-xl)' }}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+interface HeroData {
+  visitorsToday: number
+  visitorsDelta: number | null
+  revenue: number | null
+  orders: number
+}
+
+// 히어로 요약 바 — 두 브랜드 합산 핵심 숫자를 가로로. 어제 방문자를 가장 크게,
+// 그 옆에 어제 대비 증감. 나머지(이번 달 매출·주문·오늘 API)는 보조 스탯.
+// 데이터는 기존 radarStore 리더만 읽는다(수집/ API 로직 미변경).
+function HeroSummary({
+  refreshKey,
+  refreshing,
+  onRefresh,
+  refreshMsg,
+  apiSpend,
+}: {
+  refreshKey: number
+  refreshing: boolean
+  onRefresh: () => void
+  refreshMsg: string | null
+  apiSpend: number
+}) {
+  const [data, setData] = useState<HeroData | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      let vToday = 0
+      let vPrev = 0
+      let prevKnown = true
+      let revenue = 0
+      let revKnown = false
+      let orders = 0
+      for (const b of BRANDS) {
+        const [ga4list, imweb] = await Promise.all([
+          fetchRecentRadarSnapshots(b, 'ga4', 8),
+          fetchLatestRadarSnapshot(b, 'imweb'),
+        ])
+        const days = dedupeByDay(ga4list)
+        vToday += days[0]?.activeUsers ?? 0
+        if (days[1]) vPrev += days[1].activeUsers
+        else prevKnown = false
+        if (imweb?.revenueKrw != null) {
+          revenue += imweb.revenueKrw
+          revKnown = true
+        }
+        orders += imweb?.orderCount ?? 0
+      }
+      if (!cancelled) {
+        setData({
+          visitorsToday: vToday,
+          visitorsDelta: prevKnown ? vToday - vPrev : null,
+          revenue: revKnown ? revenue : null,
+          orders,
+        })
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [refreshKey])
+
+  const revenueText =
+    data?.revenue != null ? `${data.revenue.toLocaleString('ko-KR')}원` : '—'
+
+  return (
+    <section className="card p-5">
+      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[12px] font-bold text-[var(--text-faint)]">오늘 아침 요약 · 업메리 + 마잘남 합산</p>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="rounded-lg border border-[var(--accent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {refreshing ? '매출 불러오는 중…' : '🔄 지금 매출 새로고침'}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-x-10 gap-y-5">
+        {/* 어제 방문자 — 화면에서 가장 큰 숫자 */}
+        <div>
+          <p className="text-[11px] font-bold text-[var(--text-faint)]">어제 방문자 (합산)</p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span
+              className="leading-none text-[var(--text)]"
+              style={{ fontSize: 'var(--fs-hero)', fontWeight: 'var(--fw-hero)', letterSpacing: 'var(--tracking-hero)' }}
+            >
+              {data ? data.visitorsToday.toLocaleString('ko-KR') : '—'}
+            </span>
+            <span className="text-[15px] font-bold text-[var(--text-dim)]">명</span>
+            {data && <DeltaChip delta={data.visitorsDelta} suffix="어제보다" />}
+          </div>
+        </div>
+
+        <HeroStat label="이번 달 매출" value={revenueText} />
+        <HeroStat label="이번 달 주문" value={data ? `${data.orders}건` : '—'} />
+        <HeroStat label="오늘 API 사용액" value={`$${apiSpend.toFixed(3)}`} />
+      </div>
+
+      {refreshMsg && (
+        <p className="mt-3 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">{refreshMsg}</p>
+      )}
+    </section>
+  )
+}
+
 export function DashboardScreen() {
   const todaySpendTotal = getTodaySpendUsd()
   const [refreshKey, setRefreshKey] = useState(0)
@@ -288,30 +428,25 @@ export function DashboardScreen() {
   }
 
   return (
-    <div>
-      <PreviewBanner message="레이더가 연결된 브랜드는 매일 아침 실제 방문자·유입경로(GA4)·주문·매출(아임웹) 숫자가 채워집니다. 매출은 '이번 달 누적(오늘 포함)'이고, 아래 버튼으로 지금 바로 새로고침할 수 있습니다." />
+    <div className="space-y-4">
+      {/* 히어로 요약 바 — 3초 안에 상황 파악: 어제 방문자(가장 크게)+증감, 매출·주문·API */}
+      <HeroSummary
+        refreshKey={refreshKey}
+        refreshing={refreshing}
+        onRefresh={() => void refreshRevenue()}
+        refreshMsg={refreshMsg}
+        apiSpend={todaySpendTotal}
+      />
 
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-[var(--text)]">통합 대시보드</h2>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void refreshRevenue()}
-            disabled={refreshing}
-            className="rounded-lg border border-[var(--accent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {refreshing ? '매출 불러오는 중…' : '🔄 지금 매출 새로고침'}
-          </button>
-          <p className="text-[11px] text-[var(--text-faint)]">
-            오늘 API 사용액(전체) ${todaySpendTotal.toFixed(3)} / ${DAILY_BUDGET_USD}
-          </p>
-        </div>
+      {/* 브랜드별 상세 — 세로로 쌓지 않고 좌우 2단으로 나란히(스크롤 없이 비교) */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {BRANDS.map((b) => (
+          <BrandSection key={b} brand={b} refreshKey={refreshKey} />
+        ))}
       </div>
-      {refreshMsg && (
-        <p className="mb-3 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">{refreshMsg}</p>
-      )}
 
-      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
+      {/* 달력·모닝은 시야 방해 안 하게 하단으로 */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
         <MiniMonthCalendar />
         <div className="space-y-2">
           {BRANDS.map((b) => (
@@ -320,11 +455,9 @@ export function DashboardScreen() {
         </div>
       </div>
 
-      <div className="space-y-3">
-        {BRANDS.map((b) => (
-          <BrandSection key={b} brand={b} refreshKey={refreshKey} />
-        ))}
-      </div>
+      <p className="text-right text-[10.5px] text-[var(--text-faint)]">
+        오늘 API 사용액(전체) ${todaySpendTotal.toFixed(3)} / ${DAILY_BUDGET_USD}
+      </p>
     </div>
   )
 }
