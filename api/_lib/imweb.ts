@@ -20,9 +20,14 @@ async function getAccessToken(apiKey: string, secretKey: string): Promise<string
   }
   const data = (await res.json()) as Record<string, unknown>
   const dataBlock = data.data as Record<string, unknown> | undefined
+  // 실제 응답: {"msg":"SUCCESS","code":200,"access_token":"..."} — 토큰이 최상위
+  // access_token(snake_case)에 온다. 예전엔 accessToken/access-token만 찾아서
+  // "토큰을 응답에서 찾지 못함"으로 실패했다.
   const token = firstDefined(
+    data.access_token,
     data.accessToken,
     data['access-token'],
+    dataBlock?.access_token,
     dataBlock?.accessToken,
     dataBlock?.['access-token'],
   ) as string | undefined
@@ -46,7 +51,11 @@ export async function fetchImwebOrderSummary(params: {
 }): Promise<ImwebOrderSummary> {
   const token = await getAccessToken(params.apiKey, params.secretKey)
   const url = `${BASE_URL}/shop/orders?order-date-from=${params.dateFrom}&order-date-to=${params.dateTo}&limit=100`
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  // 아임웹은 토큰을 access-token 헤더로 받는 편인데 규격이 문서마다 달라서,
+  // Bearer와 access-token 둘 다 넣는다(둘 다 보내도 무해 — 읽는 쪽만 쓴다).
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, 'access-token': token },
+  })
   if (!res.ok) {
     throw new Error(`아임웹 주문 조회 실패: ${res.status} ${await res.text()}`)
   }
