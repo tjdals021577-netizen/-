@@ -18,7 +18,13 @@ import { supabaseSelect } from './_lib/supabaseAdmin.js'
 import { sendJson, sendText } from './_lib/cronHandler.js'
 
 const DAILY_BUDGET_USD = 5
-const REQUEST_TIMEOUT_MS = 170_000
+// 처음엔 170초였는데, 브라우저 쪽(src/lib/claude.ts)은 기본 260초까지 기다리는
+// 반면 프록시가 먼저 170초에 끊어버려서 — 웹서치 블로그 생성·긴 채점처럼
+// 170초를 넘는 호출이 전부 504로 실패하는 문제가 실제로 있었다(팀채팅 수동
+// 지시 라이터가 반복적으로 오류났던 원인). Vercel 함수 자체 제한(300초)보다
+// 약간 짧은 280초로 늘려서, 끊는 주체가 프록시가 아니라 클라이언트(260초)가
+// 되도록 한다.
+const REQUEST_TIMEOUT_MS = 280_000
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = []

@@ -6,7 +6,7 @@ import { BRANDS } from '../../src/types/brand.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 import { getKakaoAccessToken, sendKakaoMemoToSelf } from '../_lib/kakao.js'
-import { getScheduledSlots, kstNow, kstDateKey, addDaysKst } from '../../src/lib/weeklySchedule.js'
+import { getScheduledSlots, kstNow, kstDateKey, kstWeekdayLabel, addDaysKst } from '../../src/lib/weeklySchedule.js'
 
 const AGENT_LABEL_KO: Record<string, string> = {
   morning: '모닝',
@@ -22,6 +22,7 @@ const AGENT_LABEL_KO: Record<string, string> = {
 interface WorkLogRow {
   agent: string
   kind: string
+  status: string
   status_label: string
   cost_usd: number | null
   note: string
@@ -151,6 +152,51 @@ function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+// 채널별 한 줄 요약(대표님 요청 형식) — 어제 두 브랜드의 work_log를 합쳐서
+// 라이터→블로그, 버즈→스레드, 리믹서→유튜브로 묶고 브랜드별 상태 건수를
+// "완료N·보류N·오류N"으로 압축한다. AI 호출 없이 숫자만 세는 거라 비용 0.
+const CHANNEL_AGENT_MAP: Record<string, string> = {
+  writer: '블로그',
+  buzz: '스레드',
+  remix: '유튜브',
+}
+
+function buildChannelSummaryLines(rowsByBrand: { brand: string; rows: WorkLogRow[] }[]): string[] {
+  const lines: string[] = []
+  for (const channelLabel of ['블로그', '스레드', '유튜브']) {
+    const brandParts: string[] = []
+    for (const { brand, rows } of rowsByBrand) {
+      const channelRows = rows.filter((r) => CHANNEL_AGENT_MAP[r.agent] === channelLabel)
+      if (channelRows.length === 0) continue
+      const done = channelRows.filter((r) => r.status === 'done').length
+      const attention = channelRows.filter((r) => r.status === 'attention').length
+      const error = channelRows.filter((r) => r.status === 'error').length
+      const parts = [
+        done > 0 ? `완료${done}` : '',
+        attention > 0 ? `보류${attention}` : '',
+        error > 0 ? `오류${error}` : '',
+      ].filter(Boolean)
+      if (parts.length > 0) brandParts.push(`${brand} ${parts.join('·')}`)
+    }
+    lines.push(`${channelLabel}: ${brandParts.length > 0 ? brandParts.join(' / ') : '활동 없음'}`)
+  }
+  return lines
+}
+
+// 오늘 요일 기준으로 주간 고정 루틴에서 뭐가 예정돼 있는지 — 실제 캘린더
+// 항목(자동 기획 결과)과 별개로 "오늘은 원래 이걸 하는 날"을 알려준다.
+function buildTodayPlanLine(now: Date): string {
+  const slots = getScheduledSlots(now)
+  if (slots.length === 0) return '오늘 예정 없음'
+  const CH_KO: Record<string, string> = { blog: '블로그', youtube: '유튜브' }
+  return slots.map((s) => `${s.brand} ${CH_KO[s.channel] ?? s.channel}`).join(' · ')
+}
+
+async function countPendingApprovals(): Promise<number> {
+  const rows = await supabaseSelect<{ id: string }>('approval_queue', 'status=eq.pending&select=id')
+  return rows.length
+}
+
 function buildLogText(rows: WorkLogRow[]): string {
   return rows
     .map((r) => {
@@ -191,14 +237,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const { startIso, endIso, dateLabel } = yesterdayKstRange()
   const results: string[] = []
-  const kakaoLines: string[] = []
-  const todayKey = kstDateKey(kstNow())
+  const now = kstNow()
+  const todayKey = kstDateKey(now)
+
+  const headlines: string[] = []
+  const rowsByBrand: { brand: string; rows: WorkLogRow[] }[] = []
 
   for (const brand of BRANDS) {
     const rows = await supabaseSelect<WorkLogRow>(
       'work_log',
-      `brand=eq.${encodeURIComponent(brand)}&started_at=gte.${encodeURIComponent(startIso)}&started_at=lt.${encodeURIComponent(endIso)}&select=agent,kind,status_label,cost_usd,note`,
+      `brand=eq.${encodeURIComponent(brand)}&started_at=gte.${encodeURIComponent(startIso)}&started_at=lt.${encodeURIComponent(endIso)}&select=agent,kind,status,status_label,cost_usd,note`,
     )
+    rowsByBrand.push({ brand, rows })
     const logText = buildLogText(rows)
     const spendText = `$${rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0).toFixed(3)}`
     const radarText = await buildRadarText(brand)
@@ -232,14 +282,39 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         .join('<br/>')}`,
     })
     results.push(`${brand}: ${briefing.headline}`)
-
-    const scheduleText = await buildTodayScheduleText(brand, todayKey)
-    kakaoLines.push(`[${brand}] ${briefing.headline}${scheduleText ? ` | 오늘: ${scheduleText}` : ''}`)
+    headlines.push(`[${brand}] ${briefing.headline}`)
   }
 
+  // ── 카톡 메시지 조립(대표님 지정 형식): 브랜드 요약 → 채널별 한 줄 →
+  // 오늘 일정 + 주간 고정표 → 내가 해야 할 것 ──
+  const kakaoLines: string[] = [...headlines]
+
+  kakaoLines.push('', '📊 채널 요약')
+  kakaoLines.push(...buildChannelSummaryLines(rowsByBrand))
+
+  const todayEntries = await buildTodayScheduleText('마잘남', todayKey)
+  const todayEntriesUpmery = await buildTodayScheduleText('업메리', todayKey)
+  kakaoLines.push('', `📅 오늘(${kstWeekdayLabel(now)}): ${buildTodayPlanLine(now)}`)
+  const prepared = [
+    todayEntriesUpmery ? `업메리 ${todayEntriesUpmery}` : '',
+    todayEntries ? `마잘남 ${todayEntries}` : '',
+  ].filter(Boolean)
+  if (prepared.length > 0) kakaoLines.push(`자동 기획됨: ${prepared.join(' / ')}`)
+  kakaoLines.push('주간 고정: 월·수·금 유튜브(마잘남) / 화·목·토·일 블로그(업메리·마잘남)')
+
+  kakaoLines.push('', '✅ 내가 해야 할 것')
+  try {
+    const pendingCount = await countPendingApprovals()
+    if (pendingCount > 0) kakaoLines.push(`- 결재함 대기 ${pendingCount}건 컨펌`)
+  } catch {
+    // 결재함 조회 실패는 브리핑 전체를 막지 않는다
+  }
+  const errorCount = rowsByBrand.reduce((s, b) => s + b.rows.filter((r) => r.status === 'error').length, 0)
+  if (errorCount > 0) kakaoLines.push(`- 어제 오류 ${errorCount}건 → 팀채팅에서 확인`)
   const photoReminder = await buildPhotoReminderText()
-  if (photoReminder) {
-    kakaoLines.push('', photoReminder)
+  if (photoReminder) kakaoLines.push(`- ${photoReminder}`)
+  if (kakaoLines[kakaoLines.length - 1] === '✅ 내가 해야 할 것') {
+    kakaoLines.push('- 오늘은 특별히 처리할 게 없어요')
   }
 
   // 카카오 연결이 안 돼 있으면(설정 전, 또는 토큰 없음) 조용히 건너뛴다 — 실패해도

@@ -191,3 +191,22 @@ export async function runBlogAgentReview(params: {
   })
   return parseBlogReview(role, raw)
 }
+
+// 3인 위원회를 Promise.all로 돌리면 1명만 실패해도 전부 reject돼서, 이미
+// 비싸게 만들어둔 초안까지 통째로 버려지고 "오류"만 남는 문제가 실제로
+// 있었다(라이터가 반복 오류났던 원인 중 하나). 실패한 심사위원은 빼고
+// 성공한 채점만 모아서 돌려준다 — 전원 실패하면 빈 배열(호출부에서 "채점
+// 실패, 내용은 저장됨"으로 처리).
+export async function runBlogReviewsResilient(params: {
+  apiKey: string
+  roles: BlogRole[]
+  draft: BlogDraft
+}): Promise<BlogReview[]> {
+  const { apiKey, roles, draft } = params
+  const settled = await Promise.allSettled(
+    roles.map((role) => runBlogAgentReview({ apiKey, role, draft })),
+  )
+  return settled
+    .filter((r): r is PromiseFulfilledResult<BlogReview> => r.status === 'fulfilled')
+    .map((r) => r.value)
+}

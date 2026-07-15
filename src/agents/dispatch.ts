@@ -1,4 +1,5 @@
-import { generateBlogDraft, runBlogAgentReview } from './runBlogReview.js'
+import { generateBlogDraft, runBlogReviewsResilient } from './runBlogReview.js'
+import type { BlogReview } from '../types/blog.js'
 import { generateThreadDraft, runThreadReview } from './runThreadReview.js'
 import { MAJALNAM_THREAD_VOICE } from './threadPrompts.js'
 import { generateRemixPlan } from './runRemix.js'
@@ -40,7 +41,7 @@ export async function dispatchJob(params: {
 
   try {
     if (agent === 'writer') {
-      const draft = await generateBlogDraft({
+      let draft = await generateBlogDraft({
         apiKey,
         topic,
         keyPoints: '',
@@ -48,16 +49,48 @@ export async function dispatchJob(params: {
         brandContext: BRAND_CONTEXT[brand],
         marketFindings,
       })
-      const reviews = await Promise.all(
-        BLOG_ROLES.map((role) => runBlogAgentReview({ apiKey, role, draft })),
-      )
-      const avg = reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length
-      const passed = avg >= PASS_THRESHOLD
+      let reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
+      const scoreOf = (rs: BlogReview[]) =>
+        rs.length > 0 ? rs.reduce((s, r) => s + r.totalScore, 0) / rs.length : 0
+
+      // 첫 시도가 기준 미달이면, 심사위원 피드백을 반영해서 딱 한 번 다시
+      // 쓴다(무한 루프 방지) — "미달인 채로 그냥 보류"만 반복돼서 발행할
+      // 콘텐츠가 안 나오는 문제를 줄이기 위함. 재작성이 오히려 더 나쁘면
+      // 첫 초안을 유지한다.
+      if (reviews.length > 0 && scoreOf(reviews) < PASS_THRESHOLD) {
+        try {
+          const feedback = reviews
+            .map((r) => `[${r.role}] ${r.summary}\n${r.flags.map((f) => `- ${f.reason}`).join('\n')}`)
+            .join('\n\n')
+          const revised = await generateBlogDraft({
+            apiKey,
+            topic,
+            keyPoints: '',
+            photoDescriptions: '',
+            brandContext: BRAND_CONTEXT[brand],
+            marketFindings,
+            previousDraft: draft,
+            feedback,
+          })
+          const revisedReviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft: revised })
+          if (revisedReviews.length > 0 && scoreOf(revisedReviews) > scoreOf(reviews)) {
+            draft = revised
+            reviews = revisedReviews
+          }
+        } catch {
+          // 재작성 실패 시 첫 초안 그대로 진행 — 재작성은 보너스지 필수가 아님
+        }
+      }
+
+      const reviewed = reviews.length > 0
+      const avg = scoreOf(reviews)
+      const passed = reviewed && avg >= PASS_THRESHOLD
+      const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
       finishWorkLog(logId, {
         status: passed ? 'done' : 'attention',
         statusLabel: passed ? '완료' : '보류',
         costUsd: Math.max(0, getTodaySpendUsd() - spendBefore),
-        note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`,
+        note: scoreNote,
         detailHtml: `<b>${draft.title}</b><br/>블로그 탭에서 전체 내용을 확인하세요.`,
       })
       const contentHtml = `${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`
@@ -67,7 +100,7 @@ export async function dispatchJob(params: {
         title: draft.title,
         contentHtml,
         passed,
-        scoreLabel: `${avg.toFixed(1)}/100`,
+        scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
         sourceWorkLogId: logId,
       })
       createEntry({
@@ -76,7 +109,7 @@ export async function dispatchJob(params: {
         channel: 'blog',
         title: draft.title,
         status: passed ? 'planned' : 'open',
-        note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`,
+        note: scoreNote,
         contentHtml,
         sourceWorkLogId: logId,
       })

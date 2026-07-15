@@ -116,14 +116,14 @@ export async function generateAgencyFullFormatSet(params: {
           system,
           user,
           images: referenceImages,
-          maxTokens: 4096,
+          maxTokens: 8192,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
       : await callClaudeJson({
           apiKey,
           system,
           user,
-          maxTokens: 4096,
+          maxTokens: 8192,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
 

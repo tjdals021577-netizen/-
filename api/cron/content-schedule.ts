@@ -9,7 +9,7 @@
 // 수동 항목이다(게시물 단위 성과 추적 인프라가 없어 자동 감지가 불가능하므로
 // 억지로 자동화하지 않음).
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { generateBlogDraft, runBlogAgentReview } from '../../src/agents/runBlogReview.js'
+import { generateBlogDraft, runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
 import { generateRemixPlan } from '../../src/agents/runRemix.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import { BRAND_CONTEXT } from '../../src/types/brand.js'
@@ -98,13 +98,15 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     photoImages: photoImages.length > 0 ? photoImages : undefined,
   })
 
-  // 3명 심사위원을 순서대로 하나씩 기다리면(전) 시간을 3배로 썼다 — 서로
-  // 독립적인 채점이라 병렬로 돌려도 무방해서, 동시에 실행해 시간을 아낀다
-  // (초안 생성 자체가 웹서치 때문에 오래 걸릴 때가 있어, 나머지 단계에서라도
-  // 최대한 시간을 절약해서 크론 함수 전체 제한(300초) 안에 들어오게 함).
-  const reviews = await Promise.all(BLOG_ROLES.map((role) => runBlogAgentReview({ apiKey, role, draft })))
-  const avg = reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length
-  const passed = avg >= PASS_THRESHOLD
+  // 3명 심사위원을 병렬로 돌리되, 1명이 실패해도 나머지 채점으로 계속
+  // 진행한다 — 예전엔 Promise.all이라 1명만 실패해도 이미 만들어진 초안까지
+  // 통째로 버려지고 "오류"만 남았다(라이터 반복 오류의 원인 중 하나).
+  // 전원 실패하면 채점 없이 저장하고 "채점 실패"로 표시한다.
+  const reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
+  const reviewed = reviews.length > 0
+  const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
+  const passed = reviewed && avg >= PASS_THRESHOLD
+  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
   const nowIso = new Date().toISOString()
   const logId = makeId()
 
@@ -117,7 +119,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     status_label: '완료',
     started_at: nowIso,
     ended_at: nowIso,
-    note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'} · 사진 ${photoImages.length}장 반영`,
+    note: `${scoreNote} · 사진 ${photoImages.length}장 반영`,
     detail_html: buildBlogHtml(draft, reviews),
   })
   await supabaseInsert('approval_queue', {
@@ -127,7 +129,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     title: draft.title,
     content_html: buildBlogHtml(draft, reviews),
     passed,
-    score_label: `${avg.toFixed(1)}/100`,
+    score_label: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
     created_at: nowIso,
     status: 'pending',
     source_work_log_id: logId,
@@ -139,13 +141,13 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     channel: 'blog',
     title: draft.title,
     status: passed ? 'planned' : 'open',
-    note: `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'} (주간 스케줄 자동 기획) · 사진 ${photoImages.length}장`,
+    note: `${scoreNote} (주간 스케줄 자동 기획) · 사진 ${photoImages.length}장`,
     content_html: buildBlogHtml(draft, reviews),
     checklist: makeDefaultChecklist(true),
     created_at: nowIso,
     source_work_log_id: logId,
   })
-  return `${brand} 블로그: ${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}`
+  return `${brand} 블로그: ${scoreNote}`
 }
 
 async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
