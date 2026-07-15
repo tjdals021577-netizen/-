@@ -1,35 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { callClaudeJsonWithWebSearch } from '../../src/lib/claude.js'
 import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
-import { buildBrainSystemPrompt, buildBrainUserPrompt } from '../../src/agents/brainPrompts.js'
+import { researchMarketResilient } from '../../src/agents/runBrain.js'
 import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS } from '../../src/types/brand.js'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 
-interface BrainReport {
-  findings: { source: string; insight: string }[]
-  summary: string
-  recommendations: string[]
-}
-
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function parseBrainReport(raw: unknown): BrainReport {
-  const rec = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
-  const findings = Array.isArray(rec.findings)
-    ? rec.findings
-        .filter((f): f is Record<string, unknown> => typeof f === 'object' && f !== null)
-        .map((f) => ({ source: String(f.source ?? ''), insight: String(f.insight ?? '') }))
-    : []
-  return {
-    findings,
-    summary: typeof rec.summary === 'string' ? rec.summary : '',
-    recommendations: Array.isArray(rec.recommendations)
-      ? rec.recommendations.filter((r): r is string => typeof r === 'string')
-      : [],
-  }
 }
 
 // Vercel Cron이 매주 월요일 09:00 KST(월 00:00 UTC)에 호출한다 — vercel.json 참고.
@@ -51,57 +28,61 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const results = await Promise.all(
     BRANDS.map(async (brand) => {
       const topic = `이번 주 ${brand} 콘텐츠 트렌드 및 벤치마킹`
+      // researchMarketResilient는 어떤 경우에도 예외를 던지지 않는다(웹서치 실패 시
+      // 검색 없이 재시도 → 그래도 안 되면 빈 리포트). 그래도 저장(supabase) 단계가
+      // 혹시 던질 수 있으니 바깥 try/catch는 안전망으로 남겨둔다.
       try {
         let costUsd = 0
-        const raw = await callClaudeJsonWithWebSearch({
+        const research = await researchMarketResilient({
           apiKey,
-          system: buildBrainSystemPrompt(),
-          user: buildBrainUserPrompt({
-            topic,
-            context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
-            focus: BRAND_RESEARCH_FOCUS[brand],
-          }),
-          // 검색 범위를 브랜드 키워드로 좁혔으니 과도한 수집을 막기 위해 검색
-          // 횟수도 3회로 제한한다(기본값과 동일하지만 명시적으로 못박음).
-          maxSearches: 3,
-          maxTokens: 4096,
+          topic,
+          context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
+          focus: BRAND_RESEARCH_FOCUS[brand],
           onUsage: (usage) => {
-            costUsd = estimateCostUsd(usage)
+            costUsd += estimateCostUsd(usage)
           },
         })
-        const report = parseBrainReport(raw)
+        const report = research.report
         const nowIso = new Date().toISOString()
+        const hasFindings = report.findings.length > 0
 
         await supabaseInsert('work_log', {
           id: makeId(),
           agent: 'brain',
           brand,
-          kind: '월간 리서치(자동)',
-          status: 'done',
-          status_label: '완료',
+          kind: '주간 리서치(자동)',
+          // 하드 에러가 아니라, 결과가 없으면 '보류'로만 표시한다 — 대표님이
+          // 아침에 빨간 "오류"를 보지 않게(브레인 무중단 원칙).
+          status: research.ok && hasFindings ? 'done' : 'attention',
+          status_label: research.ok && hasFindings ? '완료' : '보류',
           started_at: nowIso,
           ended_at: nowIso,
           cost_usd: costUsd,
-          note: `발견 ${report.findings.length}건`,
-          detail_html: `<b>발견 사항</b><br/>${report.findings
-            .map((f) => `- [${f.source}] ${f.insight}`)
-            .join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`,
+          note: research.ok ? `발견 ${report.findings.length}건` : research.note,
+          detail_html: hasFindings
+            ? `<b>발견 사항</b><br/>${report.findings
+                .map((f) => `- [${f.source}] ${f.insight}`)
+                .join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`
+            : research.note,
         })
-        // 라이터/버즈/리믹서가 다시 찾아 쓸 수 있게 구조화해서도 저장한다
-        // (src/lib/brainStore.ts와 같은 테이블 — 이쪽은 localStorage가 없는
-        // 서버 환경이라 직접 insert한다).
-        await supabaseInsert('brain_reports', {
-          id: makeId(),
-          brand,
-          topic,
-          findings: report.findings,
-          summary: report.summary,
-          recommendations: report.recommendations,
-          created_at: nowIso,
-        })
-        return `${brand}: 발견 ${report.findings.length}건`
+        // 라이터/버즈/리믹서가 다시 찾아 쓸 수 있게 구조화해서도 저장한다.
+        // 결과가 있을 때만 저장 — 빈 리포트로 덮으면 직전에 잘 찾아둔 자료가
+        // 사라지므로, 실패한 주기에는 저장하지 않고 이전 자료를 그대로 둔다.
+        if (research.ok && hasFindings) {
+          await supabaseInsert('brain_reports', {
+            id: makeId(),
+            brand,
+            topic,
+            findings: report.findings,
+            summary: report.summary,
+            recommendations: report.recommendations,
+            created_at: nowIso,
+          })
+        }
+        return `${brand}: ${research.ok ? `발견 ${report.findings.length}건` : '일시 실패(다음 주기 재시도)'}`
       } catch (err) {
-        return `${brand}: 실패 (${err instanceof Error ? err.message : String(err)})`
+        // 저장 단계 등에서의 예외 안전망 — 여기서도 500을 던지지 않고 문자열만 남긴다.
+        return `${brand}: 저장 실패 (${err instanceof Error ? err.message : String(err)})`
       }
     }),
   )

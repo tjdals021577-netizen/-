@@ -3,7 +3,7 @@ import type { BlogReview } from '../types/blog.js'
 import { generateThreadDraft, runThreadReview } from './runThreadReview.js'
 import { MAJALNAM_THREAD_VOICE } from './threadPrompts.js'
 import { generateRemixPlan } from './runRemix.js'
-import { researchMarket } from './runBrain.js'
+import { researchMarketResilient } from './runBrain.js'
 import { startWorkLog, finishWorkLog } from '../lib/workLog.js'
 import { getTodaySpendUsd } from '../lib/budgetGuard.js'
 import { submitForApproval } from '../lib/approvalStore.js'
@@ -200,26 +200,34 @@ export async function dispatchJob(params: {
       return
     }
 
-    // brain
-    const report = await researchMarket({
+    // brain — researchMarketResilient는 예외를 던지지 않고 항상 리포트를 돌려준다
+    // (웹서치 실패 시 검색 없이 재시도 → 그래도 안 되면 빈 리포트 + ok:false).
+    const research = await researchMarketResilient({
       apiKey,
       topic,
       context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}`,
       focus: BRAND_RESEARCH_FOCUS[brand],
     })
-    saveBrainReport({
-      brand,
-      topic,
-      findings: report.findings,
-      summary: report.summary,
-      recommendations: report.recommendations,
-    })
+    const report = research.report
+    const hasFindings = report.findings.length > 0
+    // 결과가 있을 때만 저장 — 빈 리포트로 덮으면 직전에 잘 찾아둔 자료가 사라진다.
+    if (research.ok && hasFindings) {
+      saveBrainReport({
+        brand,
+        topic,
+        findings: report.findings,
+        summary: report.summary,
+        recommendations: report.recommendations,
+      })
+    }
     finishWorkLog(logId, {
-      status: 'done',
-      statusLabel: '완료',
+      status: research.ok && hasFindings ? 'done' : 'attention',
+      statusLabel: research.ok && hasFindings ? '완료' : '보류',
       costUsd: Math.max(0, getTodaySpendUsd() - spendBefore),
-      note: `발견 ${report.findings.length}건`,
-      detailHtml: `<b>발견 사항</b><br/>${report.findings.map((f) => `- [${f.source}] ${f.insight}`).join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`,
+      note: research.ok ? `발견 ${report.findings.length}건` : research.note,
+      detailHtml: hasFindings
+        ? `<b>발견 사항</b><br/>${report.findings.map((f) => `- [${f.source}] ${f.insight}`).join('<br/>')}<br/><br/><b>요약</b><br/>${report.summary}`
+        : research.note,
     })
     // 여기서 자동으로 기획까지 이어가지 않는다(대표님 결정) — 브레인은 찾아서
     // 기억(저장)만 하고, 나중에 대표님이 대본 기획을 요청할 때 리믹서가 이

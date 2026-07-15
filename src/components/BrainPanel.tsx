@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { researchMarket } from '../agents/runBrain'
+import { researchMarketResilient } from '../agents/runBrain'
 import type { BrainReport } from '../types/brain'
 import {
   DAILY_BUDGET_USD,
@@ -7,7 +7,7 @@ import {
   isOverDailyBudget,
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
-import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
+import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from '../types/brand'
 import { saveBrainReport } from '../lib/brainStore'
 
 function buildDetailHtml(report: BrainReport): string {
@@ -46,27 +46,44 @@ export function BrainPanel({ brand }: { brand: Brand }) {
     const logId = startWorkLog({ agent: 'brain', brand, kind: '수동 리서치', note: topic })
 
     try {
-      const newReport = await researchMarket({
+      // researchMarketResilient는 예외를 던지지 않는다(웹서치 실패 시 검색 없이
+      // 재시도 → 그래도 안 되면 빈 리포트 + ok:false). 항상 결과를 돌려받는다.
+      const research = await researchMarketResilient({
         apiKey,
         topic,
         context: `[브랜드]\n${BRAND_CONTEXT[brand]}\n운영 채널: ${BRAND_CHANNELS[brand].join(', ')}\n\n${context}`,
+        focus: BRAND_RESEARCH_FOCUS[brand],
       })
-      setReport(newReport)
-      saveBrainReport({
-        brand,
-        topic,
-        findings: newReport.findings,
-        summary: newReport.summary,
-        recommendations: newReport.recommendations,
-      })
+      const newReport = research.report
+      const hasFindings = newReport.findings.length > 0
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
-      finishWorkLog(logId, {
-        status: 'done',
-        statusLabel: '완료',
-        costUsd: cycleCost,
-        note: `발견 ${newReport.findings.length}건`,
-        detailHtml: buildDetailHtml(newReport),
-      })
+      if (research.ok && hasFindings) {
+        setReport(newReport)
+        saveBrainReport({
+          brand,
+          topic,
+          findings: newReport.findings,
+          summary: newReport.summary,
+          recommendations: newReport.recommendations,
+        })
+        finishWorkLog(logId, {
+          status: 'done',
+          statusLabel: '완료',
+          costUsd: cycleCost,
+          note: `발견 ${newReport.findings.length}건`,
+          detailHtml: buildDetailHtml(newReport),
+        })
+      } else {
+        // 하드 에러 대신 안내 메시지 — 직전에 저장된 리포트는 그대로 둔다.
+        setErrorMessage(research.note)
+        finishWorkLog(logId, {
+          status: 'attention',
+          statusLabel: '보류',
+          costUsd: cycleCost,
+          note: research.note,
+          detailHtml: research.note,
+        })
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setErrorMessage(message)
