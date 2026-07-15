@@ -265,13 +265,11 @@ export function DashboardScreen() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null)
-  const [refreshSamples, setRefreshSamples] = useState<string[]>([])
 
   async function refreshRevenue() {
     if (refreshing) return
     setRefreshing(true)
     setRefreshMsg(null)
-    setRefreshSamples([])
     try {
       const password = import.meta.env.VITE_APP_PASSWORD
       const res = await fetch('/api/radar-refresh', {
@@ -282,7 +280,6 @@ export function DashboardScreen() {
       if (!res.ok) throw new Error(data?.error || `서버 오류 (${res.status})`)
       setRefreshKey((k) => k + 1)
       setRefreshMsg(Array.isArray(data?.results) ? data.results.join(' · ') : '새로고침 완료')
-      setRefreshSamples(Array.isArray(data?.samples) ? data.samples : [])
     } catch (err) {
       setRefreshMsg(`실패: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
@@ -311,13 +308,7 @@ export function DashboardScreen() {
         </div>
       </div>
       {refreshMsg && (
-        <p className="mb-2 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">{refreshMsg}</p>
-      )}
-      {refreshSamples.length > 0 && (
-        <details className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
-          <summary className="cursor-pointer text-[11px] font-semibold text-[var(--accent)]">🔎 진단용 원본 데이터 (금액이 이상하면 이 내용을 개발자에게 전달)</summary>
-          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all text-[10.5px] leading-relaxed text-[var(--text-dim)]">{refreshSamples.join('\n\n')}</pre>
-        </details>
+        <p className="mb-3 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">{refreshMsg}</p>
       )}
 
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">

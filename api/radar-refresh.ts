@@ -36,7 +36,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const nowIso = new Date().toISOString()
   const results: string[] = []
-  const samples: string[] = []
   for (const brand of BRANDS) {
     const keys = IMWEB_ENV_KEYS[brand]
     const apiKey = process.env[keys.apiKey]
@@ -67,12 +66,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         created_at: nowIso,
       })
       results.push(`${brand}: 주문 ${summary.orderCount}건 / 매출 ${summary.revenueKrw ?? '?'}원`)
-      // 진단용: 첫 주문의 원본 JSON — 금액 필드를 정확히 맞추기 위해 노출한다(임시).
-      samples.push(`[${brand}] ${summary.rawSample}`)
     } catch (err) {
       results.push(`${brand}: 실패 (${err instanceof Error ? err.message : String(err)})`)
     }
   }
 
-  sendJson(res, 200, { ok: true, results, samples })
+  sendJson(res, 200, { ok: true, results })
 }
