@@ -29,7 +29,10 @@ import {
 } from '../../lib/contentPhotoStore'
 import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
 import { fetchYoutubeVideoStats, type YoutubeVideoStatRow } from '../../lib/youtubeStatsStore'
-import type { Brand } from '../../types/brand'
+import { analyzeYoutubeContent, type YoutubeAnalysis } from '../../agents/runYoutubeAnalysis'
+import { startWorkLog, finishWorkLog } from '../../lib/workLog'
+import { isOverDailyBudget } from '../../lib/budgetGuard'
+import { BRAND_CONTEXT, type Brand } from '../../types/brand'
 
 export type WorkspaceChannel = 'blog' | 'thread' | 'youtube'
 
@@ -401,14 +404,22 @@ function formatCount(n: number): string {
   return n.toLocaleString('ko-KR')
 }
 
-// 레이더 크론이 매일 YouTube Data API로 가져온 최근 영상 통계를 보여준다 —
-// 조회수·좋아요·댓글은 공개 데이터라 API 키만으로 조회 가능(OAuth 불필요).
+// 레이더 크론이 매일 YouTube Data API로 가져온 최근 영상 통계를 보여주고,
+// "지금 분석 실행"으로 그 실제 데이터를 기반으로 시청자 관점 피드백(잘 터진
+// 영상의 핵심, 안 터진 영상의 문제점)을 즉시 받을 수 있다 — 팀채팅에서
+// 브레인에게 시키면 웹 검색으로 엉뚱한 동명 채널을 조사하는 사고가 있어서,
+// 내 채널 분석은 반드시 이 버튼(내부 데이터 기반)으로 하도록 만든 것.
 function YoutubeStatsPanel({ brand }: { brand: Brand }) {
   const [stats, setStats] = useState<YoutubeVideoStatRow[] | null>(null)
+  const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     setStats(null)
+    setAnalysis(null)
+    setAnalysisError(null)
     void fetchYoutubeVideoStats(brand).then((rows) => {
       if (!cancelled) setStats(rows)
     })
@@ -416,6 +427,44 @@ function YoutubeStatsPanel({ brand }: { brand: Brand }) {
       cancelled = true
     }
   }, [brand])
+
+  async function handleAnalyze() {
+    if (!stats || stats.length === 0 || analyzing) return
+    if (isOverDailyBudget()) {
+      setAnalysisError('오늘 예산 한도를 초과해서 중단했습니다. 내일 다시 시도해주세요.')
+      return
+    }
+    setAnalyzing(true)
+    setAnalysisError(null)
+    const logId = startWorkLog({
+      agent: 'remix',
+      brand,
+      kind: '유튜브 콘텐츠 분석(수동)',
+      note: `최근 영상 ${stats.length}개 분석`,
+    })
+    try {
+      const result = await analyzeYoutubeContent({
+        apiKey: 'server-managed',
+        brandContext: BRAND_CONTEXT[brand],
+        stats,
+      })
+      setAnalysis(result)
+      finishWorkLog(logId, {
+        status: 'done',
+        statusLabel: '완료',
+        note: result.summary,
+        detailHtml: `<b>${result.summary}</b><br/><br/><b>분석</b><br/>${result.findings
+          .map((f) => `- ${f}`)
+          .join('<br/>')}<br/><br/><b>다음 기획 추천</b><br/>${result.nextSteps.map((n) => `- ${n}`).join('<br/>')}`,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setAnalysisError(message)
+      finishWorkLog(logId, { status: 'error', statusLabel: '오류', note: '분석 실패', detailHtml: message })
+    } finally {
+      setAnalyzing(false)
+    }
+  }
 
   if (stats === null) {
     return <p className="text-[12px] text-[var(--text-faint)]">불러오는 중…</p>
@@ -429,6 +478,32 @@ function YoutubeStatsPanel({ brand }: { brand: Brand }) {
   }
   return (
     <div className="space-y-2">
+      <button
+        type="button"
+        disabled={analyzing}
+        onClick={() => void handleAnalyze()}
+        className="w-full rounded-lg bg-[var(--accent)] px-3 py-2 text-[12px] font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {analyzing ? '분석 중… (보통 1~2분)' : '🔍 지금 분석 실행 — 잘 터진/안 터진 영상 시청자 관점 피드백'}
+      </button>
+      {analysisError && <p className="text-[11.5px] text-[var(--open)]">{analysisError}</p>}
+      {analysis && (
+        <div className="space-y-1.5 rounded-lg border-[1.5px] border-[var(--accent)] bg-[var(--accent-soft)] p-3">
+          <p className="text-[12.5px] font-bold text-[var(--text)]">{analysis.summary}</p>
+          <div className="text-[11.5px] leading-relaxed text-[var(--text-dim)]">
+            {analysis.findings.map((f, i) => (
+              <p key={i}>- {f}</p>
+            ))}
+          </div>
+          <p className="pt-1 text-[11px] font-bold text-[var(--accent-strong)]">다음 기획 추천</p>
+          <div className="text-[11.5px] leading-relaxed text-[var(--text-dim)]">
+            {analysis.nextSteps.map((n, i) => (
+              <p key={i}>- {n}</p>
+            ))}
+          </div>
+          <p className="pt-1 text-[10.5px] text-[var(--text-faint)]">팀채팅에도 전략 카드로 저장됐습니다.</p>
+        </div>
+      )}
       {stats.map((v) => (
         <div key={v.videoId} className="flex items-center gap-2.5 rounded-lg bg-[var(--surface-2)] p-2">
           {v.thumbnailUrl && (

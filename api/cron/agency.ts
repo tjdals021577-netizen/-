@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { generateThreadDraft, runThreadReview } from '../../src/agents/runThreadReview.js'
+import { generateAgencyDraftBatch } from '../../src/agents/runAgencyThread.js'
+import { runThreadReviewBatch } from '../../src/agents/runThreadReview.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import type { DraftAttempt } from '../../src/types/agency.js'
@@ -67,19 +68,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   for (const client of clients) {
     try {
       const referenceImages = await fetchReferenceImages(client.reference_image_ids ?? [])
-      const attempts: DraftAttempt[] = []
       const recentPosts = client.recent_draft_texts ?? []
-      for (let i = 0; i < DRAFT_COUNT; i++) {
-        const draft = await generateThreadDraft({
-          apiKey,
-          topic: `${client.business} 관련 스레드 게시물`,
-          brandVoice: client.persona,
-          recentPosts: [...recentPosts, ...attempts.map((a) => a.draft.text)],
-          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-        })
-        const review = await runThreadReview({ apiKey, draft })
-        attempts.push({ draft, review })
-      }
+      // 초안 5개를 한 번에 생성 + 채점도 한 번에 — 예전엔 클라이언트당 API를
+      // 10번(생성5+채점5) 불러서 시스템 프롬프트·레퍼런스 이미지 토큰이 매번
+      // 반복 과금됐다. 2번으로 줄여 비용 ~75% 절감(대표님 결정). 프롬프트도
+      // 대행 전용("마잘남 – 글쓰기")으로 통일 — 화면(AgencyScreen)과 동일.
+      const drafts = await generateAgencyDraftBatch({
+        apiKey,
+        topic: `${client.business} 관련 스레드 게시물`,
+        business: client.business,
+        persona: client.persona,
+        count: DRAFT_COUNT,
+        recentPosts,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      })
+      const reviews = await runThreadReviewBatch({ apiKey, drafts })
+      const attempts: DraftAttempt[] = drafts.map((draft, i) => ({ draft, review: reviews[i] }))
 
       const passCount = attempts.filter((a) => a.review.totalScore >= PASS_THRESHOLD).length
       const nowIso = new Date().toISOString()

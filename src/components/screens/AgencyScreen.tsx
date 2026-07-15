@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { parseAgencyOnboarding } from '../../agents/agencyOnboarding'
-import { runThreadReview } from '../../agents/runThreadReview'
+import { runThreadReviewBatch } from '../../agents/runThreadReview'
 import {
-  generateAgencyDraft,
+  generateAgencyDraftBatch,
   generateAgencyVariantsWithReferences,
   generateAgencyFullFormatSet,
 } from '../../agents/runAgencyThread'
@@ -256,22 +256,19 @@ export function AgencyScreen() {
     })
     try {
       const referenceImages = toVisionImages(client.referenceImageIds)
-      const attempts: DraftAttempt[] = []
-      for (let i = 0; i < DRAFT_COUNT; i++) {
-        const draft = await generateAgencyDraft({
-          apiKey,
-          topic: `${client.business} 관련 스레드 게시물`,
-          business: client.business,
-          persona: client.persona,
-          recentPosts: [
-            ...client.recentDraftTexts,
-            ...attempts.map((a) => a.draft.text),
-          ],
-          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-        })
-        const review = await runThreadReview({ apiKey, draft })
-        attempts.push({ draft, review })
-      }
+      // 초안 5개 생성 1번 + 채점 1번으로 묶음 — 따로따로 10번 부르면 시스템
+      // 프롬프트·레퍼런스 이미지 토큰이 매번 반복 과금된다(비용 ~75% 절감).
+      const drafts = await generateAgencyDraftBatch({
+        apiKey,
+        topic: `${client.business} 관련 스레드 게시물`,
+        business: client.business,
+        persona: client.persona,
+        count: DRAFT_COUNT,
+        recentPosts: client.recentDraftTexts,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      })
+      const reviews = await runThreadReviewBatch({ apiKey, drafts })
+      const attempts: DraftAttempt[] = drafts.map((draft, i) => ({ draft, review: reviews[i] }))
       saveTodayDrafts(client.id, attempts)
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
       const passCount = attempts.filter((a) => a.review.totalScore >= PASS_THRESHOLD).length

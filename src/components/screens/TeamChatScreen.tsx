@@ -75,6 +75,23 @@ function stripHtml(html: string): string {
     .trim()
 }
 
+// 에이전트별 통상 소요시간 안내 — "처리 중이에요"만 떠 있으면 얼마나
+// 기다려야 하는지 알 수 없다는 피드백 반영. 웹서치·채점 유무에 따라 다름.
+const AGENT_ETA_KO: Record<string, string> = {
+  writer: '보통 2~5분',
+  buzz: '보통 1~2분',
+  remix: '보통 1~3분',
+  brain: '보통 2~4분',
+  coach: '보통 1~2분',
+  morning: '보통 1분',
+}
+
+function elapsedLabel(iso: string): string {
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (sec < 60) return `${sec}초`
+  return `${Math.floor(sec / 60)}분 ${sec % 60}초`
+}
+
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime()
   const min = Math.floor(diffMs / 60000)
@@ -195,7 +212,7 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                   }`}
                 >
                   {entry.status === 'running'
-                    ? `${STATUS_ICON.running} 처리 중이에요…`
+                    ? `${STATUS_ICON.running} 처리 중이에요… (${elapsedLabel(entry.startedAt)} 경과 · ${AGENT_ETA_KO[entry.agent] ?? '보통 몇 분'} 걸려요)`
                     : `${STATUS_ICON[entry.status]} ${stripHtml(entry.detailHtml) || entry.statusLabel}`}
                 </div>
               </div>
@@ -244,6 +261,16 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
   }, [feedFilter, logVersion])
+
+  // "처리 중 (N분 경과)" 표시가 실시간으로 올라가고, 다른 곳에서 끝난 작업도
+  // 자동으로 반영되게 15초마다 조용히 다시 그린다 — logVersion과 분리한 별도
+  // 상태를 쓰는 이유는, logVersion은 스크롤 맨 아래 이동을 트리거해서 15초마다
+  // 읽던 위치가 튀면 안 되기 때문.
+  const [, setClockTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setClockTick((t) => t + 1), 15_000)
+    return () => clearInterval(timer)
+  }, [])
 
   // 한 에이전트가 지시 한 건을 어떻게 받아들일지 처리하는 단위 — 역할마다
   // 판단이 다를 수 있어서("모두에게"를 보내도 각자 따로 되묻거나 실행할 수

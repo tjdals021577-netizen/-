@@ -107,11 +107,12 @@ export function buildAgencyReferenceSystemPrompt(params: {
   business: string
   persona: string
   variantCount: number
+  recentPosts?: string[]
 }): string {
-  const { business, persona, variantCount } = params
+  const { business, persona, variantCount, recentPosts } = params
   return `${AGENCY_IDENTITY}
 
-${buildClientContextBlock({ business, persona })}
+${buildClientContextBlock({ business, persona, recentPosts })}
 
 ${AGENCY_WRITING_PRINCIPLES}
 
@@ -129,7 +130,8 @@ ${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해�
 
 규칙:
 1. 각 시안은 첫 줄이 훅이 되어야 한다.
-2. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
+2. 이전 게시 이력이 주어졌다면 그것과 문장 패턴·소재·훅이 겹치면 안 된다.
+3. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
 
 JSON 스키마:
 { "drafts": [ { "text": string } ] }`

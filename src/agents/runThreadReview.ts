@@ -9,6 +9,8 @@ import {
   buildThreadFullFormatUserPrompt,
   buildThreadReviewSystemPrompt,
   buildThreadReviewUserPrompt,
+  buildThreadReviewBatchSystemPrompt,
+  buildThreadReviewBatchUserPrompt,
 } from './threadPrompts.js'
 import { THREAD_RUBRIC } from './threadRubric.js'
 import type { ThreadDraft, ThreadFormatDraft, ThreadReview } from '../types/thread.js'
@@ -169,10 +171,11 @@ export async function generateThreadFullFormatSet(params: {
   topic: string
   referenceImages?: VisionImageInput[]
   note?: string
+  formats?: string[]
 }): Promise<ThreadFormatDraft[]> {
-  const { apiKey, topic, referenceImages, note } = params
-  const system = buildThreadFullFormatSystemPrompt()
-  const user = buildThreadFullFormatUserPrompt({ topic, note })
+  const { apiKey, topic, referenceImages, note, formats } = params
+  const system = buildThreadFullFormatSystemPrompt(formats)
+  const user = buildThreadFullFormatUserPrompt({ topic, note, formatCount: formats?.length })
 
   const raw =
     referenceImages && referenceImages.length > 0
@@ -214,4 +217,33 @@ export async function runThreadReview(params: {
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   return parseThreadReview(raw)
+}
+
+// 초안 여러 개를 한 번의 호출로 채점한다 — 대행처럼 하루 5개씩 뽑는 흐름에서
+// 채점을 5번 따로 부르면 거대한 시스템 프롬프트가 5번 반복 과금되는 문제를
+// 없앤다(API 비용 절감, 대표님 결정). 결과 배열은 입력 순서와 같고, 모델이
+// 일부만 채점해서 개수가 모자라면 남는 초안엔 "채점 누락" 리뷰를 채운다.
+export async function runThreadReviewBatch(params: {
+  apiKey: string
+  drafts: ThreadDraft[]
+}): Promise<ThreadReview[]> {
+  const { apiKey, drafts } = params
+  if (drafts.length === 0) return []
+  const raw = await callClaudeJson({
+    apiKey,
+    system: buildThreadReviewBatchSystemPrompt(drafts.length),
+    user: buildThreadReviewBatchUserPrompt(drafts),
+    maxTokens: 8192,
+    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+  })
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('스레드 일괄 채점 응답 형식이 올바르지 않습니다.')
+  }
+  const rec = raw as Record<string, unknown>
+  const items = Array.isArray(rec.reviews) ? rec.reviews : []
+  return drafts.map((_, i) =>
+    items[i] !== undefined
+      ? parseThreadReview(items[i])
+      : { totalScore: 0, summary: '채점 누락 — 다시 시도해주세요.', criteriaScores: [], flags: [] },
+  )
 }

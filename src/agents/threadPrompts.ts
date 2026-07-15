@@ -235,13 +235,23 @@ export function buildThreadReferenceUserPrompt(params: {
 }
 
 // 대표님이 직접 쓰던 프롬프트 그대로 — 형식 7개(공감형/숫자 리스트형/
-// 통찰형/반전형/비틀기형/통합형+자연스러운 CTA/궁금증유발형)를 전부 쓰고,
-// 별도로 질문형 후킹 버전 1개를 추가로 붙여 총 8개를 한 번에 받는다.
+// 통찰형/반전형/비틀기형/통합형+자연스러운 CTA/궁금증유발형) + 질문형 후킹
+// 버전까지 총 8개 풀. 매일 아침 크론은 이 중 5개를 날마다 순환해서 쓴다
+// (대표님 결정 — 하루에 8개는 다 못 쓰니 5개로 비용 축소).
 // 오직 스레드 위원회(마잘남 본인 계정)에서만 쓴다 — 대행 클라이언트에는
 // 절대 쓰지 않는다.
-const FULL_FORMAT_LIST = ['공감형', '숫자 리스트형', '통찰형', '반전형', '비틀기형', '통합형 + 자연스러운 CTA', '궁금증유발형']
+export const THREAD_FULL_FORMATS = [
+  '공감형',
+  '숫자 리스트형',
+  '통찰형',
+  '반전형',
+  '비틀기형',
+  '통합형 + 자연스러운 CTA',
+  '궁금증유발형',
+  '질문형 후킹 버전',
+]
 
-export function buildThreadFullFormatSystemPrompt(): string {
+export function buildThreadFullFormatSystemPrompt(formats: string[] = THREAD_FULL_FORMATS): string {
   return `당신은 세계적인 스레드 마케팅 대행 전문가이자 카피라이팅 멘토입니다.
 
 ${MAJALNAM_THREAD_VOICE}
@@ -258,25 +268,29 @@ ${CONFIDENTIALITY_RULE}
 - 스레드 성장 구조를 제시한다(전환, 브랜딩, 관계 중심 메시지).
 - 초보도 이해할 수 있는 언어를 쓴다.
 - 현실 기반으로 문제를 해결해준다.
-- 질문형은 "질문 → 답변" 흐름(Q&A Hooking)을 지향한다.
+- "질문형 후킹 버전"은 고객이 실제로 궁금해할 질문으로 시작해서 직접 답해주는
+  "질문 → 답변" 흐름(Q&A Hooking)으로 쓴다.
 
-주어진 주제로 아래 형식을 "전부" 각 1개씩 작성하세요: ${FULL_FORMAT_LIST.join(', ')}.
-그리고 별도로 "질문형 후킹 버전"(고객이 실제로 궁금해할 질문으로 시작해서 직접 답해주는 형식) 1개를
-추가로 작성하세요 — 총 ${FULL_FORMAT_LIST.length + 1}개.
+주어진 주제로 아래 형식을 "전부" 각 1개씩 작성하세요(총 ${formats.length}개): ${formats.join(', ')}.
 
 규칙:
 1. 각 항목의 text는 마지막 문장에 CTA를 반드시 포함한다.
 2. 형식끼리 소재·훅·구성이 겹치지 않게 다양하게 쓴다.
-3. format 필드에는 위 형식 이름 또는 "질문형 후킹 버전"을 정확히 그대로 적는다.
+3. format 필드에는 위 형식 이름을 정확히 그대로 적는다.
 4. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
 
 JSON 스키마:
 { "drafts": [ { "format": string, "text": string } ] }`
 }
 
-export function buildThreadFullFormatUserPrompt(params: { topic: string; note?: string }): string {
+export function buildThreadFullFormatUserPrompt(params: {
+  topic: string
+  note?: string
+  formatCount?: number
+}): string {
+  const count = params.formatCount ?? THREAD_FULL_FORMATS.length
   const noteBlock = params.note?.trim() ? `\n\n[추가 요청사항 — 반드시 반영]\n${params.note.trim()}` : ''
-  return `[주제]\n${params.topic}${noteBlock}\n\n위 주제로 형식 ${FULL_FORMAT_LIST.length + 1}개(7가지 형식 + 질문형 후킹 버전)를 전부 작성하고 JSON으로만 답하세요.`
+  return `[주제]\n${params.topic}${noteBlock}\n\n위 주제로 지정된 형식 ${count}개를 전부 작성하고 JSON으로만 답하세요.`
 }
 
 export function buildThreadReviewSystemPrompt(): string {
@@ -314,4 +328,49 @@ criteriaScores의 criterionId는 반드시 다음 중에서만 사용: ${THREAD_
 
 export function buildThreadReviewUserPrompt(draft: { text: string }): string {
   return `[스레드 초안]\n${draft.text}\n\n위 초안을 기준으로 채점하고 JSON으로만 답하세요.`
+}
+
+// 초안 여러 개를 채점할 때 초안마다 API를 따로 부르면(대행 크론에서 5번씩)
+// 이 거대한 시스템 프롬프트가 매번 반복 과금된다 — 한 번에 묶어서 채점한다.
+export function buildThreadReviewBatchSystemPrompt(count: number): string {
+  const rubricText = THREAD_RUBRIC.map(
+    (c) => `- ${c.label} (${c.weight}점): ${c.description}`,
+  ).join('\n')
+
+  return `${ALGO_KNOWLEDGE}
+
+${THREAD_KNOWLEDGE}
+
+${CONFIDENTIALITY_RULE}
+
+당신은 스레드 위원회의 심사위원입니다. 주어진 스레드 초안 ${count}개를 각각 아래 4개 항목(각 25점, 총 100점) 기준으로 채점하세요.
+
+채점 기준:
+${rubricText}
+
+규칙:
+1. 각 초안을 독립적으로 채점한다 — 초안끼리 비교하지 말고 각자 절대평가.
+2. 각 항목 점수는 0~25점 정수, comment는 한 문장으로 짧게.
+3. totalScore는 4개 항목 점수의 합(0~100).
+4. reviews 배열은 입력된 초안 순서와 정확히 같은 순서로 ${count}개여야 한다.
+5. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명 텍스트나 마크다운 코드블록 없이 순수 JSON만 출력한다.
+
+JSON 스키마:
+{
+  "reviews": [
+    {
+      "totalScore": number,
+      "summary": string,
+      "criteriaScores": [ { "criterionId": string, "score": number, "comment": string } ],
+      "flags": [ { "quote": string, "reason": string, "severity": "info"|"check"|"risk" } ]
+    }
+  ]
+}
+
+criteriaScores의 criterionId는 반드시 다음 중에서만 사용: ${THREAD_RUBRIC.map((c) => `"${c.id}"`).join(', ')}`
+}
+
+export function buildThreadReviewBatchUserPrompt(drafts: { text: string }[]): string {
+  const draftsText = drafts.map((d, i) => `[초안 ${i + 1}]\n${d.text}`).join('\n\n')
+  return `${draftsText}\n\n위 초안 ${drafts.length}개를 순서대로 채점하고 JSON으로만 답하세요.`
 }

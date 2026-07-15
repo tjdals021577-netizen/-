@@ -6,11 +6,15 @@
 // 스레드는 마잘남 전용 채널이라(업메리는 스레드 미운영) 마잘남만 처리한다.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { generateThreadFullFormatSet } from '../../src/agents/runThreadReview.js'
+import { THREAD_FULL_FORMATS } from '../../src/agents/threadPrompts.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
 
 const BRAND = '마잘남'
+// 하루에 8개는 다 못 쓴다는 대표님 결정 — 형식 8개 풀에서 매일 5개씩
+// 순환(다음날엔 다음 5개)해서 비용을 ~40% 줄이면서 유형은 골고루 돌게 함.
+const DAILY_FORMAT_COUNT = 5
 
 // 대표님이 지정한 주제 축(스레드·브랜딩·1인사업) 안에서 매일 다른 각도로
 // 돌아가며 쓰게 한다 — 브레인 리서치가 아직 없을 때도 항상 쓸 거리가 있게.
@@ -36,6 +40,16 @@ function dayOfYear(): number {
 
 function pickTopicOfTheDay(pool: string[]): string {
   return pool[dayOfYear() % pool.length]
+}
+
+// 순환 배열에서 오늘 기준으로 count개를 겹치지 않게 골라온다 — 매일 시작
+// 위치가 하루씩 밀려서 모든 형식이 골고루 돌아간다.
+function pickRotatingFormats(count: number): string[] {
+  const offset = (dayOfYear() * count) % THREAD_FULL_FORMATS.length
+  return Array.from(
+    { length: Math.min(count, THREAD_FULL_FORMATS.length) },
+    (_, i) => THREAD_FULL_FORMATS[(offset + i) % THREAD_FULL_FORMATS.length],
+  )
 }
 
 interface ReferenceImageRow {
@@ -83,13 +97,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   try {
     const referenceImages = await pickReferenceImages()
-    const drafts = await generateThreadFullFormatSet({ apiKey, topic, referenceImages })
+    const formats = pickRotatingFormats(DAILY_FORMAT_COUNT)
+    const drafts = await generateThreadFullFormatSet({ apiKey, topic, referenceImages, formats })
 
     await supabaseInsert('work_log', {
       id: makeId(),
       agent: 'buzz',
       brand: BRAND,
-      kind: '아침 유형별 시안 8개(자동)',
+      kind: '아침 유형별 시안(자동)',
       status: 'done',
       status_label: '완료',
       started_at: nowIso,
@@ -105,7 +120,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         id: makeId(),
         agent: 'buzz',
         brand: BRAND,
-        kind: '아침 유형별 시안 8개(자동)',
+        kind: '아침 유형별 시안(자동)',
         status: 'error',
         status_label: '오류',
         started_at: nowIso,
