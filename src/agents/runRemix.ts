@@ -44,7 +44,7 @@ export async function generateRemixPlan(params: {
       // 응답에서 JSON을 찾지 못했습니다" 에러가 실제로 났다(2026-07-15
       // 크론·수동 지시 양쪽에서 확인) — 블로그와 동일하게 8192로 상향.
       maxTokens: 8192,
-      maxSearches: 5,
+      maxSearches: 3,
       timeoutMs: 150_000,
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })

@@ -155,7 +155,7 @@ export async function generateBlogDraft(params: {
       system: buildDraftSystemPrompt(brandContext, marketFindings, false),
       user,
       maxTokens: 8192,
-      maxSearches: 5,
+      maxSearches: 3,
       timeoutMs: 170_000,
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })

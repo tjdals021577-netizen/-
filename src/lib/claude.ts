@@ -176,7 +176,7 @@ export async function callClaudeJsonWithWebSearch(params: {
     system,
     user,
     maxTokens = 4096,
-    maxSearches = 5,
+    maxSearches = 3,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
   } = params
