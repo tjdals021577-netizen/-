@@ -30,7 +30,10 @@ export async function analyzeYoutubeContent(params: {
     apiKey,
     system: buildYoutubeAnalysisSystemPrompt(brandContext),
     user: buildYoutubeAnalysisUserPrompt(stats),
-    maxTokens: 2048,
+    // 2048로는 영상 10개 분석 시 출력이 잘려서 JSON이 끝나기 전에 끊기고
+    // "모델 응답에서 JSON을 찾지 못했습니다" 에러가 났다(실사용에서 확인).
+    // 4096으로 늘리고, 프롬프트에서 findings·nextSteps 개수도 제한한다.
+    maxTokens: 4096,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   return parseAnalysis(raw)
