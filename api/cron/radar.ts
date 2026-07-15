@@ -13,7 +13,12 @@ function makeId(): string {
 }
 
 function yesterdayIsoDate(): string {
-  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  // 아임웹 주문 날짜는 한국시간(KST) 기준이라, UTC로 "어제"를 구하면 자정 근처에서
+  // 하루가 어긋나 매출이 안 잡힐 수 있다(레이더는 22:50 UTC=익일 07:50 KST에 돎).
+  // KST 기준으로 어제 날짜를 구한다.
+  return new Date(Date.now() + 9 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
 }
 
 // 브랜드별 GA4 속성 ID / 아임웹 API 키 환경변수 — 공용 자격증명(GA4 서비스 계정,

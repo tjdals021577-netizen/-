@@ -61,12 +61,33 @@ export async function fetchImwebOrderSummary(params: {
   if (list.length > 0) {
     const amounts = list.map((o) => {
       const rec = o as Record<string, unknown>
-      const val = firstDefined(rec.paymentAmount, rec.totalPrice, rec.finalPrice, rec.amount, rec.price)
+      // 아임웹 v2는 결제 금액을 주문 객체 안 payment(중첩) 객체에 snake_case로
+      // 넣어준다(payment.total_price 등). 예전엔 최상위 카멜케이스 필드만 찾아서
+      // 못 읽고 매출이 null로 떨어졌다 — 중첩 payment + snake_case 후보를 모두 시도한다.
+      const payment = (rec.payment ?? rec.pay ?? rec.payment_info ?? {}) as Record<string, unknown>
+      const val = firstDefined(
+        // 중첩 payment 우선(실제 구조)
+        payment.total_price,
+        payment.totalPrice,
+        payment.price,
+        payment.paymentAmount,
+        payment.payment_price,
+        payment.amount,
+        // 최상위 폴백(스키마가 평면일 때)
+        rec.total_price,
+        rec.order_price,
+        rec.paymentAmount,
+        rec.totalPrice,
+        rec.finalPrice,
+        rec.amount,
+        rec.price,
+      )
       return typeof val === 'number' ? val : Number(val)
     })
-    if (amounts.every((n) => Number.isFinite(n))) {
-      revenueKrw = amounts.reduce((sum, n) => sum + n, 0)
-    }
+    // 일부 주문만 금액이 파싱돼도 그걸 합산한다(예전엔 하나라도 NaN이면 전체 null이라
+    // 매출이 통째로 안 보였다). 하나도 못 읽으면 그때만 null(필드 재확인 필요).
+    const finite = amounts.filter((n) => Number.isFinite(n))
+    revenueKrw = finite.length > 0 ? finite.reduce((sum, n) => sum + n, 0) : null
   }
 
   return {
