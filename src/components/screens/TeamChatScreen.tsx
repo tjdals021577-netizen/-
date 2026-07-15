@@ -25,6 +25,10 @@ interface AgentMeta {
   initial: string
   limit: string
   dispatchable: boolean
+  // 'chat' = 내가 팀채팅에서 직접 시키는 대화형, 'auto' = 손 안 대도 알아서
+  // 도는 백그라운드(모닝·레이더). 코치는 팀원 목록에서 빼고 블로그 탭 성과
+  // 분석 버튼으로 흡수했다(대표님 정리안) — 그래서 여기 없다.
+  group: 'chat' | 'auto'
 }
 
 // 브레인·코치는 "레퍼런스 분석"·"내 콘텐츠 분석" 결과가 이 피드로 모여서
@@ -38,17 +42,32 @@ function isStrategyEntry(entry: WorkLogEntry): boolean {
 }
 
 const AGENTS: AgentMeta[] = [
-  { key: 'morning', name: '모닝', primaryTag: '데일리 브리핑', secondaryTag: '대시보드에서 실행', colorVar: '--agent-h', initial: '모', limit: '10분', dispatchable: false },
-  { key: 'brain', name: '브레인', primaryTag: '레퍼런스 분석', secondaryTag: '채널 탭 성과 분석에서 실행', colorVar: '--agent-a', initial: '브', limit: '10분', dispatchable: true },
-  { key: 'writer', name: '라이터', primaryTag: '블로그 SEO 위원회', secondaryTag: '3인 채점', colorVar: '--agent-c', initial: '라', limit: '20분', dispatchable: true },
-  { key: 'buzz', name: '버즈', primaryTag: '스레드 위원회', secondaryTag: '대행 포함', colorVar: '--ch-thread', initial: '버', limit: '15분', dispatchable: true },
-  { key: 'remix', name: '리믹서', primaryTag: '유튜브 대본 기획', secondaryTag: '벤치마킹 포함', colorVar: '--ch-yt', initial: '리', limit: '20분', dispatchable: true },
-  { key: 'coach', name: '코치', primaryTag: '내 콘텐츠 분석', secondaryTag: '블로그 탭 성과 분석에서 실행', colorVar: '--agent-f', initial: '코', limit: '15분', dispatchable: false },
-  { key: 'radar', name: '레이더', primaryTag: '통합 대시보드', secondaryTag: '매일 자동 수집', colorVar: '--agent-g', initial: '레', limit: '10분', dispatchable: false },
+  // 대화형 — 내가 팀채팅에서 직접 시키는 4명
+  { key: 'writer', name: '라이터', primaryTag: '블로그 글쓰기', secondaryTag: '3인 위원회 채점', colorVar: '--agent-c', initial: '라', limit: '20분', dispatchable: true, group: 'chat' },
+  { key: 'buzz', name: '버즈', primaryTag: '마잘남 스레드 글쓰기', secondaryTag: '전자책 반영', colorVar: '--ch-thread', initial: '버', limit: '15분', dispatchable: true, group: 'chat' },
+  { key: 'remix', name: '리믹서', primaryTag: '유튜브 대본 기획', secondaryTag: '성과 분석 겸직', colorVar: '--ch-yt', initial: '리', limit: '20분', dispatchable: true, group: 'chat' },
+  { key: 'brain', name: '브레인', primaryTag: '시장·트렌드 리서치', secondaryTag: '검색은 여기만', colorVar: '--agent-a', initial: '브', limit: '10분', dispatchable: true, group: 'chat' },
+  // 자동 — 손 안 대도 알아서 도는 2명(대화 불가)
+  { key: 'morning', name: '모닝', primaryTag: '아침 카톡 요약', secondaryTag: '매일 8시 자동', colorVar: '--agent-h', initial: '모', limit: '10분', dispatchable: false, group: 'auto' },
+  { key: 'radar', name: '레이더', primaryTag: '방문자·통계 수집', secondaryTag: '매일 새벽 자동', colorVar: '--agent-g', initial: '레', limit: '10분', dispatchable: false, group: 'auto' },
 ]
 
 const AGENT_BY_KEY = new Map(AGENTS.map((a) => [a.key, a]))
 const DISPATCHABLE_META = AGENTS.filter((a) => a.dispatchable)
+const CHAT_AGENTS = AGENTS.filter((a) => a.group === 'chat')
+const AUTO_AGENTS = AGENTS.filter((a) => a.group === 'auto')
+
+// 코치는 팀원 목록(사이드바)에서는 뺐지만, 블로그 성과 분석 결과는 여전히
+// work_log로 이 피드에 흘러들어온다 — 그 버블에 이름·색·이니셜을 붙이기
+// 위한 표시 전용 정보(사이드바에는 안 나옴).
+const DISPLAY_META: Record<string, { name: string; initial: string; colorVar: string }> = {
+  coach: { name: '코치', initial: '코', colorVar: '--agent-f' },
+}
+function displayMeta(agentKey: string): { name: string; initial: string; colorVar: string } {
+  const meta = AGENT_BY_KEY.get(agentKey)
+  if (meta) return { name: meta.name, initial: meta.initial, colorVar: meta.colorVar }
+  return DISPLAY_META[agentKey] ?? { name: agentKey, initial: '?', colorVar: '--accent' }
+}
 
 const STATUS_ICON: Record<WorkLogStatus, string> = {
   running: '⏳',
@@ -142,8 +161,8 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
       {items.map((item) => {
         if (item.kind === 'chat') {
           const { message } = item
-          const agentMeta = AGENT_BY_KEY.get(message.agent)
-          const agentName = agentMeta?.name ?? message.agent
+          const agentMeta = displayMeta(message.agent)
+          const agentName = agentMeta.name
           if (message.role === 'user') {
             return (
               <div key={`chat-${message.id}`} className="mb-3 flex justify-end">
@@ -159,9 +178,9 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                 <p className="mb-0.5 flex items-center gap-1 px-1 text-[10px] font-bold text-[var(--text-faint)]">
                   <span
                     className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] text-white"
-                    style={{ background: `var(${agentMeta?.colorVar ?? '--accent'})` }}
+                    style={{ background: `var(${agentMeta.colorVar})` }}
                   >
-                    {agentMeta?.initial ?? '?'}
+                    {agentMeta.initial}
                   </span>
                   {agentName}
                   {message.isQuestion && (
@@ -179,8 +198,8 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
         }
 
         const { entry } = item
-        const agentMeta = AGENT_BY_KEY.get(entry.agent)
-        const agentName = agentMeta?.name ?? entry.agent
+        const agentMeta = displayMeta(entry.agent)
+        const agentName = agentMeta.name
         return (
           <div key={`log-${entry.id}`} className="mb-3">
             <div className="flex justify-end">
@@ -193,9 +212,9 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                 <p className="mb-0.5 flex items-center gap-1 px-1 text-[10px] font-bold text-[var(--text-faint)]">
                   <span
                     className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] text-white"
-                    style={{ background: `var(${agentMeta?.colorVar ?? '--accent'})` }}
+                    style={{ background: `var(${agentMeta.colorVar})` }}
                   >
-                    {agentMeta?.initial ?? '?'}
+                    {agentMeta.initial}
                   </span>
                   {agentName}
                   {isStrategyEntry(entry) && entry.status !== 'running' && (
@@ -365,17 +384,14 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   return (
     <div>
-      <PreviewBanner message="라이터·버즈·리믹서는 여기서 바로 실행되거나 블로그·스레드·유튜브 탭에서 실행됩니다. 브레인(레퍼런스 분석)·코치(내 콘텐츠 분석) 결과는 채널 탭에서 실행되고 여기 '전략 카드'로 모여서 다음 기획을 바로 이어서 논의할 수 있습니다. 모닝은 대시보드에서 실행합니다." />
+      <PreviewBanner message="내가 시키는 팀원은 4명 — 라이터(블로그)·버즈(스레드)·리믹서(유튜브)·브레인(리서치). 아래에서 대상을 고르고 메시지를 보내세요. 모닝·레이더는 손 안 대도 매일 자동으로 돌고, 성과 분석은 각 채널 탭의 '내 콘텐츠 분석'에서 실행합니다." />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr_240px]">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
-          <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
-            AI 팀원 · {AGENTS.length}
-          </p>
           <button
             type="button"
             onClick={() => setFeedFilter('all')}
-            className={`mb-1 flex w-full items-center gap-2.5 rounded-lg border p-2 text-left ${
+            className={`mb-2 flex w-full items-center gap-2.5 rounded-lg border p-2 text-left ${
               feedFilter === 'all'
                 ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
                 : 'border-transparent hover:bg-[var(--surface-2)]'
@@ -392,7 +408,12 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               </span>
             </span>
           </button>
-          {AGENTS.map((a) => {
+
+          {/* 대화형 — 내가 직접 시키는 팀원 */}
+          <p className="mb-1 mt-1 px-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+            내가 시키는 팀원 · {CHAT_AGENTS.length}
+          </p>
+          {CHAT_AGENTS.map((a) => {
             const isBusy = agentIsBusy(a.key, brand)
             return (
               <button
@@ -415,12 +436,49 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
                   <span className="block truncate text-[13px] font-bold text-[var(--text)]">{a.name}</span>
                   <span className="flex items-center gap-1 text-[10.5px] text-[var(--text-faint)]">
                     <span className={`h-1.5 w-1.5 rounded-full ${isBusy ? 'bg-[var(--done)]' : 'bg-[var(--text-faint)]'}`} />
-                    {isBusy ? '업무중' : '휴식중'}
+                    {a.primaryTag}
                   </span>
                 </span>
               </button>
             )
           })}
+
+          {/* 자동 — 손 안 대도 도는 백그라운드(대화 불가) */}
+          <p className="mb-1 mt-3 px-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+            자동 · 손 안 대도 돎
+          </p>
+          {AUTO_AGENTS.map((a) => {
+            const isBusy = agentIsBusy(a.key, brand)
+            return (
+              <button
+                key={a.key}
+                type="button"
+                onClick={() => setFeedFilter(a.key)}
+                className={`flex w-full items-center gap-2.5 rounded-lg border p-2 text-left opacity-90 ${
+                  feedFilter === a.key
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
+                    : 'border-transparent hover:bg-[var(--surface-2)]'
+                }`}
+              >
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[12.5px] font-bold text-white"
+                  style={{ background: `var(${a.colorVar})` }}
+                >
+                  {a.initial}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-bold text-[var(--text)]">{a.name}</span>
+                  <span className="flex items-center gap-1 text-[10.5px] text-[var(--text-faint)]">
+                    <span className={`h-1.5 w-1.5 rounded-full ${isBusy ? 'bg-[var(--done)]' : 'bg-[var(--text-faint)]'}`} />
+                    {a.primaryTag}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+          <p className="mt-2 px-1 text-[10px] leading-relaxed text-[var(--text-faint)]">
+            블로그·유튜브 성과 분석은 각 채널 탭의 '내 콘텐츠 분석'에서 실행해요.
+          </p>
         </div>
 
         <div className="flex h-[75vh] max-h-[820px] min-h-[520px] flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
@@ -629,7 +687,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-[12px] font-semibold text-[var(--text)]">
-                        {AGENT_BY_KEY.get(entry.agent)?.name ?? entry.agent}
+                        {displayMeta(entry.agent).name}
                       </span>
                       <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9.5px] font-bold ${STATUS_CHIP[entry.status]}`}>
                         {entry.statusLabel}
