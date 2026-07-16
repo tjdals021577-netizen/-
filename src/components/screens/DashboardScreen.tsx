@@ -555,13 +555,13 @@ function MonthlyBars({ data, color }: { data: { month: string; revenue: number }
   }
   const max = Math.max(1, ...data.map((d) => d.revenue))
   return (
-    <div className="flex items-end gap-2" style={{ height: 104 }}>
+    <div className="flex w-full items-end justify-between gap-2" style={{ height: 104 }}>
       {data.map((d) => {
         const h = Math.max(3, Math.round((d.revenue / max) * 60))
         return (
           <div
             key={d.month}
-            className="flex flex-1 flex-col items-center gap-1"
+            className="flex flex-1 flex-col items-center justify-end gap-1"
             title={`${d.month}: ${d.revenue.toLocaleString('ko-KR')}원`}
           >
             <span className="text-[10px] font-bold text-[var(--text-dim)] tabular-nums">
@@ -586,12 +586,27 @@ interface DailyRow {
 
 // 브랜드별 "기간별 분석" — 방문자 추이 그래프 + 월별 매출 그래프 + 일자별 표.
 // 방문자·유입경로는 기존 GA4 스냅샷(읽기 전용), 주문·매출은 아임웹 일별 분해에서.
+// 최근 N개월의 YYYY-MM 키를 오름차순으로(과거→현재) 만든다. 데이터가 없어도
+// 6칸이 다 나오도록(대표님 요청: 매출 없어도 6개월 전부 표시).
+function recentMonthKeys(count: number): string[] {
+  const now = new Date()
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (count - 1 - i), 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+}
+
 function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: number }) {
-  const [rows, setRows] = useState<DailyRow[] | null>(null)
+  // 일자별 표는 모든 날짜를 담아두고, 선택한 달만 걸러서 보여준다(월 선택 바).
+  const [allRows, setAllRows] = useState<DailyRow[] | null>(null)
   const [visitorPoints, setVisitorPoints] = useState<
     { date: string; visitors: number; sessions: number }[]
   >([])
   const [monthly, setMonthly] = useState<{ month: string; revenue: number }[]>([])
+  const year = new Date().getFullYear()
+  const [selectedMonth, setSelectedMonth] = useState(
+    `${year}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -620,7 +635,7 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
 
       const allDates = new Set<string>([...visitorByDate.keys(), ...imwebByDate.keys()])
       const sorted = [...allDates].sort((a, b) => b.localeCompare(a)) // desc
-      const tableRows: DailyRow[] = sorted.slice(0, 10).map((date) => ({
+      const tableRows: DailyRow[] = sorted.map((date) => ({
         date,
         visitors: visitorByDate.get(date)?.visitors ?? null,
         source: visitorByDate.get(date)?.source ?? null,
@@ -630,19 +645,19 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
 
       // 방문자 그래프(오름차순, 최근 14일)
       const vAsc = [...visitorByDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-14)
-      // 월별 매출(오름차순, 최근 6개월)
+      // 월별 매출 — 최근 6개월을 항상 6칸으로(데이터 없는 달은 0원).
       const byMonth = new Map<string, number>()
       for (const d of imwebDaily) {
         const m = d.date.slice(0, 7)
         byMonth.set(m, (byMonth.get(m) ?? 0) + d.revenue)
       }
-      const monthlyArr = [...byMonth.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .slice(-6)
-        .map(([month, revenue]) => ({ month, revenue }))
+      const monthlyArr = recentMonthKeys(6).map((month) => ({
+        month,
+        revenue: byMonth.get(month) ?? 0,
+      }))
 
       if (!cancelled) {
-        setRows(tableRows)
+        setAllRows(tableRows)
         setVisitorPoints(
           vAsc.map(([date, v]) => ({ date, visitors: v.visitors, sessions: v.sessions })),
         )
@@ -654,6 +669,10 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
       cancelled = true
     }
   }, [brand, refreshKey])
+
+  // 선택한 달의 일자별 행만(최신순). 데이터 있는 달을 알아야 버튼을 흐리게 처리.
+  const monthsWithData = new Set((allRows ?? []).map((r) => r.date.slice(0, 7)))
+  const rows = allRows === null ? null : allRows.filter((r) => r.date.startsWith(selectedMonth))
 
   return (
     <section className="card p-4">
@@ -671,13 +690,46 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
           </div>
           <VisitorChart points={visitorPoints} />
         </div>
-        <div className="rounded-lg bg-[var(--surface-2)] p-3">
+        <div className="flex flex-col rounded-lg bg-[var(--surface-2)] p-3">
           <p className="mb-1.5 text-[11px] font-bold text-[var(--text-faint)]">월별 매출 (최근 6개월)</p>
-          <MonthlyBars data={monthly} color="var(--accent)" />
+          {/* 막대가 위로 솟지 않고 카드 안에서 세로 중앙에 오게 flex-1 + 중앙정렬 */}
+          <div className="flex flex-1 items-center">
+            <MonthlyBars data={monthly} color="var(--accent)" />
+          </div>
         </div>
       </div>
 
-      <div className="mt-3 overflow-x-auto">
+      {/* 월 선택 바 — 1월~12월, 누르면 그 달의 일자별 내역만 표에 표시 */}
+      <div className="mt-4 flex flex-wrap gap-1">
+        {Array.from({ length: 12 }, (_, i) => {
+          const mm = String(i + 1).padStart(2, '0')
+          const key = `${year}-${mm}`
+          const active = key === selectedMonth
+          const hasData = monthsWithData.has(key)
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSelectedMonth(key)}
+              className={`rounded-md px-2.5 py-1 text-[11.5px] font-bold transition ${
+                active
+                  ? 'bg-[var(--accent)] text-white'
+                  : hasData
+                    ? 'bg-[var(--surface-2)] text-[var(--text)] hover:bg-[var(--border)]'
+                    : 'bg-[var(--surface-2)] text-[var(--text-faint)] hover:bg-[var(--border)]'
+              }`}
+              title={hasData ? `${i + 1}월 내역 보기` : `${i + 1}월 (데이터 없음)`}
+            >
+              {i + 1}월
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="mt-2 overflow-x-auto">
+        <p className="mb-1 text-[11px] font-bold text-[var(--text-faint)]">
+          {year}년 {Number(selectedMonth.slice(5))}월 일자별 내역
+        </p>
         <table className="w-full text-[12px]">
           <thead>
             <tr className="text-[10.5px] uppercase tracking-wide text-[var(--text-faint)]">
@@ -692,7 +744,7 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
             {rows === null ? (
               <tr><td colSpan={5} className="py-3 text-center text-[var(--text-faint)]">불러오는 중…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={5} className="py-3 text-center text-[var(--text-faint)]">데이터 쌓이는 중…</td></tr>
+              <tr><td colSpan={5} className="py-3 text-center text-[var(--text-faint)]">이 달은 내역이 없습니다.</td></tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.date} className="border-t border-[var(--border)]">
