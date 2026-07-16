@@ -2,12 +2,14 @@ import { cachedSystem, type SystemBlock } from '../lib/claude.js'
 import { THREAD_RUBRIC } from './threadRubric.js'
 import { ANTI_HALLUCINATION_RULE, CONFIDENTIALITY_RULE } from './sharedRules.js'
 
-const ALGO_KNOWLEDGE = `[스레드 알고리즘 우대 신호]
+// 스레드 위원회(버즈)와 대행 관리가 함께 쓰는 스레드 글쓰기 지식(대표님 전자책
+// 기반). 대행에서도 재사용하려고 export한다 — 중복 정의 대신 단일 소스.
+export const ALGO_KNOWLEDGE = `[스레드 알고리즘 우대 신호]
 댓글(저장 포함) > 공유 > 조회수 > 좋아요 순으로 가중치가 높다고 알려져 있다.
 "좋아요만 많이 받을 초안"보다 "댓글을 유도하는 초안"을 더 좋은 초안으로 판단한다.`
 
-const THREAD_KNOWLEDGE = `[스레드 마케팅 핵심 노하우 — 대표님(임성민·마잘남) 저서 "스레드 광고비 0원으로 100만원 벌기" +
-"스레드 마케팅 완전정복" 기반. 스레드 위원회·대행 관리 공통으로 적용되는 핵심 구조와 원칙이다]
+export const THREAD_KNOWLEDGE = `[스레드 마케팅 핵심 노하우 — 대표님(임성민·마잘남) 저서 "광고비 0원으로 고객이 먼저 연락오는 스레드 마케팅" 기반.
+스레드 위원회·대행 관리 공통으로 적용되는 핵심 구조와 원칙이다]
 - 핵심 전제: 팔로워 수가 아니라 "수익 구조"가 진짜다. 팔로워 10만에 월 0원인 계정도, 팔로워 1,000에
   월 1,000만원인 계정도 있다. 흔한 글(누구나 쓸 수 있는 정보 나열)은 한 번 읽히고 잊히지만,
   "당신의 실패·깨달음·성장 스토리"가 들어간 글은 기억되고 댓글이 달리고 결국 구매로 이어진다.
