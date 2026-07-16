@@ -14,6 +14,7 @@ import {
 } from '../../lib/calendarStore'
 import type { CalendarChannel, CalendarEntry, ChecklistStageKey } from '../../types/calendar'
 import { CHECKLIST_STAGE_LABEL } from '../../types/calendar'
+import { getApprovalQueue, syncApprovalsFromSupabase } from '../../lib/approvalStore'
 import {
   getScheduledSlots,
   kstNow,
@@ -673,12 +674,26 @@ export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; chann
   const [query, setQuery] = useState('')
 
   useEffect(() => {
-    void syncEntriesFromSupabase().then(() => setVersion((v) => v + 1))
+    // 캘린더(완성글)와 결재 상태를 함께 당겨온다 — 완성된 글 모아보기는
+    // 이제 "승인된 것만" 보여주므로 결재함 상태가 최신이어야 정확히 걸러진다.
+    void Promise.all([syncEntriesFromSupabase(), syncApprovalsFromSupabase()]).then(() =>
+      setVersion((v) => v + 1),
+    )
   }, [brand])
 
   const calendarChannel = channel as CalendarChannel
+  // 승인 관문(B안): 완성된 글 모아보기에는 결재함에서 "승인된" 글만 노출한다.
+  // 캘린더 항목과 결재 항목은 sourceWorkLogId로 연결된다. 내가 "직접 일정
+  // 추가"로 만든 항목은 애초에 결재를 안 거치므로(sourceWorkLogId 없음) 항상
+  // 보여준다 — 자동/에이전트 생성분만 승인을 통과해야 노출된다.
+  const approvedSourceIds = new Set(
+    getApprovalQueue('approved', brand)
+      .map((i) => i.sourceWorkLogId)
+      .filter((id): id is string => Boolean(id)),
+  )
   const entries = getEntries(brand)
     .filter((e) => e.channel === calendarChannel && (e.contentHtml || e.note))
+    .filter((e) => !e.sourceWorkLogId || approvedSourceIds.has(e.sourceWorkLogId))
     .sort((a, b) => b.date.localeCompare(a.date))
   const filtered = entries.filter((e) => {
     if (query.trim().length === 0) return true
