@@ -240,12 +240,19 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const results = await Promise.all(
     slots.map(async (slot) => {
       try {
-        const existing = await supabaseSelect<{ id: string }>(
-          'calendar_entries',
-          `date=eq.${date}&brand=eq.${encodeURIComponent(slot.brand)}&channel=eq.${slot.channel}&select=id&limit=1`,
+        // 하루에 슬롯당 딱 1번만 생성한다. 예전엔 calendar_entries(=성공분)만
+        // 확인해서, 실패한 시도는 흔적이 없어 크론을 여러 번 돌리면(수동 Run 등)
+        // 유튜브가 8개씩 쌓이는 문제가 있었다 — 이제 성공/실패 무관하게 오늘
+        // 이미 "주간 스케줄 자동 기획" work_log가 있으면 건너뛴다(멱등).
+        const agent = slot.channel === 'blog' ? 'writer' : 'remix'
+        const attempted = await supabaseSelect<{ id: string }>(
+          'work_log',
+          `agent=eq.${agent}&brand=eq.${encodeURIComponent(slot.brand)}` +
+            `&kind=eq.${encodeURIComponent('주간 스케줄 자동 기획')}` +
+            `&started_at=gte.${date}T00:00:00%2B09:00&select=id&limit=1`,
         )
-        if (existing.length > 0) {
-          return `${slot.brand} ${slot.channel}: 이미 오늘 항목 있음 — 건너뜀`
+        if (attempted.length > 0) {
+          return `${slot.brand} ${slot.channel}: 오늘 이미 시도함 — 건너뜀`
         }
         if (slot.channel === 'blog') {
           return await generateBlogForBrand(apiKey, slot.brand, date)
