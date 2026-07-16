@@ -37,7 +37,12 @@ function formatBrainFindings(report: BrainReportRow | undefined): string | undef
   const findingsText = (report.findings ?? [])
     .map((f) => `- [${f.source}] ${f.insight}`)
     .join('\n')
-  return `주제: ${report.topic}\n요약: ${report.summary}\n${findingsText}`
+  // 추천 액션도 포함한다 — 브레인이 잡아낸 "블로그 로직 변화 → 이렇게 바꿔라"가
+  // recommendations에 담기므로, 이게 빠지면 자동 글이 로직 변화를 반영하지 못한다.
+  const recoText = (report.recommendations ?? []).join(' / ')
+  return `주제: ${report.topic}\n요약: ${report.summary}\n${findingsText}${
+    recoText ? `\n추천 액션: ${recoText}` : ''
+  }`
 }
 
 interface CalendarTitleRow {
