@@ -22,6 +22,11 @@ const SUPABASE_URL = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_URL)
 const SUPABASE_ANON_KEY = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
 const STORAGE_KEY = 'ai-ops:content-calendar'
+// 완성글은 하루 3~5건씩 자동으로 쌓여서(블로그·유튜브·대행) 상한이 없으면
+// 몇 달 뒤 localStorage 용량 한계에 닿아 파싱이 느려지거나 저장이 실패한다.
+// 원격 동기화도 최신 500건만 가져오므로(syncEntriesFromSupabase), 로컬도
+// 최신 500건만 유지한다 — 과거 이력은 Supabase에 그대로 남는다.
+const MAX_ENTRIES = 500
 
 function readAll(): CalendarEntry[] {
   try {
@@ -34,9 +39,17 @@ function readAll(): CalendarEntry[] {
   }
 }
 
+// 입력 순서에 의존하지 않고, 날짜(→생성시각) 최신순으로 잘라 최신 것만 남긴다.
+function capEntries(entries: CalendarEntry[]): CalendarEntry[] {
+  if (entries.length <= MAX_ENTRIES) return entries
+  return [...entries]
+    .sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt))
+    .slice(0, MAX_ENTRIES)
+}
+
 function writeAll(entries: CalendarEntry[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(capEntries(entries)))
   } catch {
     // localStorage 사용 불가 시 조용히 무시 — 캘린더는 best-effort 로컬 저장
   }
