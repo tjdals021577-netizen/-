@@ -8,6 +8,7 @@ import {
   type RadarSnapshot,
 } from '../../lib/radarStore'
 import { getEntries, syncEntriesFromSupabase } from '../../lib/calendarStore'
+import { fetchStorageUsage, type StorageUsage } from '../../lib/storageUsage'
 import type { CalendarChannel } from '../../types/calendar'
 import { MorningPanel } from '../MorningPanel'
 import { BRANDS, type Brand } from '../../types/brand'
@@ -710,6 +711,48 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
   )
 }
 
+// 저장 용량 카드 — 이미지가 Supabase 무료 500MB를 얼마나 차지하는지 예상치로
+// 보여준다. 5개월 지난 블로그 사진은 매주 자동 정리되므로, 이 값이 계속
+// 차오르지 않고 일정 수준에서 유지되는지 지켜보는 용도.
+function StorageCard() {
+  const [usage, setUsage] = useState<StorageUsage | null>(null)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchStorageUsage().then((u) => {
+      if (!cancelled) {
+        setUsage(u)
+        setLoaded(true)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!loaded || !usage) return null
+  const warn = usage.percent >= 70
+  const barColor = warn ? 'var(--down)' : 'var(--accent)'
+  return (
+    <section className="card p-4">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <p className="text-[13px] font-bold text-[var(--text)]">💾 저장 용량 <span className="text-[10.5px] font-normal text-[var(--text-faint)]">이미지 예상치</span></p>
+        <p className="text-[12px] font-extrabold tabular-nums" style={{ color: barColor }}>
+          약 {usage.estimatedMb}MB <span className="text-[10.5px] font-normal text-[var(--text-faint)]">/ {usage.limitMb}MB ({usage.percent}%)</span>
+        </p>
+      </div>
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
+        <div className="h-full rounded-full" style={{ width: `${Math.max(2, usage.percent)}%`, background: barColor }} />
+      </div>
+      <p className="mt-2 text-[10.5px] text-[var(--text-faint)]">
+        블로그 사진 {usage.contentPhotos}장 · 레퍼런스 이미지 {usage.referenceImages}장 · 5개월 지난 블로그 사진은 매주 자동 정리됩니다.
+        {warn && <span className="font-bold text-[var(--down)]"> · 용량이 차오르고 있어요 — 오래된 이미지 정리를 검토하세요.</span>}
+      </p>
+    </section>
+  )
+}
+
 export function DashboardScreen() {
   const todaySpendTotal = getTodaySpendUsd()
   const [refreshKey, setRefreshKey] = useState(0)
@@ -769,6 +812,8 @@ export function DashboardScreen() {
           ))}
         </div>
       </div>
+
+      <StorageCard />
 
       <p className="text-right text-[10.5px] text-[var(--text-faint)]">
         오늘 API 사용액(전체) ${todaySpendTotal.toFixed(3)} / ${DAILY_BUDGET_USD}

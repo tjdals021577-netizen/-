@@ -5,6 +5,7 @@
     { "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" },
     { "path": "/api/cron/radar", "schedule": "50 22 * * *" },
     { "path": "/api/cron/morning", "schedule": "0 23 * * *" },
-    { "path": "/api/cron/brain", "schedule": "0 0 * * 1" }
+    { "path": "/api/cron/brain", "schedule": "0 0 * * 1" },
+    { "path": "/api/cron/cleanup", "schedule": "0 18 * * 0" }
   ]
 }
