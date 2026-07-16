@@ -189,7 +189,7 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                     </span>
                   )}
                 </p>
-                <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-[var(--surface-2)] px-3.5 py-2 text-[13px] text-[var(--text)]">
+                <div className="whitespace-pre-wrap break-words rounded-2xl rounded-tl-sm bg-[var(--surface-2)] px-3.5 py-2 text-[13px] text-[var(--text)]">
                   {message.content}
                 </div>
               </div>
@@ -203,7 +203,7 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
         return (
           <div key={`log-${entry.id}`} className="mb-3">
             <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-[var(--accent)] px-3.5 py-2 text-[13px] text-white">
+              <div className="max-w-[80%] break-words rounded-2xl rounded-tr-sm bg-[var(--accent)] px-3.5 py-2 text-[13px] text-white">
                 {entry.note}
               </div>
             </div>
@@ -224,7 +224,7 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                   )}
                 </p>
                 <div
-                  className={`whitespace-pre-wrap px-3.5 py-2 text-[13px] text-[var(--text)] ${
+                  className={`whitespace-pre-wrap break-words px-3.5 py-2 text-[13px] text-[var(--text)] ${
                     isStrategyEntry(entry) && entry.status !== 'running'
                       ? 'rounded-2xl border-[1.5px] border-[var(--accent)] bg-[var(--accent-soft)]'
                       : 'rounded-2xl rounded-tl-sm bg-[var(--surface-2)]'
@@ -487,7 +487,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
           </p>
         </div>
 
-        <div className="flex h-[75vh] max-h-[820px] min-h-[520px] flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="flex h-[75vh] max-h-[820px] min-h-[520px] min-w-0 flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
           <div className="flex items-center gap-2.5 border-b border-[var(--border)] p-3.5">
             {viewingAgent ? (
               <>
