@@ -172,6 +172,7 @@ export async function dispatchJob(params: {
         referenceText: '',
         brandContext: BRAND_CONTEXT[brand],
         marketFindings,
+        pastFeedback: formatRecentFeedbackForPrompt(brand, 'youtube'),
       })
       const videoTitle = plan.title || topic
       const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''

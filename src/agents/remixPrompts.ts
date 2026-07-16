@@ -48,6 +48,7 @@ const YOUTUBE_KNOWLEDGE = `[유튜브 대본 기획 지식 베이스 — 대표�
 export function buildRemixSystemPrompt(
   brandContext?: string,
   marketFindings?: string,
+  pastFeedback?: string,
 ): SystemBlock[] {
   // 캐시되는 고정부(유튜브 기획 지식 베이스) — 호출마다 동일.
   const staticText = `당신은 유튜브 대본 기획자입니다.
@@ -74,12 +75,17 @@ JSON 스키마:
   "benchmarkNotes": [ string ]
 }`
 
-  // 캐시 안 되는 변동부 — 브랜드·시장 리서치.
+  // 캐시 안 되는 변동부 — 브랜드·시장 리서치·지난 성과 피드백.
   const brandBlock = brandContext ? `[브랜드]\n${brandContext}` : ''
   const marketBlock = marketFindings
     ? `[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}`
     : ''
-  const dynamicText = [brandBlock, marketBlock].filter(Boolean).join('\n\n')
+  // 새 영상이 올라오면 레이더가 성과를 분석해 저장해둔 피드백 — 다음 기획을
+  // 실제 성과에 맞춰 디벨롭한다(잘 된 요소 강화, 약했던 부분 보완).
+  const feedbackBlock = pastFeedback
+    ? `[지난 유튜브 성과 피드백 — 반드시 반영해 다음 기획을 개선]\n${pastFeedback}`
+    : ''
+  const dynamicText = [brandBlock, marketBlock, feedbackBlock].filter(Boolean).join('\n\n')
 
   return cachedSystem(staticText, dynamicText)
 }

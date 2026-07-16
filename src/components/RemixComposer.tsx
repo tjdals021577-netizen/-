@@ -11,6 +11,7 @@ import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
 import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
+import { formatRecentFeedbackForPrompt } from '../lib/contentFeedbackStore'
 
 function buildDetailHtml(plan: RemixPlan): string {
   const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
@@ -65,6 +66,7 @@ export function RemixComposer({ brand }: { brand: Brand }) {
         referenceText,
         brandContext: BRAND_CONTEXT[brand],
         marketFindings: formatBrainFindingsForPrompt(brainReport),
+        pastFeedback: formatRecentFeedbackForPrompt(brand, 'youtube'),
       })
       setPlan(newPlan)
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)

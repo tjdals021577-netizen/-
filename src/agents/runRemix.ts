@@ -26,15 +26,16 @@ export async function generateRemixPlan(params: {
   referenceText: string
   brandContext?: string
   marketFindings?: string
+  pastFeedback?: string
 }): Promise<RemixPlan> {
-  const { apiKey, topic, referenceText, brandContext, marketFindings } = params
+  const { apiKey, topic, referenceText, brandContext, marketFindings, pastFeedback } = params
   // 리믹서도 이제 직접 웹 검색을 하지 않는다(대표님 결정: 검색은 브레인
   // 한 명만, 나머지는 그 결과를 공유). 브레인이 조사한 유튜브 트렌드·벤치마킹
   // 자료는 marketFindings로 프롬프트에 들어가고, 유튜브 방법론은 이미
   // 프롬프트 지식 베이스에 있다 — 매번 새로 크롤링하며 토큰을 반복 과금하던
   // 걸 없애는 게 검색 비용 절감의 핵심.
   const user = buildRemixUserPrompt({ topic, referenceText })
-  const system = buildRemixSystemPrompt(brandContext, marketFindings)
+  const system = buildRemixSystemPrompt(brandContext, marketFindings, pastFeedback)
   const raw = await callClaudeJson({
     apiKey,
     system,

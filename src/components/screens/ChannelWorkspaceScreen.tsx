@@ -15,6 +15,7 @@ import {
 import type { CalendarChannel, CalendarEntry, ChecklistStageKey } from '../../types/calendar'
 import { CHECKLIST_STAGE_LABEL } from '../../types/calendar'
 import { getApprovalQueue, syncApprovalsFromSupabase } from '../../lib/approvalStore'
+import { syncContentFeedbackFromSupabase } from '../../lib/contentFeedbackStore'
 import {
   getScheduledSlots,
   kstNow,
@@ -676,9 +677,13 @@ export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; chann
   useEffect(() => {
     // 캘린더(완성글)와 결재 상태를 함께 당겨온다 — 완성된 글 모아보기는
     // 이제 "승인된 것만" 보여주므로 결재함 상태가 최신이어야 정확히 걸러진다.
-    void Promise.all([syncEntriesFromSupabase(), syncApprovalsFromSupabase()]).then(() =>
-      setVersion((v) => v + 1),
-    )
+    void Promise.all([
+      syncEntriesFromSupabase(),
+      syncApprovalsFromSupabase(),
+      // 성과 피드백도 당겨온다 — 코치 분석(다른 기기)·레이더 자동 분석(크론)이
+      // 저장한 피드백이 이 브라우저의 다음 글 기획 프롬프트에도 반영되도록.
+      syncContentFeedbackFromSupabase(),
+    ]).then(() => setVersion((v) => v + 1))
   }, [brand])
 
   const calendarChannel = channel as CalendarChannel

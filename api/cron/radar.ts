@@ -223,6 +223,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               status: 'pending',
               source_work_log_id: analysisLogId,
             })
+            // 이 분석을 저장해두면 다음 유튜브 기획(월·수·금 자동 + 직접 요청)
+            // 프롬프트에 "지난 유튜브 성과 피드백"으로 자동 주입된다(A안 — 성과
+            // 기반 디벨롭 루프). 새 영상이 있을 때만 여기 오므로 매일 중복되지 않는다.
+            await supabaseInsert('content_feedback', {
+              id: makeId(),
+              brand,
+              channel: 'youtube',
+              context: '유튜브 자동 성과 분석',
+              summary: analysis.summary,
+              next_steps: analysis.nextSteps,
+              created_at: nowIso,
+            })
             results.push(`${brand} 유튜브 분석: 완료`)
           } catch (err) {
             results.push(`${brand} 유튜브 분석: 실패 (${err instanceof Error ? err.message : String(err)})`)
