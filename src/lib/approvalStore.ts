@@ -5,6 +5,15 @@ import { syncToSupabase } from './remoteSync.js'
 const STORAGE_KEY = 'ai-ops:approval-queue'
 const MAX_ITEMS = 200
 
+function sanitizeEnvValue(raw: string | undefined): string | undefined {
+  if (!raw) return raw
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.trim().replace(/[^\x20-\x7E]/g, '')
+  return cleaned || undefined
+}
+const SUPABASE_URL = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_URL)
+const SUPABASE_ANON_KEY = sanitizeEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
+
 function readAll(): ApprovalItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -63,6 +72,46 @@ export function getApprovalQueue(status?: ApprovalStatus, brand?: Brand): Approv
   if (status) items = items.filter((i) => i.status === status)
   if (brand) items = items.filter((i) => i.brand === brand)
   return items
+}
+
+function fromSupabaseRow(row: Record<string, unknown>): ApprovalItem {
+  return {
+    id: String(row.id ?? ''),
+    agent: (row.agent as ApprovalAgent) ?? 'writer',
+    brand: (row.brand as Brand) ?? '마잘남',
+    title: String(row.title ?? ''),
+    contentHtml: typeof row.content_html === 'string' ? row.content_html : '',
+    passed: Boolean(row.passed),
+    scoreLabel: String(row.score_label ?? ''),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    status: (row.status as ApprovalStatus) ?? 'pending',
+    sourceWorkLogId: typeof row.source_work_log_id === 'string' ? row.source_work_log_id : undefined,
+    reviewedAt: typeof row.reviewed_at === 'string' ? row.reviewed_at : undefined,
+    reviewNote: typeof row.review_note === 'string' ? row.review_note : undefined,
+  }
+}
+
+// 서버 크론(agency·thread-daily·content-schedule)이 만든 결재 항목은 Supabase에만
+// 있고 브라우저 localStorage엔 없어서 결재함에 안 보였다 — 화면 진입 시 원격 것을
+// 병합해온다(캘린더의 syncEntriesFromSupabase와 동일 방식). 로컬에서 이미 승인/반려한
+// 항목은 로컬 상태를 유지하려고, 원격에 없는 로컬 항목은 남기고 원격은 덮어쓴다.
+export async function syncApprovalsFromSupabase(): Promise<void> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/approval_queue?select=*&order=created_at.desc&limit=${MAX_ITEMS}`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
+    )
+    if (!res.ok) return
+    const rows = (await res.json()) as Record<string, unknown>[]
+    if (rows.length === 0) return
+    const remote = rows.map(fromSupabaseRow)
+    const remoteIds = new Set(remote.map((i) => i.id))
+    const localOnly = readAll().filter((i) => !remoteIds.has(i.id))
+    writeAll([...remote, ...localOnly].slice(0, MAX_ITEMS))
+  } catch {
+    // 네트워크 실패는 조용히 무시 — 로컬 데이터로 계속 동작
+  }
 }
 
 export function reviewItem(

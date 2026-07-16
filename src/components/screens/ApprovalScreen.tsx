@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { getApprovalQueue, reviewItem } from '../../lib/approvalStore'
+import { getApprovalQueue, reviewItem, syncApprovalsFromSupabase } from '../../lib/approvalStore'
 import type { ApprovalAgent, ApprovalItem, ApprovalStatus } from '../../types/approval'
 import type { Brand } from '../../types/brand'
 
@@ -175,6 +175,12 @@ function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => v
 export function ApprovalScreen({ brand }: { brand: Brand }) {
   const [tab, setTab] = useState<ApprovalStatus>('pending')
   const [version, setVersion] = useState(0)
+
+  // 서버 크론이 만든 결재분(자동 스레드·유튜브·대행 시안)은 Supabase에만 있어서
+  // 화면 진입 시 한 번 당겨온다 — 안 그러면 결재함이 비어 보인다(대표님 확인 문제).
+  useEffect(() => {
+    void syncApprovalsFromSupabase().then(() => setVersion((v) => v + 1))
+  }, [])
 
   const items = getApprovalQueue(tab, brand)
   const pendingCount = getApprovalQueue('pending', brand).length

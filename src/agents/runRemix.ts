@@ -38,7 +38,9 @@ export async function generateRemixPlan(params: {
     apiKey,
     system,
     user,
-    maxTokens: 4096,
+    // 6단계 아웃라인이 길어서 4096으로는 출력이 잘리고 JSON이 끝나기 전에 끊겨
+    // "모델 응답에서 JSON을 찾지 못했습니다"가 반복됐다(실사용 확인) → 8192로 늘림.
+    maxTokens: 8192,
     timeoutMs: 120_000,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
