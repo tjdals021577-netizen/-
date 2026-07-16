@@ -12,6 +12,7 @@ import { PASS_THRESHOLD } from '../types/domain.js'
 import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from '../types/brand.js'
 import type { BlogRole } from '../types/blog.js'
 import { getLatestBrainReport, formatBrainFindingsForPrompt, saveBrainReport } from '../lib/brainStore.js'
+import { formatRecentFeedbackForPrompt } from '../lib/contentFeedbackStore.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -41,6 +42,7 @@ export async function dispatchJob(params: {
 
   try {
     if (agent === 'writer') {
+      const pastFeedback = formatRecentFeedbackForPrompt(brand, 'blog')
       let draft = await generateBlogDraft({
         apiKey,
         topic,
@@ -48,6 +50,7 @@ export async function dispatchJob(params: {
         photoDescriptions: '',
         brandContext: BRAND_CONTEXT[brand],
         marketFindings,
+        pastFeedback,
       })
       let reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
       const scoreOf = (rs: BlogReview[]) =>

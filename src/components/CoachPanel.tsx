@@ -7,6 +7,7 @@ import {
   isOverDailyBudget,
 } from '../lib/budgetGuard'
 import { startWorkLog, finishWorkLog } from '../lib/workLog'
+import { saveContentFeedback } from '../lib/contentFeedbackStore'
 import { BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../types/brand'
 import { fileToBase64, mediaTypeOf } from '../lib/imageFile'
 
@@ -64,6 +65,16 @@ export function CoachPanel({ brand }: { brand: Brand }) {
         imageMediaType: mediaType,
       })
       setAnalysis(result)
+      // 이 분석 결과를 저장해두면 다음 블로그 글 기획(화·목·토·일 자동 + 직접
+      // 요청) 때 "지난 성과 피드백"으로 프롬프트에 자동 주입된다 — 성과를 보고
+      // 다음 글을 디벨롭하는 루프.
+      saveContentFeedback({
+        brand,
+        channel: 'blog',
+        context,
+        summary: result.summary,
+        nextSteps: result.nextSteps,
+      })
       finishWorkLog(logId, {
         status: 'done',
         statusLabel: '완료',
@@ -176,6 +187,9 @@ export function CoachPanel({ brand }: { brand: Brand }) {
               </ul>
             </div>
           )}
+          <p className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-[11px] font-medium text-[var(--accent-strong)]">
+            ✅ 이 분석은 저장돼서 다음 블로그 글(화·목·토·일 자동 + 직접 요청) 기획에 자동으로 반영됩니다.
+          </p>
         </div>
       )}
     </div>

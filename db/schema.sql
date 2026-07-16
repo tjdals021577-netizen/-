@@ -223,6 +223,20 @@ create table if not exists thread_follower_daily (
 );
 create index if not exists thread_follower_daily_brand_idx on thread_follower_daily (brand, date desc);
 
+-- 코치가 분석한 "지난 콘텐츠 성과 피드백" — 다음 글 기획 때 프롬프트에 자동
+-- 주입해 성과 기반으로 글을 디벨롭한다(블로그: 네이버 통계 캡처 분석 결과).
+-- 채널을 구분해 저장하므로 유튜브 등으로도 재사용 가능.
+create table if not exists content_feedback (
+  id text primary key,
+  brand text not null,
+  channel text not null,
+  context text,
+  summary text not null,
+  next_steps jsonb not null default '[]',
+  created_at timestamptz not null default now()
+);
+create index if not exists content_feedback_brand_channel_idx on content_feedback (brand, channel, created_at desc);
+
 -- 대표님 혼자 쓰는 BYOK 도구라 사용자별 RLS는 필요 없다. 크론 함수는
 -- secret(service role) 키로 RLS를 우회해서 자유롭게 읽고 쓴다.
 --
@@ -256,6 +270,7 @@ alter table agent_memory enable row level security;
 alter table youtube_video_stats enable row level security;
 alter table thread_post_stats enable row level security;
 alter table thread_follower_daily enable row level security;
+alter table content_feedback enable row level security;
 
 create policy "select work_log" on work_log for select to public using (true);
 create policy "insert work_log" on work_log for insert to public with check (true);
@@ -313,3 +328,7 @@ create policy "update thread_post_stats" on thread_post_stats for update to publ
 create policy "select thread_follower_daily" on thread_follower_daily for select to public using (true);
 create policy "insert thread_follower_daily" on thread_follower_daily for insert to public with check (true);
 create policy "update thread_follower_daily" on thread_follower_daily for update to public using (true) with check (true);
+
+create policy "select content_feedback" on content_feedback for select to public using (true);
+create policy "insert content_feedback" on content_feedback for insert to public with check (true);
+create policy "update content_feedback" on content_feedback for update to public using (true) with check (true);

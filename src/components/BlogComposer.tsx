@@ -13,6 +13,7 @@ import { submitForApproval } from '../lib/approvalStore'
 import { createEntry } from '../lib/calendarStore'
 import { BRAND_CONTEXT, type Brand } from '../types/brand'
 import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
+import { formatRecentFeedbackForPrompt } from '../lib/contentFeedbackStore'
 import { fileToBase64, mediaTypeOf } from '../lib/imageFile'
 
 const ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
@@ -141,6 +142,7 @@ export function BlogComposer({ brand }: { brand: Brand }) {
         previousDraft,
         feedback,
         marketFindings: formatBrainFindingsForPrompt(brainReport),
+        pastFeedback: formatRecentFeedbackForPrompt(brand, 'blog'),
         photoImages,
       })
       setDraft(newDraft)

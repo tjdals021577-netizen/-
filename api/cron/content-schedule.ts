@@ -100,9 +100,41 @@ async function fetchTodayPhotos(date: string, brand: Brand): Promise<VisionImage
   return rows.map((r) => ({ imageBase64: r.image_base64, imageMediaType: r.media_type }))
 }
 
+interface ContentFeedbackRow {
+  context: string
+  summary: string
+  next_steps: string[]
+  created_at: string
+}
+
+// 코치가 분석해둔 지난 블로그 성과 피드백(최근 2건)을 프롬프트 텍스트로 만든다 —
+// 다음 글을 실제 성과에 맞춰 디벨롭하게 한다. 없으면 undefined(그냥 없이 진행).
+// content_feedback 테이블이 아직 없어도(404) 자동 기획 전체를 막지 않는다.
+async function fetchRecentBlogFeedback(brand: Brand): Promise<string | undefined> {
+  try {
+    const rows = await supabaseSelect<ContentFeedbackRow>(
+      'content_feedback',
+      `brand=eq.${encodeURIComponent(brand)}&channel=eq.blog&order=created_at.desc&limit=2` +
+        `&select=context,summary,next_steps,created_at`,
+    )
+    if (rows.length === 0) return undefined
+    return rows
+      .map((r) => {
+        const steps = (r.next_steps ?? []).length > 0 ? `\n다음 액션: ${r.next_steps.join(' / ')}` : ''
+        return `- (${(r.created_at ?? '').slice(0, 10)}${r.context ? ` · ${r.context}` : ''}) ${r.summary}${steps}`
+      })
+      .join('\n')
+  } catch {
+    return undefined
+  }
+}
+
 async function generateBlogForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
   const { topic, brainFindings } = await pickTopic(brand, 'blog')
-  const photoImages = await fetchTodayPhotos(date, brand)
+  const [photoImages, pastFeedback] = await Promise.all([
+    fetchTodayPhotos(date, brand),
+    fetchRecentBlogFeedback(brand),
+  ])
   const draft = await generateBlogDraft({
     apiKey,
     topic,
@@ -110,6 +142,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     photoDescriptions: photoImages.length > 0 ? '' : '(사진 없음 — 지식 베이스와 브레인 리서치 기반으로 상위노출 구조를 참고)',
     brandContext: BRAND_CONTEXT[brand],
     marketFindings: brainFindings,
+    pastFeedback,
     photoImages: photoImages.length > 0 ? photoImages : undefined,
   })
 

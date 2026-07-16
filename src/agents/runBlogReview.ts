@@ -105,6 +105,7 @@ export async function generateBlogDraft(params: {
   previousDraft?: BlogDraft
   feedback?: string
   marketFindings?: string
+  pastFeedback?: string
   photoImages?: VisionImageInput[]
 }): Promise<BlogDraft> {
   const {
@@ -116,6 +117,7 @@ export async function generateBlogDraft(params: {
     previousDraft,
     feedback,
     marketFindings,
+    pastFeedback,
     photoImages,
   } = params
   const user = buildDraftUserPrompt({
@@ -131,7 +133,7 @@ export async function generateBlogDraft(params: {
   if (photoImages && photoImages.length > 0) {
     const raw = await callClaudeVisionJson({
       apiKey,
-      system: buildDraftSystemPrompt(brandContext, marketFindings, true),
+      system: buildDraftSystemPrompt(brandContext, marketFindings, true, pastFeedback),
       user,
       images: photoImages,
       maxTokens: 4096,
@@ -146,7 +148,7 @@ export async function generateBlogDraft(params: {
   // 비용 절감의 핵심이다. 검색이 빠지니 타임아웃/토큰도 여유 있게 줄인다.
   const raw = await callClaudeJson({
     apiKey,
-    system: buildDraftSystemPrompt(brandContext, marketFindings, false),
+    system: buildDraftSystemPrompt(brandContext, marketFindings, false, pastFeedback),
     user,
     maxTokens: 4096,
     timeoutMs: 120_000,

@@ -15,16 +15,22 @@ export function buildDraftSystemPrompt(
   brandContext?: string,
   marketFindings?: string,
   hasPhotos?: boolean,
+  pastFeedback?: string,
 ): string {
   const brandBlock = brandContext ? `\n[브랜드]\n${brandContext}\n` : ''
   const marketBlock = marketFindings
     ? `\n[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}\n`
     : ''
+  // 지난 글의 실제 성과(코치가 네이버 통계 캡처를 분석한 결과)를 반영해
+  // 다음 글을 디벨롭한다 — 잘 된 요소는 강화, 약했던 부분은 보완.
+  const feedbackBlock = pastFeedback
+    ? `\n[지난 콘텐츠 성과 피드백 — 반드시 반영해 다음 글을 개선]\n${pastFeedback}\n`
+    : ''
   const photoRule = hasPhotos
     ? '3. photoPlacements: 첨부된 실제 사진을 직접 보고, 각 사진을 본문 어느 지점에 배치하면 좋을지 사진 내용에 근거해서 구체적으로 제시.'
     : '3. photoPlacements: 제공된 사진 설명 목록 중에서 어느 사진을 본문 어느 지점에 배치하면 좋을지 문장으로 구체적으로 제시(사진이 없으면 빈 배열).'
   return `${DRAFT_PERSONA}
-${brandBlock}${marketBlock}
+${brandBlock}${marketBlock}${feedbackBlock}
 ${NAVER_KNOWLEDGE}
 
 주어진 주제·핵심 내용을 바탕으로 네이버 블로그 포스팅 한 편을 작성하세요.
