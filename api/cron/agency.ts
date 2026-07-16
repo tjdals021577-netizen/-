@@ -6,6 +6,7 @@ import type { VisionImageInput } from '../../src/lib/claude.js'
 import type { DraftAttempt } from '../../src/types/agency.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
+import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 
 const DRAFT_COUNT = 3
 const MAX_RECENT_DRAFTS = 30
@@ -64,9 +65,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     'status=eq.active&select=id,name,business,persona,memo,status,recent_draft_texts,reference_image_ids',
   )
 
+  const kstDate = kstDateKey(kstNow())
   const results: string[] = []
   for (const client of clients) {
     try {
+      // 클라이언트당 하루 1번만 생성한다(멱등). content-schedule과 같은 방식으로
+      // 오늘 이미 이 클라이언트의 대행 자동 시안 work_log가 있으면 건너뛴다 —
+      // 크론이 두 번 돌거나(예약+수동 Run) 하면 결재함에 같은 대행 초안이
+      // 2배로 중복되던 문제를 막는다.
+      const kind = `대행 — ${client.name} (자동)`
+      const attempted = await supabaseSelect<{ id: string }>(
+        'work_log',
+        `agent=eq.buzz&brand=eq.${encodeURIComponent('마잘남')}` +
+          `&kind=eq.${encodeURIComponent(kind)}` +
+          `&started_at=gte.${kstDate}T00:00:00%2B09:00&select=id&limit=1`,
+      )
+      if (attempted.length > 0) {
+        results.push(`${client.name}: 오늘 이미 생성함 — 건너뜀`)
+        continue
+      }
       const referenceImages = await fetchReferenceImages(client.reference_image_ids ?? [])
       const recentPosts = client.recent_draft_texts ?? []
       // 초안 N개를 한 번에 생성 + 채점도 한 번에 — 예전엔 클라이언트당 API를
@@ -98,7 +115,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         id: logId,
         agent: 'buzz',
         brand: '마잘남',
-        kind: `대행 — ${client.name} (자동)`,
+        kind,
         status: 'done',
         status_label: '완료',
         started_at: nowIso,
