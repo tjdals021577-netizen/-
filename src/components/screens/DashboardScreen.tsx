@@ -435,44 +435,102 @@ function ga4VisitorDate(createdAt: string): string {
   return new Date(t + 9 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
-// 방문자 추이 area 스파크라인 — 채운 영역 + 라인 + 끝점 강조(dataviz 원칙).
-function AreaSpark({ values, color }: { values: number[]; color: string }) {
-  if (values.length < 2) {
-    return <p className="py-4 text-center text-[11px] text-[var(--text-faint)]">데이터 쌓이는 중… (며칠 지나면 그래프가 그려져요)</p>
+// 방문자 추이 area 그래프 — 채운 영역 + 라인 + 각 날짜 점 + 마우스 호버 시
+// 날짜·인원수 툴팁. 점은 HTML로 그려서(SVG 가로 늘림에 왜곡 안 되게) 동그랗게 보인다.
+function AreaSpark({ points, color }: { points: { date: string; value: number }[]; color: string }) {
+  const [hover, setHover] = useState<number | null>(null)
+  if (points.length < 2) {
+    return (
+      <p className="py-5 text-center text-[11px] text-[var(--text-faint)]">
+        데이터 쌓이는 중… (며칠 지나면 그래프가 그려져요)
+      </p>
+    )
   }
   const W = 300
-  const H = 66
-  const pad = 5
+  const H = 72
+  const pad = 8
+  const values = points.map((p) => p.value)
   const max = Math.max(1, ...values)
-  const n = values.length
-  const x = (i: number) => pad + (i / (n - 1)) * (W - 2 * pad)
-  const y = (v: number) => H - pad - (v / max) * (H - 2 * pad)
-  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
-  const area = `${line} L${x(n - 1).toFixed(1)},${H} L${x(0).toFixed(1)},${H} Z`
+  const n = points.length
+  const sx = (i: number) => pad + (i / (n - 1)) * (W - 2 * pad)
+  const leftPct = (i: number) => (i / (n - 1)) * 100
+  const topPx = (v: number) => H - pad - (v / max) * (H - 2 * pad)
+  const line = values.map((v, i) => `${i ? 'L' : 'M'}${sx(i).toFixed(1)},${topPx(v).toFixed(1)}`).join(' ')
+  const area = `${line} L${sx(n - 1).toFixed(1)},${H} L${sx(0).toFixed(1)},${H} Z`
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label="방문자 추이">
-      <path d={area} fill={color} opacity="0.14" />
-      <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(n - 1)} cy={y(values[n - 1])} r="3.5" fill={color} vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div
+      className="relative"
+      style={{ height: H }}
+      onMouseMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        const ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+        setHover(Math.round(ratio * (n - 1)))
+      }}
+      onMouseLeave={() => setHover(null)}
+    >
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" className="absolute inset-0">
+        <path d={area} fill={color} opacity="0.16" />
+        <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      {hover != null && (
+        <span className="pointer-events-none absolute top-0 bottom-3 w-px" style={{ left: `${leftPct(hover)}%`, background: 'var(--border)' }} />
+      )}
+      {points.map((p, i) => (
+        <span
+          key={p.date}
+          className="pointer-events-none absolute rounded-full"
+          style={{
+            left: `${leftPct(i)}%`,
+            top: topPx(p.value),
+            width: i === hover ? 9 : 5,
+            height: i === hover ? 9 : 5,
+            background: color,
+            transform: 'translate(-50%,-50%)',
+            boxShadow: i === hover ? '0 0 0 3px var(--surface-2)' : 'none',
+          }}
+        />
+      ))}
+      {hover != null && (
+        <span
+          className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-bold"
+          style={{
+            left: `${Math.min(88, Math.max(12, leftPct(hover)))}%`,
+            top: 0,
+            transform: 'translateX(-50%)',
+            background: 'var(--text)',
+            color: 'var(--surface)',
+          }}
+        >
+          {points[hover].date.slice(5)} · {values[hover]}명
+        </span>
+      )}
+    </div>
   )
 }
 
-// 월별 매출 막대.
+// 월별 매출 막대. 값 라벨(막대 위 숫자)이 제목/영역 밖으로 넘쳐 겹치던 문제를
+// 막으려고 컨테이너 높이를 넉넉히(막대 최대는 그 안에서) 두고, 라벨을 막대 안쪽
+// 위에 정렬한다.
 function MonthlyBars({ data, color }: { data: { month: string; revenue: number }[]; color: string }) {
   if (data.length === 0) {
-    return <p className="py-4 text-center text-[11px] text-[var(--text-faint)]">데이터 쌓이는 중…</p>
+    return <p className="py-5 text-center text-[11px] text-[var(--text-faint)]">데이터 쌓이는 중…</p>
   }
   const max = Math.max(1, ...data.map((d) => d.revenue))
   return (
-    <div className="flex items-end gap-2" style={{ height: 80 }}>
+    <div className="flex items-end gap-2" style={{ height: 104 }}>
       {data.map((d) => {
         const h = Math.max(3, Math.round((d.revenue / max) * 60))
         return (
-          <div key={d.month} className="flex flex-1 flex-col items-center gap-1" title={`${d.month}: ${d.revenue.toLocaleString('ko-KR')}원`}>
-            <span className="text-[9px] text-[var(--text-faint)]">{d.revenue > 0 ? `${Math.round(d.revenue / 10000)}만` : '0'}</span>
+          <div
+            key={d.month}
+            className="flex flex-1 flex-col items-center gap-1"
+            title={`${d.month}: ${d.revenue.toLocaleString('ko-KR')}원`}
+          >
+            <span className="text-[10px] font-bold text-[var(--text-dim)] tabular-nums">
+              {d.revenue > 0 ? `${Math.round(d.revenue / 10000).toLocaleString('ko-KR')}만` : '0'}
+            </span>
             <div className="w-full rounded-t-[3px]" style={{ height: h, background: color }} />
-            <span className="text-[9px] text-[var(--text-faint)]">{Number(d.month.slice(5))}월</span>
+            <span className="text-[9.5px] text-[var(--text-faint)]">{Number(d.month.slice(5))}월</span>
           </div>
         )
       })}
@@ -492,7 +550,7 @@ interface DailyRow {
 // 방문자·유입경로는 기존 GA4 스냅샷(읽기 전용), 주문·매출은 아임웹 일별 분해에서.
 function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: number }) {
   const [rows, setRows] = useState<DailyRow[] | null>(null)
-  const [visitorSeries, setVisitorSeries] = useState<number[]>([])
+  const [visitorPoints, setVisitorPoints] = useState<{ date: string; value: number }[]>([])
   const [monthly, setMonthly] = useState<{ month: string; revenue: number }[]>([])
 
   useEffect(() => {
@@ -538,7 +596,7 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
 
       if (!cancelled) {
         setRows(tableRows)
-        setVisitorSeries(vAsc.map(([, v]) => v.visitors))
+        setVisitorPoints(vAsc.map(([date, v]) => ({ date, value: v.visitors })))
         setMonthly(monthlyArr)
       }
     }
@@ -553,8 +611,13 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
       <p className="mb-3 text-[13px] font-bold text-[var(--text)]">📊 {brand} — 기간별 분석</p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg bg-[var(--surface-2)] p-3">
-          <p className="mb-1.5 text-[11px] font-bold text-[var(--text-faint)]">방문자 추이 (최근 14일)</p>
-          <AreaSpark values={visitorSeries} color="var(--ch-yt)" />
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <p className="text-[12.5px] font-extrabold text-[var(--text)]">방문자 추이</p>
+            <span className="text-[10.5px] text-[var(--text-faint)]">
+              최근 14일 · {visitorPoints.length > 0 ? `어제 ${visitorPoints[visitorPoints.length - 1].value}명` : '—'}
+            </span>
+          </div>
+          <AreaSpark points={visitorPoints} color="var(--ch-yt)" />
         </div>
         <div className="rounded-lg bg-[var(--surface-2)] p-3">
           <p className="mb-1.5 text-[11px] font-bold text-[var(--text-faint)]">월별 매출 (최근 6개월)</p>
