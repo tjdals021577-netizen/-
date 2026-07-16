@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { getWorkLog, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
+import { getWorkLog, syncWorkLogFromSupabase, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { decideNextStep } from '../../agents/chatDecide'
 import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact } from '../../lib/agentChatStore'
@@ -276,6 +276,12 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
     .slice(0, 4)
   void logVersion // 근무기록·대화기록 재조회 트리거용
+
+  // 서버 크론이 만든 근무기록(스레드 매일 시안·콘텐츠 스케줄·브레인 등)은
+  // Supabase에만 있어서 팀채팅에 안 보였다 — 화면 진입 시 한 번 당겨온다.
+  useEffect(() => {
+    void syncWorkLogFromSupabase().then(() => setLogVersion((v) => v + 1))
+  }, [])
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
