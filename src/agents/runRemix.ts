@@ -71,7 +71,9 @@ export async function reviewRemixPlan(params: {
     apiKey,
     system: buildRemixReviewSystemPrompt(),
     user: buildRemixReviewUserPrompt(plan),
-    maxTokens: 2048,
+    // 6개 항목 코멘트 + flags + summary가 한국어로 길어져 2048에서 JSON이
+    // 잘려 파싱 실패하던 문제 → 넉넉히 늘린다.
+    maxTokens: 4096,
     timeoutMs: 120_000,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
@@ -114,22 +116,37 @@ export async function generateScoredRemixPlan(params: {
       apiKey,
       system,
       user,
-      maxTokens: 8192,
-      timeoutMs: 120_000,
+      // 6단계 대본이 길어 8192에서도 가끔 JSON이 잘려 파싱 실패(대표님 리포트)
+      // → 넉넉히 늘린다. 프롬프트에서도 각 단계를 간결히 쓰도록 제한한다.
+      maxTokens: 12_000,
+      timeoutMs: 150_000,
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })
     return parseRemixPlan(raw)
   }
 
-  let plan = await generate()
-  let review = await reviewRemixPlan({ apiKey, plan })
+  // 채점이 실패(응답 잘림·파싱 오류)해도 기획안 자체는 살려서 결재함에 올린다
+  // — 블로그(runBlogReviewsResilient)와 같은 원칙. 채점 실패 시 '채점 실패'로
+  // 표시하고 통과 취급하지 않는다(사람이 결재함에서 검토).
+  async function reviewOrFallback(p: RemixPlan): Promise<RemixReview> {
+    try {
+      return await reviewRemixPlan({ apiKey, plan: p })
+    } catch {
+      return { totalScore: 0, summary: '채점 실패 — 내용은 저장됨', criteriaScores: [], flags: [] }
+    }
+  }
 
-  if (review.totalScore < PASS_THRESHOLD) {
+  let plan = await generate()
+  let review = await reviewOrFallback(plan)
+
+  // 채점이 정상적으로 됐고(항목 점수 존재) 미달일 때만 1회 재작성한다.
+  // 채점 자체가 실패한 경우는 재작성해도 판단 근거가 없으니 그대로 둔다.
+  if (review.criteriaScores.length > 0 && review.totalScore < PASS_THRESHOLD) {
     try {
       const revised = await generate({ previousPlan: plan, feedback: feedbackFromReview(review) })
-      const revisedReview = await reviewRemixPlan({ apiKey, plan: revised })
+      const revisedReview = await reviewOrFallback(revised)
       // 재작성이 더 높으면 교체, 아니면 첫 기획안 유지(재작성이 오히려 나쁠 수도).
-      if (revisedReview.totalScore > review.totalScore) {
+      if (revisedReview.criteriaScores.length > 0 && revisedReview.totalScore > review.totalScore) {
         plan = revised
         review = revisedReview
       }

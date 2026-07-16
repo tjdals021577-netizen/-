@@ -21,9 +21,10 @@ ${CONFIDENTIALITY_RULE}
 규칙:
 1. 각 항목을 배점(weight) 안에서 0점부터 만점까지 정확히 채점한다. 후하게 주지 말고, 기준을 실제로 충족했을 때만 점수를 준다.
 2. totalScore는 모든 항목 점수의 합(0~100)이다. criteriaScores의 score 합과 반드시 일치시킨다.
-3. flags: 반드시 고쳐야 할 약점을 구체적으로 지적한다(quote=문제 지점, reason=이유, severity=info|check|risk). 없으면 빈 배열.
+3. flags: 반드시 고쳐야 할 약점을 구체적으로 지적한다(quote=문제 지점, reason=이유, severity=info|check|risk). 최대 4개, 없으면 빈 배열.
 4. summary: 이 기획안의 강점과 미달 원인을 2~3문장으로 종합.
-5. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
+5. 분량 제한(응답이 잘리지 않게): comment는 각 1문장, flags의 reason도 1문장으로 짧게 쓴다.
+6. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
 
 JSON 스키마:
 {
