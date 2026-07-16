@@ -170,18 +170,20 @@ export async function dispatchJob(params: {
         brandContext: BRAND_CONTEXT[brand],
         marketFindings,
       })
+      const videoTitle = plan.title || topic
+      const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
       finishWorkLog(logId, {
         status: 'done',
         statusLabel: '완료',
         costUsd: Math.max(0, getTodaySpendUsd() - spendBefore),
-        note: `훅 후보 ${plan.hooks.length}개`,
-        detailHtml: `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}`,
+        note: `제목: ${videoTitle}`,
+        detailHtml: `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}`,
       })
-      const contentHtml = `<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`
+      const contentHtml = `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`
       submitForApproval({
         agent: 'remix',
         brand,
-        title: topic,
+        title: videoTitle,
         contentHtml,
         passed: true,
         scoreLabel: '채점 없음',
@@ -191,7 +193,7 @@ export async function dispatchJob(params: {
         date: today,
         brand,
         channel: 'youtube',
-        title: topic,
+        title: videoTitle,
         status: 'planned',
         note: `훅 후보 ${plan.hooks.length}개`,
         contentHtml,

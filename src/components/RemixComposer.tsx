@@ -14,7 +14,8 @@ import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brain
 
 function buildDetailHtml(plan: RemixPlan): string {
   const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
-  return `<b>훅 후보 ${plan.hooks.length}개</b><br/>${hooksList}`
+  const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
+  return `${titleLine}<b>훅 후보 ${plan.hooks.length}개</b><br/>${hooksList}`
 }
 
 function buildApprovalHtml(plan: RemixPlan): string {
@@ -23,7 +24,8 @@ function buildApprovalHtml(plan: RemixPlan): string {
   const notes = plan.benchmarkNotes.length > 0
     ? `<br/><br/><b>벤치마킹 근거</b><br/>${plan.benchmarkNotes.map((n) => `- ${n}`).join('<br/>')}`
     : ''
-  return `<b>훅 후보</b><br/>${hooksList}<br/><br/><b>대본 구성안</b><br/>${outline}${notes}`
+  const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
+  return `${titleLine}<b>훅 후보</b><br/>${hooksList}<br/><br/><b>대본 구성안</b><br/>${outline}${notes}`
 }
 
 const apiKey = 'server-managed'
@@ -177,6 +179,12 @@ export function RemixComposer({ brand }: { brand: Brand }) {
 
       {plan && (
         <div className="space-y-3">
+          {plan.title && (
+            <div className="rounded-xl border-[1.5px] border-[var(--accent)] bg-[var(--accent-soft)] p-4">
+              <p className="mb-1 text-xs font-semibold text-[var(--text-faint)]">🎬 추천 제목</p>
+              <p className="text-[15px] font-bold text-[var(--text)]">{plan.title}</p>
+            </div>
+          )}
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <p className="mb-2 text-xs font-semibold text-[var(--text-faint)]">
               훅 후보

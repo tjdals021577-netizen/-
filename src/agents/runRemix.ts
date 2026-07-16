@@ -9,6 +9,7 @@ function parseRemixPlan(raw: unknown): RemixPlan {
   }
   const rec = raw as Record<string, unknown>
   return {
+    title: typeof rec.title === 'string' ? rec.title : '',
     hooks: Array.isArray(rec.hooks)
       ? rec.hooks.filter((h): h is string => typeof h === 'string')
       : [],

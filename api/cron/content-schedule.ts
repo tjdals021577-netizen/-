@@ -176,7 +176,11 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
   })
   const nowIso = new Date().toISOString()
   const logId = makeId()
-  const contentHtml = `<b>${topic}</b><br/>훅: ${plan.hooks.join(' / ')}<br/><br/>${plan.outline.replace(/\n/g, '<br/>')}`
+  // 제목을 기획안 맨 위에 명시하고, 카드 제목도 추천 제목으로 쓴다(대표님 요청:
+  // "유튜브 기획엔 제목 꼭 넣어서"). 모델이 title을 비우면 topic으로 폴백.
+  const videoTitle = plan.title || topic
+  const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
+  const contentHtml = `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`
 
   await supabaseInsert('work_log', {
     id: logId,
@@ -187,14 +191,14 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
     status_label: '완료',
     started_at: nowIso,
     ended_at: nowIso,
-    note: `훅 후보 ${plan.hooks.length}개`,
+    note: `제목: ${videoTitle}`,
     detail_html: contentHtml,
   })
   await supabaseInsert('approval_queue', {
     id: makeId(),
     agent: 'remix',
     brand,
-    title: topic,
+    title: videoTitle,
     content_html: contentHtml,
     passed: true,
     score_label: '채점 없음',
@@ -207,7 +211,7 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
     date,
     brand,
     channel: 'youtube',
-    title: topic,
+    title: videoTitle,
     status: 'planned',
     note: `훅 후보 ${plan.hooks.length}개 (주간 스케줄 자동 기획)`,
     content_html: contentHtml,
@@ -215,7 +219,7 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
     created_at: nowIso,
     source_work_log_id: logId,
   })
-  return `${brand} 유튜브: 훅 후보 ${plan.hooks.length}개`
+  return `${brand} 유튜브: ${videoTitle}`
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
