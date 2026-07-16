@@ -435,74 +435,111 @@ function ga4VisitorDate(createdAt: string): string {
   return new Date(t + 9 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
-// 방문자 추이 area 그래프 — 채운 영역 + 라인 + 각 날짜 점 + 마우스 호버 시
-// 날짜·인원수 툴팁. 점은 HTML로 그려서(SVG 가로 늘림에 왜곡 안 되게) 동그랗게 보인다.
-function AreaSpark({ points, color }: { points: { date: string; value: number }[]; color: string }) {
+function niceCeil(v: number): number {
+  if (v <= 5) return 5
+  const pow = Math.pow(10, Math.floor(Math.log10(v)))
+  const n = v / pow
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10
+  return step * pow
+}
+
+// 방문자 추이 — 아임웹 통계처럼 세션(영역) + 방문자(라인+점) 2계열, Y축 눈금·
+// 격자, X축 날짜, 범례, 마우스 호버 시 날짜별 세션/방문자 툴팁. width 100% +
+// height auto로 뷰박스 비율대로 균일 스케일(텍스트 왜곡 없음).
+function VisitorChart({ points }: { points: { date: string; visitors: number; sessions: number }[] }) {
   const [hover, setHover] = useState<number | null>(null)
   if (points.length < 2) {
     return (
-      <p className="py-5 text-center text-[11px] text-[var(--text-faint)]">
+      <p className="py-8 text-center text-[11px] text-[var(--text-faint)]">
         데이터 쌓이는 중… (며칠 지나면 그래프가 그려져요)
       </p>
     )
   }
-  const W = 300
-  const H = 72
-  const pad = 8
-  const values = points.map((p) => p.value)
-  const max = Math.max(1, ...values)
+  const W = 344
+  const H = 176
+  const mL = 22
+  const mR = 10
+  const mT = 22
+  const mB = 20
+  const plotW = W - mL - mR
+  const plotH = H - mT - mB
   const n = points.length
-  const sx = (i: number) => pad + (i / (n - 1)) * (W - 2 * pad)
-  const leftPct = (i: number) => (i / (n - 1)) * 100
-  const topPx = (v: number) => H - pad - (v / max) * (H - 2 * pad)
-  const line = values.map((v, i) => `${i ? 'L' : 'M'}${sx(i).toFixed(1)},${topPx(v).toFixed(1)}`).join(' ')
-  const area = `${line} L${sx(n - 1).toFixed(1)},${H} L${sx(0).toFixed(1)},${H} Z`
+  const yMax = niceCeil(Math.max(1, ...points.flatMap((p) => [p.visitors, p.sessions])))
+  const X = (i: number) => mL + (i / (n - 1)) * plotW
+  const Y = (v: number) => mT + plotH - (v / yMax) * plotH
+  const ticks = [0, Math.round(yMax / 2), yMax]
+  const sPath = points.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p.sessions).toFixed(1)}`).join(' ')
+  const sArea = `${sPath} L${X(n - 1).toFixed(1)},${Y(0).toFixed(1)} L${X(0).toFixed(1)},${Y(0).toFixed(1)} Z`
+  const vPath = points.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p.visitors).toFixed(1)}`).join(' ')
+  const AREA = 'var(--ch-yt)'
+  const LINE = 'var(--ch-yt)'
+  const step = Math.ceil(n / 7)
   return (
-    <div
-      className="relative"
-      style={{ height: H }}
-      onMouseMove={(e) => {
-        const r = e.currentTarget.getBoundingClientRect()
-        const ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
-        setHover(Math.round(ratio * (n - 1)))
-      }}
-      onMouseLeave={() => setHover(null)}
-    >
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" className="absolute inset-0">
-        <path d={area} fill={color} opacity="0.16" />
-        <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        style={{ height: 'auto', display: 'block' }}
+        onMouseMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect()
+          const vx = ((e.clientX - r.left) / r.width) * W
+          let best = 0
+          let bd = Infinity
+          for (let i = 0; i < n; i++) {
+            const d = Math.abs(X(i) - vx)
+            if (d < bd) {
+              bd = d
+              best = i
+            }
+          }
+          setHover(best)
+        }}
+        onMouseLeave={() => setHover(null)}
+      >
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={mL} y1={Y(t)} x2={W - mR} y2={Y(t)} stroke="var(--border)" strokeWidth="0.5" />
+            <text x={mL - 4} y={Y(t) + 3} textAnchor="end" fontSize="8" fill="var(--text-faint)">{t}</text>
+          </g>
+        ))}
+        <path d={sArea} fill={AREA} opacity="0.16" />
+        <path d={vPath} fill="none" stroke={LINE} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+        {points.map((p, i) => (
+          <circle key={p.date} cx={X(i)} cy={Y(p.visitors)} r={i === hover ? 3.2 : 1.9} fill={LINE} />
+        ))}
+        {points.map((p, i) =>
+          i % step === 0 || i === n - 1 ? (
+            <text key={p.date} x={X(i)} y={H - 6} textAnchor="middle" fontSize="8" fill="var(--text-faint)">
+              {p.date.slice(5)}
+            </text>
+          ) : null,
+        )}
+        <g>
+          <rect x={W - 120} y={7} width="8" height="8" rx="2" fill={AREA} opacity="0.45" />
+          <text x={W - 109} y={14} fontSize="8.5" fill="var(--text-dim)">세션</text>
+          <circle cx={W - 70} cy={11} r="3.4" fill={LINE} />
+          <text x={W - 63} y={14} fontSize="8.5" fill="var(--text-dim)">방문자</text>
+        </g>
+        {hover != null && (
+          <g>
+            <line x1={X(hover)} y1={mT} x2={X(hover)} y2={mT + plotH} stroke="var(--border)" strokeWidth="0.8" />
+            <circle cx={X(hover)} cy={Y(points[hover].visitors)} r="3.6" fill={LINE} stroke="var(--surface)" strokeWidth="1.2" />
+          </g>
+        )}
       </svg>
       {hover != null && (
-        <span className="pointer-events-none absolute top-0 bottom-3 w-px" style={{ left: `${leftPct(hover)}%`, background: 'var(--border)' }} />
-      )}
-      {points.map((p, i) => (
-        <span
-          key={p.date}
-          className="pointer-events-none absolute rounded-full"
-          style={{
-            left: `${leftPct(i)}%`,
-            top: topPx(p.value),
-            width: i === hover ? 9 : 5,
-            height: i === hover ? 9 : 5,
-            background: color,
-            transform: 'translate(-50%,-50%)',
-            boxShadow: i === hover ? '0 0 0 3px var(--surface-2)' : 'none',
-          }}
-        />
-      ))}
-      {hover != null && (
-        <span
-          className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-bold"
-          style={{
-            left: `${Math.min(88, Math.max(12, leftPct(hover)))}%`,
-            top: 0,
-            transform: 'translateX(-50%)',
-            background: 'var(--text)',
-            color: 'var(--surface)',
-          }}
+        <div
+          className="pointer-events-none absolute z-10 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 shadow-[var(--card-shadow)]"
+          style={{ left: `${Math.min(84, Math.max(16, (X(hover) / W) * 100))}%`, top: 2, transform: 'translateX(-50%)' }}
         >
-          {points[hover].date.slice(5)} · {values[hover]}명
-        </span>
+          <p className="mb-0.5 text-[9.5px] font-bold text-[var(--text-faint)]">{points[hover].date.slice(5)}</p>
+          <p className="flex items-center gap-1 text-[10.5px] font-semibold text-[var(--text)]">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: LINE }} />방문자 {points[hover].visitors}
+          </p>
+          <p className="flex items-center gap-1 text-[10.5px] text-[var(--text-dim)]">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: AREA, opacity: 0.5 }} />세션 {points[hover].sessions}
+          </p>
+        </div>
       )}
     </div>
   )
@@ -550,7 +587,9 @@ interface DailyRow {
 // 방문자·유입경로는 기존 GA4 스냅샷(읽기 전용), 주문·매출은 아임웹 일별 분해에서.
 function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: number }) {
   const [rows, setRows] = useState<DailyRow[] | null>(null)
-  const [visitorPoints, setVisitorPoints] = useState<{ date: string; value: number }[]>([])
+  const [visitorPoints, setVisitorPoints] = useState<
+    { date: string; visitors: number; sessions: number }[]
+  >([])
   const [monthly, setMonthly] = useState<{ month: string; revenue: number }[]>([])
 
   useEffect(() => {
@@ -561,11 +600,18 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
         fetchLatestRadarSnapshot(brand, 'imweb'),
       ])
       const ga4days = dedupeByDay(ga4list) // desc
-      const visitorByDate = new Map<string, { visitors: number; source: string | null }>()
+      const visitorByDate = new Map<
+        string,
+        { visitors: number; sessions: number; source: string | null }
+      >()
       for (const s of ga4days) {
         const d = ga4VisitorDate(s.createdAt)
         if (d && !visitorByDate.has(d)) {
-          visitorByDate.set(d, { visitors: s.activeUsers, source: s.trafficSources[0]?.source ?? null })
+          visitorByDate.set(d, {
+            visitors: s.activeUsers,
+            sessions: s.sessions,
+            source: s.trafficSources[0]?.source ?? null,
+          })
         }
       }
       const imwebDaily = imweb?.dailyRevenue ?? []
@@ -596,7 +642,9 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
 
       if (!cancelled) {
         setRows(tableRows)
-        setVisitorPoints(vAsc.map(([date, v]) => ({ date, value: v.visitors })))
+        setVisitorPoints(
+          vAsc.map(([date, v]) => ({ date, visitors: v.visitors, sessions: v.sessions })),
+        )
         setMonthly(monthlyArr)
       }
     }
@@ -614,10 +662,13 @@ function PerformanceSection({ brand, refreshKey }: { brand: Brand; refreshKey: n
           <div className="mb-2 flex items-baseline justify-between gap-2">
             <p className="text-[12.5px] font-extrabold text-[var(--text)]">방문자 추이</p>
             <span className="text-[10.5px] text-[var(--text-faint)]">
-              최근 14일 · {visitorPoints.length > 0 ? `어제 ${visitorPoints[visitorPoints.length - 1].value}명` : '—'}
+              최근 14일 ·{' '}
+              {visitorPoints.length > 0
+                ? `어제 ${visitorPoints[visitorPoints.length - 1].visitors}명`
+                : '—'}
             </span>
           </div>
-          <AreaSpark points={visitorPoints} color="var(--ch-yt)" />
+          <VisitorChart points={visitorPoints} />
         </div>
         <div className="rounded-lg bg-[var(--surface-2)] p-3">
           <p className="mb-1.5 text-[11px] font-bold text-[var(--text-faint)]">월별 매출 (최근 6개월)</p>
