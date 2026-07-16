@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { generateRemixPlan } from '../agents/runRemix'
-import type { RemixPlan } from '../types/remix'
+import { generateScoredRemixPlan } from '../agents/runRemix'
+import type { RemixPlan, RemixReview } from '../types/remix'
+import { PASS_THRESHOLD } from '../types/domain'
 import {
   DAILY_BUDGET_USD,
   getTodaySpendUsd,
@@ -13,20 +14,25 @@ import { BRAND_CONTEXT, type Brand } from '../types/brand'
 import { getLatestBrainReport, formatBrainFindingsForPrompt } from '../lib/brainStore'
 import { formatRecentFeedbackForPrompt } from '../lib/contentFeedbackStore'
 
-function buildDetailHtml(plan: RemixPlan): string {
-  const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
-  const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
-  return `${titleLine}<b>훅 후보 ${plan.hooks.length}개</b><br/>${hooksList}`
+function scoreLine(review: RemixReview): string {
+  const passed = review.totalScore >= PASS_THRESHOLD
+  return `<b>채점</b> ${review.totalScore}점 ${passed ? '통과' : '미달'} — ${review.summary}`
 }
 
-function buildApprovalHtml(plan: RemixPlan): string {
+function buildDetailHtml(plan: RemixPlan, review: RemixReview): string {
+  const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
+  const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
+  return `${titleLine}${scoreLine(review)}<br/><br/><b>훅 후보 ${plan.hooks.length}개</b><br/>${hooksList}`
+}
+
+function buildApprovalHtml(plan: RemixPlan, review: RemixReview): string {
   const hooksList = plan.hooks.map((h) => `- ${h}`).join('<br/>')
   const outline = plan.outline.replace(/\n/g, '<br/>')
   const notes = plan.benchmarkNotes.length > 0
     ? `<br/><br/><b>벤치마킹 근거</b><br/>${plan.benchmarkNotes.map((n) => `- ${n}`).join('<br/>')}`
     : ''
   const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
-  return `${titleLine}<b>훅 후보</b><br/>${hooksList}<br/><br/><b>대본 구성안</b><br/>${outline}${notes}`
+  return `${titleLine}<b>훅 후보</b><br/>${hooksList}<br/><br/><b>대본 구성안</b><br/>${outline}${notes}<br/><br/>${scoreLine(review)}`
 }
 
 const apiKey = 'server-managed'
@@ -36,6 +42,7 @@ export function RemixComposer({ brand }: { brand: Brand }) {
   const [referenceText, setReferenceText] = useState('')
 
   const [plan, setPlan] = useState<RemixPlan | null>(null)
+  const [review, setReview] = useState<RemixReview | null>(null)
   const [running, setRunning] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
@@ -55,12 +62,13 @@ export function RemixComposer({ brand }: { brand: Brand }) {
     setRunning(true)
     setErrorMessage(null)
     setPlan(null)
+    setReview(null)
 
     const spendBefore = getTodaySpendUsd()
     const logId = startWorkLog({ agent: 'remix', brand, kind: '수동 지시', note: topic })
 
     try {
-      const newPlan = await generateRemixPlan({
+      const { plan: newPlan, review: newReview } = await generateScoredRemixPlan({
         apiKey,
         topic,
         referenceText,
@@ -69,31 +77,36 @@ export function RemixComposer({ brand }: { brand: Brand }) {
         pastFeedback: formatRecentFeedbackForPrompt(brand, 'youtube'),
       })
       setPlan(newPlan)
+      setReview(newReview)
+      const passed = newReview.totalScore >= PASS_THRESHOLD
+      const scoreNote = `${newReview.totalScore}점 ${passed ? '통과' : '미달'}`
+      const videoTitle = newPlan.title || topic
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
       finishWorkLog(logId, {
-        status: 'done',
-        statusLabel: '완료',
+        status: passed ? 'done' : 'attention',
+        statusLabel: passed ? '완료' : '보류',
         costUsd: cycleCost,
-        note: `훅 후보 ${newPlan.hooks.length}개`,
-        detailHtml: buildDetailHtml(newPlan),
+        note: `${scoreNote} · ${videoTitle}`,
+        detailHtml: buildDetailHtml(newPlan, newReview),
       })
+      // 미달이어도 일단 결재함에 올린다(대표님 결정) — passed 플래그로만 구분.
       submitForApproval({
         agent: 'remix',
         brand,
-        title: topic,
-        contentHtml: buildApprovalHtml(newPlan),
-        passed: true,
-        scoreLabel: '채점 없음',
+        title: videoTitle,
+        contentHtml: buildApprovalHtml(newPlan, newReview),
+        passed,
+        scoreLabel: `${newReview.totalScore}/100`,
         sourceWorkLogId: logId,
       })
       createEntry({
         date: new Date().toISOString().slice(0, 10),
         brand,
         channel: 'youtube',
-        title: topic,
-        status: 'planned',
-        note: `훅 후보 ${newPlan.hooks.length}개`,
-        contentHtml: buildApprovalHtml(newPlan),
+        title: videoTitle,
+        status: passed ? 'planned' : 'open',
+        note: scoreNote,
+        contentHtml: buildApprovalHtml(newPlan, newReview),
         sourceWorkLogId: logId,
       })
     } catch (err) {
@@ -185,6 +198,26 @@ export function RemixComposer({ brand }: { brand: Brand }) {
             <div className="rounded-xl border-[1.5px] border-[var(--accent)] bg-[var(--accent-soft)] p-4">
               <p className="mb-1 text-xs font-semibold text-[var(--text-faint)]">🎬 추천 제목</p>
               <p className="text-[15px] font-bold text-[var(--text)]">{plan.title}</p>
+            </div>
+          )}
+          {review && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <p className="text-xs font-semibold text-[var(--text-faint)]">AI 채점</p>
+                <p
+                  className="text-[15px] font-extrabold tabular-nums"
+                  style={{ color: review.totalScore >= PASS_THRESHOLD ? 'var(--up)' : 'var(--down)' }}
+                >
+                  {review.totalScore}점 {review.totalScore >= PASS_THRESHOLD ? '통과' : '미달'}
+                  <span className="text-[11px] font-normal text-[var(--text-faint)]"> / 100 (통과 {PASS_THRESHOLD})</span>
+                </p>
+              </div>
+              <p className="text-[12.5px] text-[var(--text-dim)]">{review.summary}</p>
+              {review.totalScore < PASS_THRESHOLD && (
+                <p className="mt-1 text-[11px] text-[var(--text-faint)]">
+                  ※ 한 번 재작성 후에도 미달이라 그대로 결재함에 올렸습니다. 검토 후 승인/반려하세요.
+                </p>
+              )}
             </div>
           )}
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">

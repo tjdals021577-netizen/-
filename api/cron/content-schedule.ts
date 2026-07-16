@@ -10,7 +10,7 @@
 // 억지로 자동화하지 않음).
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { generateBlogDraft, runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
-import { generateRemixPlan } from '../../src/agents/runRemix.js'
+import { generateScoredRemixPlan } from '../../src/agents/runRemix.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import { BRAND_CONTEXT } from '../../src/types/brand.js'
 import type { Brand } from '../../src/types/brand.js'
@@ -144,7 +144,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     fetchTodayPhotos(date, brand),
     fetchRecentFeedback(brand, 'blog'),
   ])
-  const draft = await generateBlogDraft({
+  let draft = await generateBlogDraft({
     apiKey,
     topic,
     keyPoints: '',
@@ -159,7 +159,39 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
   // 진행한다 — 예전엔 Promise.all이라 1명만 실패해도 이미 만들어진 초안까지
   // 통째로 버려지고 "오류"만 남았다(라이터 반복 오류의 원인 중 하나).
   // 전원 실패하면 채점 없이 저장하고 "채점 실패"로 표시한다.
-  const reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
+  let reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
+  const scoreOf = (rs: typeof reviews) =>
+    rs.length > 0 ? rs.reduce((s, r) => s + r.totalScore, 0) / rs.length : 0
+
+  // 미달이면 심사 피드백을 반영해 딱 한 번 다시 쓴다(대표님 결정: 모든 업무
+  // 미달 시 1회 재작성 → 그래도 미달이면 그대로 결재함에). 재작성이 오히려
+  // 더 나쁘면 첫 초안을 유지한다. 사진은 재작성 때 다시 붙이지 않는다(비용).
+  if (reviews.length > 0 && scoreOf(reviews) < PASS_THRESHOLD) {
+    try {
+      const feedback = reviews
+        .map((r) => `[${r.role}] ${r.summary}\n${r.flags.map((f) => `- ${f.reason}`).join('\n')}`)
+        .join('\n\n')
+      const revised = await generateBlogDraft({
+        apiKey,
+        topic,
+        keyPoints: '',
+        photoDescriptions: '',
+        brandContext: BRAND_CONTEXT[brand],
+        marketFindings: brainFindings,
+        pastFeedback,
+        previousDraft: draft,
+        feedback,
+      })
+      const revisedReviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft: revised })
+      if (revisedReviews.length > 0 && scoreOf(revisedReviews) > scoreOf(reviews)) {
+        draft = revised
+        reviews = revisedReviews
+      }
+    } catch {
+      // 재작성 실패 시 첫 초안 그대로 진행 — 재작성은 보너스지 필수가 아님.
+    }
+  }
+
   const reviewed = reviews.length > 0
   const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
   const passed = reviewed && avg >= PASS_THRESHOLD
@@ -210,7 +242,8 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
 async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
   const { topic, brainFindings } = await pickTopic(brand, 'youtube')
   const pastFeedback = await fetchRecentFeedback(brand, 'youtube')
-  const plan = await generateRemixPlan({
+  // 채점 + 미달 시 1회 재작성(대표님 결정) — 재작성해도 미달이면 그대로 결재함에.
+  const { plan, review } = await generateScoredRemixPlan({
     apiKey,
     topic,
     referenceText: '',
@@ -223,19 +256,21 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
   // 제목을 기획안 맨 위에 명시하고, 카드 제목도 추천 제목으로 쓴다(대표님 요청:
   // "유튜브 기획엔 제목 꼭 넣어서"). 모델이 title을 비우면 topic으로 폴백.
   const videoTitle = plan.title || topic
+  const passed = review.totalScore >= PASS_THRESHOLD
+  const scoreNote = `${review.totalScore}점 ${passed ? '통과' : '미달'}`
   const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
-  const contentHtml = `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`
+  const contentHtml = `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}<br/><br/><b>채점</b> ${scoreNote} — ${review.summary}`
 
   await supabaseInsert('work_log', {
     id: logId,
     agent: 'remix',
     brand,
     kind: '주간 스케줄 자동 기획',
-    status: 'done',
-    status_label: '완료',
+    status: passed ? 'done' : 'attention',
+    status_label: passed ? '완료' : '보류',
     started_at: nowIso,
     ended_at: nowIso,
-    note: `제목: ${videoTitle}`,
+    note: `${scoreNote} · ${videoTitle}`,
     detail_html: contentHtml,
   })
   await supabaseInsert('approval_queue', {
@@ -244,8 +279,8 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
     brand,
     title: videoTitle,
     content_html: contentHtml,
-    passed: true,
-    score_label: '채점 없음',
+    passed,
+    score_label: `${review.totalScore}/100`,
     created_at: nowIso,
     status: 'pending',
     source_work_log_id: logId,
@@ -256,14 +291,14 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
     brand,
     channel: 'youtube',
     title: videoTitle,
-    status: 'planned',
-    note: `훅 후보 ${plan.hooks.length}개 (주간 스케줄 자동 기획)`,
+    status: passed ? 'planned' : 'open',
+    note: `${scoreNote} (주간 스케줄 자동 기획)`,
     content_html: contentHtml,
     checklist: makeDefaultChecklist(true),
     created_at: nowIso,
     source_work_log_id: logId,
   })
-  return `${brand} 유튜브: ${videoTitle}`
+  return `${brand} 유튜브: ${scoreNote}`
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {

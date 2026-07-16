@@ -2,7 +2,7 @@ import { generateBlogDraft, runBlogReviewsResilient } from './runBlogReview.js'
 import type { BlogReview } from '../types/blog.js'
 import { generateThreadDraft, runThreadReview } from './runThreadReview.js'
 import { MAJALNAM_THREAD_VOICE } from './threadPrompts.js'
-import { generateRemixPlan } from './runRemix.js'
+import { generateScoredRemixPlan } from './runRemix.js'
 import { researchMarketResilient } from './runBrain.js'
 import { startWorkLog, finishWorkLog } from '../lib/workLog.js'
 import { getTodaySpendUsd } from '../lib/budgetGuard.js'
@@ -166,7 +166,7 @@ export async function dispatchJob(params: {
       if (!BRAND_CHANNELS[brand].includes('유튜브')) {
         throw new Error(`${brand}는 유튜브 채널을 운영하지 않습니다.`)
       }
-      const plan = await generateRemixPlan({
+      const { plan, review } = await generateScoredRemixPlan({
         apiKey,
         topic,
         referenceText: '',
@@ -175,22 +175,24 @@ export async function dispatchJob(params: {
         pastFeedback: formatRecentFeedbackForPrompt(brand, 'youtube'),
       })
       const videoTitle = plan.title || topic
+      const passed = review.totalScore >= PASS_THRESHOLD
+      const scoreNote = `${review.totalScore}점 ${passed ? '통과' : '미달'}`
       const titleLine = plan.title ? `<b>🎬 제목</b><br/>${plan.title}<br/><br/>` : ''
       finishWorkLog(logId, {
-        status: 'done',
-        statusLabel: '완료',
+        status: passed ? 'done' : 'attention',
+        statusLabel: passed ? '완료' : '보류',
         costUsd: Math.max(0, getTodaySpendUsd() - spendBefore),
-        note: `제목: ${videoTitle}`,
-        detailHtml: `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}`,
+        note: `${scoreNote} · ${videoTitle}`,
+        detailHtml: `${titleLine}<b>채점</b> ${scoreNote}<br/>${review.summary}`,
       })
-      const contentHtml = `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}`
+      const contentHtml = `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}<br/><br/><b>채점</b> ${scoreNote} — ${review.summary}`
       submitForApproval({
         agent: 'remix',
         brand,
         title: videoTitle,
         contentHtml,
-        passed: true,
-        scoreLabel: '채점 없음',
+        passed,
+        scoreLabel: `${review.totalScore}/100`,
         sourceWorkLogId: logId,
       })
       createEntry({
@@ -198,8 +200,8 @@ export async function dispatchJob(params: {
         brand,
         channel: 'youtube',
         title: videoTitle,
-        status: 'planned',
-        note: `훅 후보 ${plan.hooks.length}개`,
+        status: passed ? 'planned' : 'open',
+        note: scoreNote,
         contentHtml,
         sourceWorkLogId: logId,
       })
