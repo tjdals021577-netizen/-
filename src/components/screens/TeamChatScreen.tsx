@@ -54,7 +54,6 @@ const AGENTS: AgentMeta[] = [
 ]
 
 const AGENT_BY_KEY = new Map(AGENTS.map((a) => [a.key, a]))
-const DISPATCHABLE_META = AGENTS.filter((a) => a.dispatchable)
 const CHAT_AGENTS = AGENTS.filter((a) => a.group === 'chat')
 const AUTO_AGENTS = AGENTS.filter((a) => a.group === 'auto')
 
@@ -257,7 +256,6 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   // 둘 다 겸해서, 다른 에이전트에게 지시하려면 먼저 그 에이전트를 클릭해
   // 피드를 전환해야 했다(사용자가 "한명씩 누르면서 확인하기 힘들다"고 지적).
   const [feedFilter, setFeedFilter] = useState<string>('all')
-  const [dispatchTarget, setDispatchTarget] = useState<DispatchableAgent | 'all'>(DISPATCHABLE_AGENTS[0])
   const [instruction, setInstruction] = useState('')
   const [dispatching, setDispatching] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -266,6 +264,16 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   const feedEndRef = useRef<HTMLDivElement>(null)
 
   const viewingAgent = feedFilter === 'all' ? null : (AGENT_BY_KEY.get(feedFilter) ?? null)
+  // 대화 대상은 "지금 보고 있는 피드"에 고정된다 — '전체 보기'면 모두에게,
+  // 특정 팀원 피드면 그 팀원에게만. 예전엔 피드와 대상이 따로 놀아서, 전체
+  // 보기 중인데 대상이 리믹서로 남아 엉뚱한 사람에게 지시가 들어가는 사고가
+  // 났다(대표님 지적). null이면 대화 불가(모닝·레이더 같은 자동 전용 팀원).
+  const dispatchTarget: DispatchableAgent | 'all' | null =
+    feedFilter === 'all'
+      ? 'all'
+      : viewingAgent && viewingAgent.dispatchable
+        ? (feedFilter as DispatchableAgent)
+        : null
   const log = feedFilter === 'all' ? getWorkLog(undefined, brand) : getWorkLog(feedFilter, brand)
   const chatMessages =
     feedFilter === 'all'
@@ -349,6 +357,10 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   async function handleDispatch() {
     setDispatchMessage(null)
+    if (dispatchTarget === null) {
+      setDispatchMessage('모닝·레이더는 자동으로만 돌아요 — 대화로 지시할 수 없습니다.')
+      return
+    }
     if (instruction.trim().length === 0) {
       setDispatchMessage(
         '지시 내용을 입력해주세요 — 아직 콘텐츠 캘린더 연동 전이라 비워두면 자동으로 주제를 고르지 못합니다.',
@@ -420,7 +432,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   return (
     <div>
-      <PreviewBanner message="내가 시키는 팀원은 4명 — 라이터(블로그)·버즈(스레드)·리믹서(유튜브)·브레인(리서치). 아래에서 대상을 고르고 메시지를 보내세요. 모닝·레이더는 손 안 대도 매일 자동으로 돌고, 성과 분석은 각 채널 탭의 '내 콘텐츠 분석'에서 실행합니다." />
+      <PreviewBanner message="내가 시키는 팀원은 4명 — 라이터(블로그)·버즈(스레드)·리믹서(유튜브)·브레인(리서치). 왼쪽에서 팀원(또는 전체 보기)을 고르면 대화 대상이 그쪽으로 고정돼, 메시지가 엉뚱한 사람에게 들어가지 않아요. 모닝·레이더는 손 안 대도 매일 자동으로 돌고, 성과 분석은 각 채널 탭의 '내 콘텐츠 분석'에서 실행합니다." />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr_240px]">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
@@ -576,27 +588,34 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
           </div>
 
           <div className="flex items-center gap-2 border-t border-[var(--border)] p-2.5">
-            <select
-              value={dispatchTarget}
-              onChange={(e) => setDispatchTarget(e.target.value as DispatchableAgent | 'all')}
-              className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-[12px] font-bold text-[var(--accent)] focus:outline-none"
+            {/* 대상은 지금 보고 있는 피드에 "고정"된다 — 드롭다운이 아니라 읽기
+                전용 칩. 전체 보기면 모두에게, 특정 팀원 피드면 그 팀원에게. */}
+            <span
+              className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-[12px] font-bold text-[var(--accent)]"
+              title="대화 대상은 왼쪽에서 보고 있는 팀원(또는 전체)에 자동으로 맞춰집니다."
             >
-              <option value="all">모두에게</option>
-              {DISPATCHABLE_META.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.name}에게
-                </option>
-              ))}
-            </select>
+              {dispatchTarget === 'all'
+                ? '🔒 모두에게'
+                : dispatchTarget
+                  ? `🔒 ${viewingAgent?.name}에게`
+                  : '대화 불가'}
+            </span>
             <input
               type="text"
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
+              disabled={dispatchTarget === null}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !dispatching) void handleDispatch()
+                if (e.key === 'Enter' && !dispatching && dispatchTarget !== null) void handleDispatch()
               }}
-              placeholder="메시지를 입력하세요… (예: 타로 궁합 후기 블로그 써줘)"
-              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+              placeholder={
+                dispatchTarget === null
+                  ? '모닝·레이더는 자동으로만 돌아요 — 대화 대상이 아닙니다.'
+                  : dispatchTarget === 'all'
+                    ? '전체 팀에게 메시지를 입력하세요… (예: 타로 궁합 후기 블로그 써줘)'
+                    : `${viewingAgent?.name}에게 메시지를 입력하세요… (예: 타로 궁합 후기 블로그 써줘)`
+              }
+              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
             {dispatching ? (
               // 실행 중에는 전송 대신 "취소" 버튼을 보여준다 — 잘못 입력했을 때
