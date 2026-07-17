@@ -34,13 +34,16 @@ interface BrainReportRow {
 // 만든다 — 이제 이들은 직접 검색하지 않고 이 자료를 공유받는다(비용 절감).
 function formatBrainFindings(report: BrainReportRow | undefined): string | undefined {
   if (!report) return undefined
+  // 리서치가 많고 길면(특히 마잘남) 프롬프트가 비대해져 응답이 잘리는 원인이
+  // 됐다 → 상위 8건·각 240자로 제한(방향성 참고엔 충분).
   const findingsText = (report.findings ?? [])
-    .map((f) => `- [${f.source}] ${f.insight}`)
+    .slice(0, 8)
+    .map((f) => `- [${f.source}] ${f.insight.slice(0, 240)}`)
     .join('\n')
   // 추천 액션도 포함한다 — 브레인이 잡아낸 "블로그 로직 변화 → 이렇게 바꿔라"가
   // recommendations에 담기므로, 이게 빠지면 자동 글이 로직 변화를 반영하지 못한다.
-  const recoText = (report.recommendations ?? []).join(' / ')
-  return `주제: ${report.topic}\n요약: ${report.summary}\n${findingsText}${
+  const recoText = (report.recommendations ?? []).slice(0, 5).join(' / ')
+  return `주제: ${report.topic}\n요약: ${report.summary.slice(0, 400)}\n${findingsText}${
     recoText ? `\n추천 액션: ${recoText}` : ''
   }`
 }

@@ -73,9 +73,15 @@ export function getLatestBrainReport(brand: Brand): BrainReportRecord | undefine
 // 프롬프트에 그대로 넣을 수 있는 텍스트 블록으로 변환.
 export function formatBrainFindingsForPrompt(report: BrainReportRecord | undefined): string | undefined {
   if (!report) return undefined
-  const findingsText = report.findings.map((f) => `- [${f.source}] ${f.insight}`).join('\n')
+  // 브레인 리서치가 많고 길면(특히 마잘남 — 스레드·브랜딩·마케팅·블로그 로직까지
+  // 조사) 프롬프트가 비대해져 응답이 잘리는 원인이 됐다. 상위 8건, 각 항목
+  // 240자 이내로 잘라 넣는다(방향성 참고엔 충분).
+  const findingsText = report.findings
+    .slice(0, 8)
+    .map((f) => `- [${f.source}] ${f.insight.slice(0, 240)}`)
+    .join('\n')
   return `리서치 주제: ${report.topic}
 ${findingsText || '(발견 사항 없음)'}
-요약: ${report.summary}
-추천 액션: ${report.recommendations.join(' / ') || '(없음)'}`
+요약: ${report.summary.slice(0, 400)}
+추천 액션: ${report.recommendations.slice(0, 5).join(' / ') || '(없음)'}`
 }
