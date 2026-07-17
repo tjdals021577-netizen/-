@@ -49,6 +49,12 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
 
   const topSource = radar?.trafficSources[0]
   const topPage = radar?.topPages[0]
+  // 유튜브 CTA(홈페이지 UTM utm_source=youtube)로 들어온 세션 — 1위가 아니어도
+  // 항상 보이게 별도로 합산한다. GA4 sessionSource가 "youtube"(또는 유사)로 잡힌다.
+  const youtubeInflow =
+    radar?.trafficSources
+      .filter((s) => /youtube|유튜브|yt\b/i.test(s.source))
+      .reduce((sum, s) => sum + s.sessions, 0) ?? 0
   const stats = [
     {
       label: `${radar?.periodLabel ?? '어제'} 방문자`,
@@ -57,6 +63,10 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
     {
       label: '1위 유입경로',
       value: topSource ? `${topSource.source} (${topSource.sessions.toLocaleString('ko-KR')}명)` : '—',
+    },
+    {
+      label: '유튜브 유입(CTA)',
+      value: radar ? `${youtubeInflow.toLocaleString('ko-KR')}명` : '—',
     },
     { label: '인기 페이지', value: topPage ? topPage.path : '—' },
     {
@@ -81,6 +91,31 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
           </div>
         ))}
       </div>
+
+      {radar && radar.trafficSources.length > 0 && (
+        <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3">
+          <p className="mb-2 text-[11px] font-bold text-[var(--text-faint)]">
+            유입경로 (출처별 세션) — 유튜브 CTA는 "youtube"로 표시됩니다
+          </p>
+          <div className="space-y-1">
+            {radar.trafficSources.map((s) => {
+              const isYoutube = /youtube|유튜브|yt\b/i.test(s.source)
+              return (
+                <div key={s.source} className="flex items-center justify-between gap-2 text-[12px]">
+                  <span
+                    className={`min-w-0 truncate ${isYoutube ? 'font-bold text-[var(--ch-yt)]' : 'text-[var(--text-dim)]'}`}
+                    title={s.source}
+                  >
+                    {isYoutube ? '▶ ' : ''}
+                    {s.source || '(direct)'}
+                  </span>
+                  <span className="shrink-0 font-bold text-[var(--text)]">{s.sessions.toLocaleString('ko-KR')}명</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {radar && radar.naverLandingPages.length > 0 && (
         <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3">

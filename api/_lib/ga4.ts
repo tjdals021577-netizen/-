@@ -113,7 +113,8 @@ export async function fetchGa4Report(params: {
       dimensions: [{ name: 'sessionSource' }],
       metrics: [{ name: 'sessions' }],
       orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-      limit: '5',
+      // 유튜브(utm_source=youtube)처럼 소규모 출처도 누락되지 않게 상위 10개까지.
+      limit: '10',
     }),
     // 네이버 검색으로 들어온 세션이 "어느 페이지로 착지했는지" — 브랜드명
     // 검색(보통 홈으로 착지)과 블로그 글 검색(그 글 주소로 착지)을 구분하는
