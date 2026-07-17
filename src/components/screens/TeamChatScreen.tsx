@@ -7,6 +7,7 @@ import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact, g
 import type { AgentChatMessage } from '../../types/agentChat'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
 import { cancelActiveClaudeCalls, ClaudeCancelledError } from '../../lib/claude'
+import { getApprovalQueue, syncApprovalsFromSupabase } from '../../lib/approvalStore'
 import { BRAND_CHANNELS, BRAND_CONTEXT, type Brand } from '../../types/brand'
 
 // "모두에게" 지시할 때, 그 브랜드가 아예 운영 안 하는 채널의 에이전트는
@@ -123,6 +124,23 @@ function formatRelativeTime(iso: string): string {
 
 function agentIsBusy(agentKey: string, brand: Brand): boolean {
   return getWorkLog(agentKey, brand).some((e) => e.status === 'running')
+}
+
+// "방금 만든 결과물"(수정보완 대상)을 찾는다. 브라우저 메모리(이 세션에서 방금
+// 만든 것)를 우선 보고, 없으면 결재함(Supabase에서 동기화됨)의 같은 에이전트
+// 최신 결과물로 폴백한다 — 크론(자동 기획)이나 다른 세션/기기에서 만든 기획도
+// "이거 고쳐줘"의 대상이 되게 하기 위함. 브레인은 결재함에 안 올라가서 폴백 없음.
+function resolveLastOutput(
+  agent: DispatchableAgent,
+  brand: Brand,
+): { title: string; content: string } | undefined {
+  const local = getLastOutput(agent, brand)
+  if (local) return { title: local.title, content: local.content }
+  const latestApproval = getApprovalQueue(undefined, brand).find((i) => i.agent === agent)
+  if (latestApproval) {
+    return { title: latestApproval.title, content: stripHtml(latestApproval.contentHtml) }
+  }
+  return undefined
 }
 
 // 실제 작업 결과(work_log)와 순수 대화(agent_chat_messages)가 같은 피드에
@@ -289,8 +307,12 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   // 서버 크론이 만든 근무기록(스레드 매일 시안·콘텐츠 스케줄·브레인 등)은
   // Supabase에만 있어서 팀채팅에 안 보였다 — 화면 진입 시 한 번 당겨온다.
+  // 결재함도 같이 당겨온다 — "방금 만든 기획 고쳐줘"의 폴백(직전 결과물)이
+  // 결재함에서 나오기 때문(크론·다른 세션이 만든 기획도 수정 대상이 되게).
   useEffect(() => {
-    void syncWorkLogFromSupabase().then(() => setLogVersion((v) => v + 1))
+    void Promise.all([syncWorkLogFromSupabase(), syncApprovalsFromSupabase()]).then(() =>
+      setLogVersion((v) => v + 1),
+    )
   }, [])
 
   useEffect(() => {
@@ -316,7 +338,11 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     setLogVersion((v) => v + 1)
     const history = getMessages(agent, brand)
     const memory = getMemory(agent, brand).map((m) => m.fact)
-    const lastOutput = getLastOutput(agent, brand)
+    // 직전 결과물 찾기 — ①브라우저 메모리(방금 이 세션에서 만든 것) 우선,
+    // 없으면 ②결재함(Supabase 동기화)의 같은 에이전트 최신 결과물로 폴백한다.
+    // 그래야 크론(자동 기획)이나 다른 세션/기기에서 만든 기획도 "이거 고쳐줘"가
+    // 먹힌다(예전엔 로컬 메모리에만 의존해 "결과물이 없다"고 되물었다).
+    const effectiveLast = resolveLastOutput(agent, brand)
     const decision = await decideNextStep({
       apiKey,
       agent,
@@ -324,7 +350,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
       userMessage: text,
       history,
       memory,
-      lastOutput: lastOutput ? `제목: ${lastOutput.title}\n${lastOutput.content}` : undefined,
+      lastOutput: effectiveLast ? `제목: ${effectiveLast.title}\n${effectiveLast.content}` : undefined,
     })
     if (decision.memoryFacts.length > 0) {
       addMemoryFacts(agent, brand, decision.memoryFacts)
@@ -332,17 +358,29 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     if (decision.kind === 'act') {
       addMessage({ agent, brand, role: 'agent', content: decision.text || '작업을 시작할게요.' })
       setLogVersion((v) => v + 1)
-      // 수정보완 요청이면 직전 결과물을 넘겨 그걸 고쳐 쓰게 한다(새로 안 씀).
-      await dispatchJob({
-        agent,
-        brand,
-        apiKey,
-        instruction: decision.cleanInstruction || text,
-        previousOutput:
-          decision.isRevision && lastOutput
-            ? { title: lastOutput.title, content: lastOutput.content }
-            : undefined,
-      })
+      try {
+        // 수정보완 요청이면 직전 결과물을 넘겨 그걸 고쳐 쓰게 한다(새로 안 씀).
+        await dispatchJob({
+          agent,
+          brand,
+          apiKey,
+          instruction: decision.cleanInstruction || text,
+          previousOutput: decision.isRevision && effectiveLast ? effectiveLast : undefined,
+        })
+      } catch (err) {
+        // 실패해도 최소한 대화로 알려준다 — 예전엔 조용히 아무 답도 안 나와서
+        // "왜 말을 안 해?"가 됐다(취소는 이미 담백한 메시지로 처리됨).
+        if (!(err instanceof ClaudeCancelledError)) {
+          addMessage({
+            agent,
+            brand,
+            role: 'agent',
+            content: `죄송해요, 작업 중 문제가 생겼어요: ${err instanceof Error ? err.message : String(err)}\n다시 한 번 요청해 주시겠어요?`,
+          })
+          setLogVersion((v) => v + 1)
+        }
+        throw err
+      }
     } else {
       addMessage({
         agent,
