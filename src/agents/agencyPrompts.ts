@@ -3,7 +3,7 @@ import { CONFIDENTIALITY_RULE } from './sharedRules.js'
 // 대표님 전자책 기반 스레드 글쓰기 방법론 — 위원회와 공통으로 쓰도록 단일 소스를
 // 재사용한다(대표님 요청: 전자책을 대행 관리에도 적용). 대행 고유의 페르소나
 // (AGENCY_IDENTITY 등)는 그대로 두고, 방법론만 참고 자료로 추가한다.
-import { THREAD_KNOWLEDGE, ALGO_KNOWLEDGE } from './threadPrompts.js'
+import { THREAD_KNOWLEDGE, ALGO_KNOWLEDGE, PAID_THREAD_KNOWLEDGE } from './threadPrompts.js'
 
 // 대행 관리(AgencyScreen, 클라이언트별 스레드 글) 전용 프롬프트. 대표님이
 // 만들어 쓰던 "마잘남 – 글쓰기" GPT 페르소나를 그대로 반영한 것으로,
@@ -83,6 +83,8 @@ ${ALGO_KNOWLEDGE}
 
 ${THREAD_KNOWLEDGE}
 
+${PAID_THREAD_KNOWLEDGE}
+
 ${CONFIDENTIALITY_RULE}
 
 주어진 주제로 스레드 포스트 한 편을 작성하세요.
@@ -133,6 +135,8 @@ ${AGENCY_QUALITY_BAR}
 ${ALGO_KNOWLEDGE}
 
 ${THREAD_KNOWLEDGE}
+
+${PAID_THREAD_KNOWLEDGE}
 
 ${CONFIDENTIALITY_RULE}
 

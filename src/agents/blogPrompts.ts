@@ -1,7 +1,7 @@
 import type { BlogRole } from '../types/blog.js'
 import { BLOG_RUBRICS, BLOG_ROLE_LABEL } from './blogRubric.js'
 import { cachedSystem, type SystemBlock } from '../lib/claude.js'
-import { THREAD_KNOWLEDGE } from './threadPrompts.js'
+import { THREAD_KNOWLEDGE, PAID_THREAD_KNOWLEDGE } from './threadPrompts.js'
 
 const NAVER_KNOWLEDGE = `[네이버 블로그 상위노출 참고 지식]
 - C-Rank: 카테고리 전문성을 보는 알고리즘. 양산형 문장보다 구체적 관점·정보가 있는 글을 우대한다.
@@ -86,6 +86,8 @@ ${CONVERSION_COPY_RULES}
 훅·스토리 구조·고객 중심 표현·CTA·판매 심리·페르소나 원리를 네이버 블로그 글(제목·도입 후킹·본문·FAQ·질문형 CTA)에 응용한다.
 스레드 전용 표현(첫 줄 15~20자 등)은 블로그 문법에 맞게 바꾸되, 설득·전환의 "원리"는 그대로 가져온다.
 ${THREAD_KNOWLEDGE}
+
+${PAID_THREAD_KNOWLEDGE}
 
 주어진 주제·핵심 내용을 바탕으로 네이버 블로그 포스팅 한 편을 작성하세요.
 
