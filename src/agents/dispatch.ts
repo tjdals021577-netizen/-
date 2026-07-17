@@ -14,6 +14,7 @@ import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from 
 import type { BlogRole } from '../types/blog.js'
 import { getLatestBrainReport, formatBrainFindingsForPrompt, saveBrainReport } from '../lib/brainStore.js'
 import { formatRecentFeedbackForPrompt } from '../lib/contentFeedbackStore.js'
+import { ClaudeCancelledError } from '../lib/claude.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -273,11 +274,13 @@ export async function dispatchJob(params: {
     // 리서치할 때마다 기획까지 돌리면 토큰이 과하게 나가서 뺐다.
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    // 취소는 "실패"가 아니다 — 근무기록에 '오류'가 아니라 '취소됨(보류)'으로 남긴다.
+    const cancelled = err instanceof ClaudeCancelledError
     finishWorkLog(logId, {
-      status: 'error',
-      statusLabel: '오류',
-      note: '실행 실패',
-      detailHtml: message,
+      status: cancelled ? 'attention' : 'error',
+      statusLabel: cancelled ? '취소됨' : '오류',
+      note: cancelled ? '대표님이 취소함' : '실행 실패',
+      detailHtml: cancelled ? '작업을 취소했습니다.' : message,
     })
     throw err
   }

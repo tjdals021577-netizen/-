@@ -17,6 +17,23 @@ const DEFAULT_TIMEOUT_MS = 260_000
 
 export class ClaudeCallError extends Error {}
 
+// 대표님이 팀채팅에서 "취소"를 눌렀을 때 던지는 전용 오류 — 일반 실패(오류)와
+// 구분해서, 근무기록에 "오류"가 아니라 "취소됨"으로 남기고 사용자에게도 겁주는
+// 에러 문구 대신 담백한 안내를 보여주기 위함.
+export class ClaudeCancelledError extends ClaudeCallError {}
+
+// 진행 중인 모든 브라우저 → 프록시 호출을 한 번에 끊기 위한 공용 컨트롤러.
+// 팀채팅에서 잘못 지시했을 때 "취소" 버튼으로 중단할 수 있게 한다. 크론(Node)
+// 경로는 SDK로 직접 호출해서 이 컨트롤러를 쓰지 않으므로 영향받지 않는다.
+let activeCancelController = new AbortController()
+
+// 취소 버튼이 호출한다 — 지금 떠 있는 요청들을 전부 중단(abort)시키고, 다음
+// 요청은 깨끗한 새 컨트롤러로 시작하도록 교체한다.
+export function cancelActiveClaudeCalls(): void {
+  activeCancelController.abort()
+  activeCancelController = new AbortController()
+}
+
 export type UsageCallback = (usage: {
   input_tokens: number
   output_tokens: number
@@ -76,6 +93,12 @@ async function createMessageViaProxy(
 ): Promise<ProxyResponse> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  // 타임아웃과는 별개로, 사용자가 "취소"를 누르면 activeCancelController가
+  // abort되고 → 이 요청도 같이 끊는다. 두 신호를 하나의 controller로 합친다.
+  const cancelSignal = activeCancelController.signal
+  const onCancel = () => controller.abort()
+  if (cancelSignal.aborted) controller.abort()
+  else cancelSignal.addEventListener('abort', onCancel, { once: true })
   try {
     const password = import.meta.env.VITE_APP_PASSWORD
     const res = await fetch('/api/claude-proxy', {
@@ -94,6 +117,10 @@ async function createMessageViaProxy(
     return data as ProxyResponse
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
+      // 사용자가 취소해서 끊긴 건지, 단순 타임아웃인지 구분해서 알려준다.
+      if (cancelSignal.aborted) {
+        throw new ClaudeCancelledError('대표님이 작업을 취소했습니다.')
+      }
       throw new ClaudeCallError(
         `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
       )
@@ -101,6 +128,7 @@ async function createMessageViaProxy(
     throw err
   } finally {
     clearTimeout(timer)
+    cancelSignal.removeEventListener('abort', onCancel)
   }
 }
 

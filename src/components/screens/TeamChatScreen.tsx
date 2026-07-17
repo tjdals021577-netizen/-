@@ -6,6 +6,7 @@ import { decideNextStep } from '../../agents/chatDecide'
 import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact, getLastOutput } from '../../lib/agentChatStore'
 import type { AgentChatMessage } from '../../types/agentChat'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
+import { cancelActiveClaudeCalls, ClaudeCancelledError } from '../../lib/claude'
 import { BRAND_CHANNELS, BRAND_CONTEXT, type Brand } from '../../types/brand'
 
 // "모두에게" 지시할 때, 그 브랜드가 아예 운영 안 하는 채널의 에이전트는
@@ -259,6 +260,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   const [dispatchTarget, setDispatchTarget] = useState<DispatchableAgent | 'all'>(DISPATCHABLE_AGENTS[0])
   const [instruction, setInstruction] = useState('')
   const [dispatching, setDispatching] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null)
   const [logVersion, setLogVersion] = useState(0)
   const feedEndRef = useRef<HTMLDivElement>(null)
@@ -372,9 +374,12 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
         })
         const batchId = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         const results = await Promise.allSettled(targets.map((agent) => runAgentTurn(agent, text, batchId)))
-        const failed = results.filter((r) => r.status === 'rejected')
-        if (failed.length > 0) {
-          setDispatchMessage(`${targets.length}명 중 ${failed.length}명 실패 — 각자의 결과 버블에서 확인하세요.`)
+        const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[]
+        const wasCancelled = rejected.some((r) => r.reason instanceof ClaudeCancelledError)
+        if (wasCancelled) {
+          setDispatchMessage('작업을 취소했어요.')
+        } else if (rejected.length > 0) {
+          setDispatchMessage(`${targets.length}명 중 ${rejected.length}명 실패 — 각자의 결과 버블에서 확인하세요.`)
         }
       } else {
         // 바로 작업을 실행하지 않고, 먼저 이 지시가 실행해도 될 만큼 충분한지
@@ -383,11 +388,24 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
         await runAgentTurn(dispatchTarget, text)
       }
     } catch (err) {
-      setDispatchMessage(err instanceof Error ? err.message : String(err))
+      // 취소는 실패가 아니므로 담백하게 안내한다.
+      setDispatchMessage(
+        err instanceof ClaudeCancelledError ? '작업을 취소했어요.' : err instanceof Error ? err.message : String(err),
+      )
     } finally {
       setDispatching(false)
+      setCancelling(false)
       setLogVersion((v) => v + 1)
     }
+  }
+
+  // 진행 중인 지시를 즉시 중단한다 — 잘못 입력해서 엉뚱한 분석·작성이 돌기
+  // 시작했을 때 대표님이 바로 끊을 수 있게. 떠 있는 프록시 호출을 전부 abort
+  // 하면, 각 에이전트의 dispatchJob이 '취소됨'으로 근무기록을 정리한다.
+  function handleCancel() {
+    setCancelling(true)
+    setDispatchMessage('취소하는 중이에요…')
+    cancelActiveClaudeCalls()
   }
 
   const todayCount = log.filter(
@@ -580,14 +598,27 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               placeholder="메시지를 입력하세요… (예: 타로 궁합 후기 블로그 써줘)"
               className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
             />
-            <button
-              type="button"
-              disabled={dispatching}
-              onClick={() => void handleDispatch()}
-              className="shrink-0 rounded-lg bg-[var(--accent)] px-4 py-2 text-[12.5px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {dispatching ? '실행 중…' : '전송'}
-            </button>
+            {dispatching ? (
+              // 실행 중에는 전송 대신 "취소" 버튼을 보여준다 — 잘못 입력했을 때
+              // 진행 중인 작업을 바로 끊을 수 있게. 취소를 누르면 붉은 버튼이
+              // '취소 중…'으로 바뀌고, 곧 실행이 중단된다.
+              <button
+                type="button"
+                disabled={cancelling}
+                onClick={handleCancel}
+                className="shrink-0 rounded-lg bg-[var(--open)] px-4 py-2 text-[12.5px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {cancelling ? '취소 중…' : '취소'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleDispatch()}
+                className="shrink-0 rounded-lg bg-[var(--accent)] px-4 py-2 text-[12.5px] font-bold text-white transition hover:opacity-90"
+              >
+                전송
+              </button>
+            )}
           </div>
           {dispatchMessage && (
             <p className="px-3.5 pb-2.5 text-[11.5px] text-[var(--text-dim)]">{dispatchMessage}</p>
