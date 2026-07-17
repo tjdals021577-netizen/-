@@ -74,9 +74,10 @@ npm run lint                             # 4) oxlint
   - ⚠️ `YOUTUBE_CHANNEL_ID_MAJALNAM`가 **실제 마잘남 채널 ID**인지 확인(동명 채널 오인 방지).
 
 ## 자료(전자책 등)
-- 대표님 전자책 2권의 노하우는 **`threadPrompts.ts`의 상수로 텍스트화되어 리포지토리에 내장**돼 있다.
-  원본 PDF는 세션 업로드 폴더(휘발성)에만 있으니, 지식 수정이 필요하면 그 상수를 고친다.
-  (저작권 자료라 원문 전체는 리포지토리에 커밋하지 않는다.)
+- 대표님(본인 소유) 전자책 2권의 원문 PDF·추출 텍스트가 **`docs/reference/`에 보관**돼 있다.
+- 그 원문에서 뽑은 노하우는 **`threadPrompts.ts`의 상수로 텍스트화되어 내장**돼 있고
+  (`THREAD_KNOWLEDGE`·`PAID_THREAD_KNOWLEDGE`·`ALGO_KNOWLEDGE`), 실제 생성에 쓰인다.
+  지식을 고치려면 `docs/reference/`의 원문을 근거로 이 상수들을 수정한다.
 
 ## 더 자세한 문서
 `docs/`: `content-agents.md`(에이전트), `data-and-brand.md`(데이터·브랜드),
