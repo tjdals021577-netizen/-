@@ -136,7 +136,13 @@ function resolveLastOutput(
 ): { title: string; content: string } | undefined {
   const local = getLastOutput(agent, brand)
   if (local) return { title: local.title, content: local.content }
-  const latestApproval = getApprovalQueue(undefined, brand).find((i) => i.agent === agent)
+  // 결재함 폴백은 "같은 팀원(=같은 채널)"의 최신 결과물만 본다 — 라이터=블로그,
+  // 버즈=스레드, 리믹서=유튜브라 채널이 자동으로 맞는다. 단, 레이더가 올린 유튜브
+  // "분석 리포트"는 기획(글)이 아니므로 수정 대상에서 제외한다(리믹서와 agent가
+  // 같아서 안 거르면 분석 리포트를 고치려 들 수 있음).
+  const latestApproval = getApprovalQueue(undefined, brand).find(
+    (i) => i.agent === agent && i.scoreLabel !== '분석 리포트',
+  )
   if (latestApproval) {
     return { title: latestApproval.title, content: stripHtml(latestApproval.contentHtml) }
   }
