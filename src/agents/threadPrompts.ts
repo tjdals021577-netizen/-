@@ -1,6 +1,6 @@
 import { cachedSystem, type SystemBlock } from '../lib/claude.js'
 import { THREAD_RUBRIC } from './threadRubric.js'
-import { ANTI_HALLUCINATION_RULE, CONFIDENTIALITY_RULE } from './sharedRules.js'
+import { ANTI_HALLUCINATION_RULE, CONFIDENTIALITY_RULE, COPYWRITING_12BLOCKS } from './sharedRules.js'
 
 // 스레드 위원회(버즈)와 대행 관리가 함께 쓰는 스레드 글쓰기 지식(대표님 전자책
 // 기반). 대행에서도 재사용하려고 export한다 — 중복 정의 대신 단일 소스.
@@ -169,6 +169,8 @@ ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
 
+${COPYWRITING_12BLOCKS}
+
 ${ANTI_HALLUCINATION_RULE}
 
 ${CONFIDENTIALITY_RULE}
@@ -225,6 +227,8 @@ ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
 
+${COPYWRITING_12BLOCKS}
+
 ${ANTI_HALLUCINATION_RULE}
 
 ${CONFIDENTIALITY_RULE}
@@ -278,6 +282,8 @@ ${ALGO_KNOWLEDGE}
 ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
+
+${COPYWRITING_12BLOCKS}
 
 ${ANTI_HALLUCINATION_RULE}
 
@@ -346,6 +352,8 @@ ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
 
+${COPYWRITING_12BLOCKS}
+
 ${ANTI_HALLUCINATION_RULE}
 
 ${CONFIDENTIALITY_RULE}
@@ -390,6 +398,8 @@ ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
 
+${COPYWRITING_12BLOCKS}
+
 ${CONFIDENTIALITY_RULE}
 
 당신은 스레드 위원회의 심사위원입니다. 아래 4개 항목(각 25점, 총 100점) 기준으로 주어진 스레드 초안을 채점하세요.
@@ -430,6 +440,8 @@ export function buildThreadReviewBatchSystemPrompt(count: number): SystemBlock[]
 ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
+
+${COPYWRITING_12BLOCKS}
 
 ${CONFIDENTIALITY_RULE}
 

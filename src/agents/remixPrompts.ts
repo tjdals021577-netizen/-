@@ -1,5 +1,6 @@
 import { cachedSystem, type SystemBlock } from '../lib/claude.js'
 import { THREAD_KNOWLEDGE, PAID_THREAD_KNOWLEDGE } from './threadPrompts.js'
+import { COPYWRITING_12BLOCKS } from './sharedRules.js'
 
 // 마잘남 스레드 전자책의 카피라이팅·설득 원리를 "유튜브 대본용으로 압축·
 // 리라이팅"한 참고 블록. 스레드 원문 지식을 그대로 옮기지 않고(중복 방지),
@@ -77,6 +78,8 @@ ${THREAD_EBOOK_FOR_YOUTUBE}
 ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
+
+${COPYWRITING_12BLOCKS}
 
 주어진 자료(주제, 참고 텍스트)를 바탕으로 유튜브 영상 기획안을 만드세요. 촬영·편집은 하지 않고 기획안까지만 작성합니다.
 채점 기준(제목 클릭력·썸네일 방향성·초반 후킹·정보형 6단계·알고리즘 시청지속·마잘남 정체성, 합계 100점, 통과 90점)을

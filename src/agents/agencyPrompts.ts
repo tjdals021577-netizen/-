@@ -1,5 +1,5 @@
 import { cachedSystem, type SystemBlock } from '../lib/claude.js'
-import { CONFIDENTIALITY_RULE } from './sharedRules.js'
+import { CONFIDENTIALITY_RULE, COPYWRITING_12BLOCKS } from './sharedRules.js'
 // 대표님 전자책 기반 스레드 글쓰기 방법론 — 위원회와 공통으로 쓰도록 단일 소스를
 // 재사용한다(대표님 요청: 전자책을 대행 관리에도 적용). 대행 고유의 페르소나
 // (AGENCY_IDENTITY 등)는 그대로 두고, 방법론만 참고 자료로 추가한다.
@@ -85,6 +85,8 @@ ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
 
+${COPYWRITING_12BLOCKS}
+
 ${CONFIDENTIALITY_RULE}
 
 주어진 주제로 스레드 포스트 한 편을 작성하세요.
@@ -137,6 +139,8 @@ ${ALGO_KNOWLEDGE}
 ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
+
+${COPYWRITING_12BLOCKS}
 
 ${CONFIDENTIALITY_RULE}
 

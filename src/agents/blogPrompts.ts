@@ -2,6 +2,7 @@ import type { BlogRole } from '../types/blog.js'
 import { BLOG_RUBRICS, BLOG_ROLE_LABEL } from './blogRubric.js'
 import { cachedSystem, type SystemBlock } from '../lib/claude.js'
 import { THREAD_KNOWLEDGE, PAID_THREAD_KNOWLEDGE } from './threadPrompts.js'
+import { COPYWRITING_12BLOCKS } from './sharedRules.js'
 
 const NAVER_KNOWLEDGE = `[네이버 블로그 상위노출 참고 지식]
 - C-Rank: 카테고리 전문성을 보는 알고리즘. 양산형 문장보다 구체적 관점·정보가 있는 글을 우대한다.
@@ -88,6 +89,8 @@ ${CONVERSION_COPY_RULES}
 ${THREAD_KNOWLEDGE}
 
 ${PAID_THREAD_KNOWLEDGE}
+
+${COPYWRITING_12BLOCKS}
 
 주어진 주제·핵심 내용을 바탕으로 네이버 블로그 포스팅 한 편을 작성하세요.
 
