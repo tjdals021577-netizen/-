@@ -112,17 +112,28 @@ export async function generateScoredRemixPlan(params: {
         : undefined,
       feedback: revision?.feedback,
     })
-    const raw = await callClaudeJson({
-      apiKey,
-      system,
-      user,
-      // 6단계 대본이 길어 8192에서도 가끔 JSON이 잘려 파싱 실패(대표님 리포트)
-      // → 넉넉히 늘린다. 프롬프트에서도 각 단계를 간결히 쓰도록 제한한다.
-      maxTokens: 12_000,
-      timeoutMs: 150_000,
-      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-    })
-    return parseRemixPlan(raw)
+    // JSON이 잘리거나(파싱 실패) 아예 안 나오는(JSON 못 찾음) 일이 가끔 있어
+    // — 응답 길이가 들쭉날쭉해서 생기는 일시적 문제라 최대 2번까지 다시 시도한다.
+    // 두 번 다 실패하면 마지막 오류를 그대로 던진다(호출부가 오류로 처리).
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const raw = await callClaudeJson({
+          apiKey,
+          system,
+          user,
+          // 6단계 대본이 길어 8192에서도 가끔 JSON이 잘려 파싱 실패(대표님 리포트)
+          // → 넉넉히 늘린다. 프롬프트에서도 각 단계를 간결히 쓰도록 제한한다.
+          maxTokens: 12_000,
+          timeoutMs: 150_000,
+          onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+        })
+        return parseRemixPlan(raw)
+      } catch (err) {
+        lastErr = err
+      }
+    }
+    throw lastErr
   }
 
   // 채점이 실패(응답 잘림·파싱 오류)해도 기획안 자체는 살려서 결재함에 올린다

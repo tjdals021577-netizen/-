@@ -127,34 +127,43 @@ export async function generateBlogDraft(params: {
     previousDraft,
     feedback,
   })
-  // 실제 사진이 첨부되면 AI가 사진을 직접 보고 배치를 제안하도록 비전 호출로
-  // 전환한다(이 경우 웹서치 도구는 같이 못 쓴다 — 사진 근거가 더 중요하다고
-  // 판단해 비전을 우선). 사진이 없으면 실제 상위노출 글 구조를 검색해서 참고한다.
-  if (photoImages && photoImages.length > 0) {
-    const raw = await callClaudeVisionJson({
-      apiKey,
-      system: buildDraftSystemPrompt(brandContext, marketFindings, true, pastFeedback),
-      user,
-      images: photoImages,
-      maxTokens: 4096,
-      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-    })
+  const hasPhotos = !!(photoImages && photoImages.length > 0)
+
+  // 본문 2,500~3,000자(한국어)면 4096 토큰으로는 JSON이 잘려 파싱 실패하던
+  // 위험이 있었다 → 8192로 넉넉히. 그리고 응답이 잘리거나 안 나오는 일시적
+  // 실패에 대비해 최대 2번까지 다시 시도한다(라이터 반복 오류 방지).
+  async function once(): Promise<BlogDraft> {
+    // 실제 사진이 첨부되면 AI가 사진을 직접 보고 배치를 제안하도록 비전 호출로
+    // 전환한다(이 경우 웹서치 도구는 같이 못 쓴다). 사진이 없으면 지식 베이스 기반.
+    const raw = hasPhotos
+      ? await callClaudeVisionJson({
+          apiKey,
+          system: buildDraftSystemPrompt(brandContext, marketFindings, true, pastFeedback),
+          user,
+          images: photoImages as VisionImageInput[],
+          maxTokens: 8192,
+          onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+        })
+      : await callClaudeJson({
+          apiKey,
+          system: buildDraftSystemPrompt(brandContext, marketFindings, false, pastFeedback),
+          user,
+          maxTokens: 8192,
+          timeoutMs: 120_000,
+          onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+        })
     return parseDraft(raw)
   }
-  // 라이터는 이제 직접 웹 검색을 하지 않는다(대표님 결정: 검색은 브레인
-  // 한 명만, 나머지는 그 결과를 공유). 브레인이 조사해둔 최신 리서치는
-  // marketFindings로 이미 프롬프트에 들어간다 — 매번 같은 걸 새로 크롤링해서
-  // 토큰을 반복 과금하던 게 비용의 최대 요인이었어서, 이걸 없애는 게 검색
-  // 비용 절감의 핵심이다. 검색이 빠지니 타임아웃/토큰도 여유 있게 줄인다.
-  const raw = await callClaudeJson({
-    apiKey,
-    system: buildDraftSystemPrompt(brandContext, marketFindings, false, pastFeedback),
-    user,
-    maxTokens: 4096,
-    timeoutMs: 120_000,
-    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-  })
-  return parseDraft(raw)
+
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await once()
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  throw lastErr
 }
 
 export async function runBlogAgentReview(params: {
