@@ -392,13 +392,12 @@ export function buildThreadReviewSystemPrompt(): SystemBlock[] {
     (c) => `- ${c.label} (${c.weight}점): ${c.description}`,
   ).join('\n')
 
+  // 채점(Haiku)은 루브릭 기준으로 점수만 매기면 되므로, 생성용 대형 지식
+  // (유료 전자책·12블록)은 넣지 않는다 — 채점 호출 입력 토큰을 아끼기 위함.
+  // 채점 관점에 도움되는 알고리즘 신호·기본 노하우만 남긴다.
   return cachedSystem(`${ALGO_KNOWLEDGE}
 
 ${THREAD_KNOWLEDGE}
-
-${PAID_THREAD_KNOWLEDGE}
-
-${COPYWRITING_12BLOCKS}
 
 ${CONFIDENTIALITY_RULE}
 
@@ -435,13 +434,10 @@ export function buildThreadReviewBatchSystemPrompt(count: number): SystemBlock[]
     (c) => `- ${c.label} (${c.weight}점): ${c.description}`,
   ).join('\n')
 
+  // 배치 채점도 마찬가지 — 생성용 대형 지식은 빼고 알고리즘 신호·기본 노하우만.
   return cachedSystem(`${ALGO_KNOWLEDGE}
 
 ${THREAD_KNOWLEDGE}
-
-${PAID_THREAD_KNOWLEDGE}
-
-${COPYWRITING_12BLOCKS}
 
 ${CONFIDENTIALITY_RULE}
 
