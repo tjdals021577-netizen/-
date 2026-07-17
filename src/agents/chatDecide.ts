@@ -31,6 +31,9 @@ export interface ChatDecision {
   text: string
   cleanInstruction?: string
   memoryFacts: string[]
+  // 대표님이 "방금 만든 거 이렇게 고쳐줘"처럼 직전 결과물의 수정보완을 요청한
+  // 경우 true — 이때는 처음부터 새로 쓰지 않고 직전 결과물을 기반으로 고친다.
+  isRevision: boolean
 }
 
 function parseDecision(raw: unknown): ChatDecision {
@@ -43,6 +46,7 @@ function parseDecision(raw: unknown): ChatDecision {
     memoryFacts: Array.isArray(rec.memoryFacts)
       ? rec.memoryFacts.filter((f): f is string => typeof f === 'string')
       : [],
+    isRevision: rec.isRevision === true,
   }
 }
 
@@ -58,14 +62,20 @@ export async function decideNextStep(params: {
   userMessage: string
   history: AgentChatMessage[]
   memory: string[]
+  // 이 에이전트가 방금 만든 결과물(초안/기획안) 전문 — 있으면 대표님 피드백이
+  // "이걸 이렇게 고쳐줘"인지 판단하는 근거가 된다.
+  lastOutput?: string
 }): Promise<ChatDecision> {
-  const { apiKey, agent, brandContext, userMessage, history, memory } = params
+  const { apiKey, agent, brandContext, userMessage, history, memory, lastOutput } = params
 
   const historyText = history
     .slice(-10)
     .map((m) => `${m.role === 'user' ? '대표님' : '나'}: ${m.content}`)
     .join('\n')
   const memoryText = memory.length > 0 ? memory.map((f) => `- ${f}`).join('\n') : '(아직 없음)'
+  const lastOutputText = lastOutput?.trim()
+    ? lastOutput.trim().slice(0, 2000)
+    : '(아직 만든 결과물 없음)'
 
   const system = `너는 ${AGENT_ROLE_KO[agent]} 에이전트다. 브랜드 정보: ${brandContext}
 
@@ -78,12 +88,18 @@ ${AGENT_SCOPE_KO[agent]}
    절대 추측으로 작업을 시작하지 말고, 짧고 구체적인 되묻는 질문으로 의도를 확인한다 —
    잘못 만든 결과물 하나보다 한 번 더 묻는 게 훨씬 낫다. 대표님의 말이 이해가 안 되면
    "혹시 ~라는 뜻일까요, 아니면 ~일까요?"처럼 선택지를 제시하며 되묻는다.
-2. "act" — 지시가 충분히 구체적이고 "너의 담당 범위" 안이며, 이전 대화까지 합치면 뭘 만들지 명확할 때.
-   이때는 실제 작업을 시작하겠다는 짧은 안내 문구(text)와 함께, 지금까지 대화 전체를 종합한
-   깔끔한 지시문(cleanInstruction, 실제 생성기가 바로 쓸 수 있는 주제/지시 문장 하나)을 만든다.
-3. "reply" — 새로운 작업 요청이 아니라 그냥 대화/질문/이미 만든 결과물에 대한 감상일 때,
-   그리고 "너의 담당 범위 밖"의 요청일 때. 담당 밖 요청이면 절대 act로 실행하지 말고,
-   무엇이 담당이 아니고 어디서(어느 탭/어느 담당) 할 수 있는지 친절하게 안내한다.
+   ★ 단, 아래 [방금 만든 결과물]이 있고 대표님 메시지가 "그걸 이렇게 고쳐/보완/추가/다시 써줘"라는
+   수정 요청이면, 무엇을 수정할지 이미 명확하므로 되묻지 말고 곧바로 "act"로 처리한다(그 결과물이 대상).
+2. "act" — 지시가 충분히 구체적이고 "너의 담당 범위" 안이며, 뭘 만들지(또는 뭘 고칠지) 명확할 때.
+   이때는 실제 작업을 시작하겠다는 짧은 안내 문구(text)와 함께, 깔끔한 지시문(cleanInstruction)을 만든다.
+   - 새로 만드는 거면: cleanInstruction = 생성기가 바로 쓸 주제/지시 문장 하나. isRevision=false.
+   - 직전 결과물을 고치는 거면: cleanInstruction = "무엇을 어떻게 바꿀지" 구체적 수정 지시(예:
+     "1~5번 항목에 최신 트렌드·전문 근거를 보강하고 훅의 무게중심을 공감형으로 통일"). isRevision=true.
+3. "reply" — 새로운 작업/수정 요청이 아니라 그냥 대화·질문·감상일 때, 그리고 "너의 담당 범위 밖"의
+   요청일 때. 담당 밖 요청이면 절대 act로 실행하지 말고, 어디서 할 수 있는지 안내한다.
+
+[방금 만든 결과물 — 대표님이 이걸 고치라고 하면 이 내용을 기준으로 수정]
+${lastOutputText}
 
 지금까지 대표님한테서 파악한 특징(항상 참고할 것):
 ${memoryText}
@@ -91,7 +107,7 @@ ${memoryText}
 이번 대화에서 새롭게 알게 된 대표님의 취향·스타일·선호가 있으면 memoryFacts에 짧은 문장으로
 적는다(없으면 빈 배열). 예: "제목은 궁금증 유발형을 선호함", "너무 뻔한 설명 지양".
 
-JSON으로만 답한다: {"kind": "question"|"act"|"reply", "text": "...", "cleanInstruction": "...(act일 때만)", "memoryFacts": ["..."]}`
+JSON으로만 답한다: {"kind": "question"|"act"|"reply", "text": "...", "cleanInstruction": "...(act일 때만)", "isRevision": true|false, "memoryFacts": ["..."]}`
 
   const user = `[최근 대화]\n${historyText || '(대화 시작)'}\n\n[대표님의 새 메시지]\n${userMessage}`
 

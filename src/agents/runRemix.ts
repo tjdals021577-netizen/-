@@ -1,8 +1,8 @@
-import { callClaudeJson } from '../lib/claude.js'
+import { callClaudeJson, CLAUDE_MODEL_CHEAP } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import { buildRemixSystemPrompt, buildRemixUserPrompt } from './remixPrompts.js'
 import { buildRemixReviewSystemPrompt, buildRemixReviewUserPrompt } from './remixReviewPrompts.js'
-import { PASS_THRESHOLD } from '../types/domain.js'
+import { REWRITE_THRESHOLD } from '../types/domain.js'
 import type { RemixPlan, RemixReview } from '../types/remix.js'
 import type { CriterionScore, RevisionFlag, FlagSeverity } from '../types/domain.js'
 
@@ -69,6 +69,8 @@ export async function reviewRemixPlan(params: {
   const { apiKey, plan } = params
   const raw = await callClaudeJson({
     apiKey,
+    // 채점은 판단만 하므로 더 싼 Haiku로(비용 절감).
+    model: CLAUDE_MODEL_CHEAP,
     system: buildRemixReviewSystemPrompt(),
     user: buildRemixReviewUserPrompt(plan),
     // 6개 항목 코멘트 + flags + summary가 한국어로 길어져 2048에서 JSON이
@@ -99,8 +101,11 @@ export async function generateScoredRemixPlan(params: {
   brandContext?: string
   marketFindings?: string
   pastFeedback?: string
+  // 대표님이 팀채팅에서 "방금 만든 기획 이렇게 고쳐줘"라고 하면, 직전 기획안 +
+  // 피드백을 넘겨 그걸 수정보완한다(처음부터 새로 쓰지 않고).
+  revision?: { previousPlan: RemixPlan; feedback: string }
 }): Promise<{ plan: RemixPlan; review: RemixReview }> {
-  const { apiKey, topic, referenceText, brandContext, marketFindings, pastFeedback } = params
+  const { apiKey, topic, referenceText, brandContext, marketFindings, pastFeedback, revision } = params
   const system = buildRemixSystemPrompt(brandContext, marketFindings, pastFeedback)
 
   async function generate(revision?: { previousPlan: RemixPlan; feedback: string }): Promise<RemixPlan> {
@@ -147,12 +152,14 @@ export async function generateScoredRemixPlan(params: {
     }
   }
 
-  let plan = await generate()
+  // 수정보완 요청이면 직전 기획안 + 피드백으로 시작(처음부터 새로 쓰지 않음).
+  let plan = await generate(revision)
   let review = await reviewOrFallback(plan)
 
-  // 채점이 정상적으로 됐고(항목 점수 존재) 미달일 때만 1회 재작성한다.
+  // 채점이 정상적으로 됐고(항목 점수 존재) 재작성 기준(80) 미만일 때만 1회
+  // 재작성한다 — 90 기준이면 거의 매번 재작성돼 비용이 2배였다(대표님 결정).
   // 채점 자체가 실패한 경우는 재작성해도 판단 근거가 없으니 그대로 둔다.
-  if (review.criteriaScores.length > 0 && review.totalScore < PASS_THRESHOLD) {
+  if (review.criteriaScores.length > 0 && review.totalScore < REWRITE_THRESHOLD) {
     try {
       const revised = await generate({ previousPlan: plan, feedback: feedbackFromReview(review) })
       const revisedReview = await reviewOrFallback(revised)

@@ -70,3 +70,7 @@ export interface ReviewResult {
 }
 
 export const PASS_THRESHOLD = 90
+// 재작성(1회 더)을 발동하는 기준. PASS_THRESHOLD(90)로 하면 거의 매번
+// 재작성이 돌아 비용이 2배가 됐다 — 재작성은 "많이 부족할 때만" 돌리도록
+// 더 낮은 기준을 둔다(대표님 결정). 통과/미달 라벨은 여전히 90 기준.
+export const REWRITE_THRESHOLD = 80

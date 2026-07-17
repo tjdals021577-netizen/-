@@ -1,6 +1,7 @@
 import {
   callClaudeJson,
   callClaudeVisionJson,
+  CLAUDE_MODEL_CHEAP,
   type VisionImageInput,
 } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
@@ -9,6 +10,7 @@ import {
   buildDraftUserPrompt,
   buildReviewSystemPrompt,
   buildReviewUserPrompt,
+  buildCombinedReviewSystemPrompt,
 } from './blogPrompts.js'
 import { BLOG_RUBRICS } from './blogRubric.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../types/blog.js'
@@ -174,6 +176,10 @@ export async function runBlogAgentReview(params: {
   const { apiKey, role, draft } = params
   const raw = await callClaudeJson({
     apiKey,
+    // 채점은 판단만 하므로 더 싼 Haiku로(비용 절감). 이 경로는 블로그 직접
+    // 작성 화면의 3인 실시간 표시용이라 3콜 구조를 유지한다(자동/팀채팅 경로는
+    // runBlogReviewsResilient에서 1콜로 통합).
+    model: CLAUDE_MODEL_CHEAP,
     system: buildReviewSystemPrompt(role),
     user: buildReviewUserPrompt(draft),
     // 채점은 검색 없는 단순 호출이라 보통 1분 안에 끝난다 — 기본값(260초)을
@@ -186,21 +192,40 @@ export async function runBlogAgentReview(params: {
   return parseBlogReview(role, raw)
 }
 
-// 3인 위원회를 Promise.all로 돌리면 1명만 실패해도 전부 reject돼서, 이미
-// 비싸게 만들어둔 초안까지 통째로 버려지고 "오류"만 남는 문제가 실제로
-// 있었다(라이터가 반복 오류났던 원인 중 하나). 실패한 심사위원은 빼고
-// 성공한 채점만 모아서 돌려준다 — 전원 실패하면 빈 배열(호출부에서 "채점
-// 실패, 내용은 저장됨"으로 처리).
+// 3인 위원회(SEO·카피·경험)를 각각 API 호출하면 글 전문을 3번 재전송해 비용이
+// 컸다 — 한 번의 호출로 세 관점을 모두 채점한다(대표님 결정: 3콜 → 1콜).
+// 게다가 채점은 "판단"만 하므로 더 싼 Haiku로 돌려 추가 절감. 채점 호출이
+// 실패해도(응답 잘림 등) 빈 배열을 돌려줘 초안은 살린다(호출부에서 "채점 실패,
+// 내용은 저장됨"으로 처리). roles 인자는 하위호환용으로 남기되 무시한다(항상 3역할).
 export async function runBlogReviewsResilient(params: {
   apiKey: string
   roles: BlogRole[]
   draft: BlogDraft
 }): Promise<BlogReview[]> {
-  const { apiKey, roles, draft } = params
-  const settled = await Promise.allSettled(
-    roles.map((role) => runBlogAgentReview({ apiKey, role, draft })),
-  )
-  return settled
-    .filter((r): r is PromiseFulfilledResult<BlogReview> => r.status === 'fulfilled')
-    .map((r) => r.value)
+  const { apiKey, draft } = params
+  try {
+    const raw = await callClaudeJson({
+      apiKey,
+      model: CLAUDE_MODEL_CHEAP,
+      system: buildCombinedReviewSystemPrompt(),
+      user: buildReviewUserPrompt(draft),
+      maxTokens: 4096,
+      timeoutMs: 120_000,
+      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+    })
+    const rec = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
+    const reviewsRaw = Array.isArray(rec.reviews) ? rec.reviews : []
+    const out: BlogReview[] = []
+    for (const item of reviewsRaw) {
+      if (typeof item !== 'object' || item === null) continue
+      const r = item as Record<string, unknown>
+      const role = r.role
+      if (role !== 'seo' && role !== 'copywriting' && role !== 'experience') continue
+      out.push(parseBlogReview(role, r))
+    }
+    return out
+  } catch {
+    // 채점 호출 전체 실패 시 빈 배열 — 초안은 살리고 "채점 실패"로 처리된다.
+    return []
+  }
 }

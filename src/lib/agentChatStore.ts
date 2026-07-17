@@ -4,7 +4,19 @@ import { syncToSupabase } from './remoteSync.js'
 
 const MESSAGES_KEY = 'ai-ops:agent-chat-messages'
 const MEMORY_KEY = 'ai-ops:agent-memory'
+const LAST_OUTPUT_KEY = 'ai-ops:agent-last-output'
 const MAX_MEMORY_PER_AGENT = 20
+
+// 에이전트가 방금 만든 결과물(초안/기획안)을 에이전트·브랜드별로 딱 하나(최신)
+// 기억해둔다 — 대표님이 "방금 만든 거 이렇게 고쳐줘"라고 하면 이걸 꺼내
+// 수정보완한다. 채팅 기록(짧은 안내 문구)엔 결과물 전문이 없어서 따로 저장한다.
+export interface AgentLastOutput {
+  agent: string
+  brand: Brand
+  title: string
+  content: string
+  createdAt: string
+}
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -95,4 +107,30 @@ export function addMemoryFacts(agent: string, brand: Brand, facts: string[]): vo
 
 export function deleteMemoryFact(id: string): void {
   writeAll(MEMORY_KEY, readAll<AgentMemoryFact>(MEMORY_KEY).filter((m) => m.id !== id))
+}
+
+export function setLastOutput(params: {
+  agent: string
+  brand: Brand
+  title: string
+  content: string
+}): void {
+  const entry: AgentLastOutput = {
+    agent: params.agent,
+    brand: params.brand,
+    title: params.title,
+    content: params.content,
+    createdAt: new Date().toISOString(),
+  }
+  // 에이전트+브랜드당 최신 1개만 유지한다(직전 것을 덮어씀).
+  const others = readAll<AgentLastOutput>(LAST_OUTPUT_KEY).filter(
+    (o) => !(o.agent === params.agent && o.brand === params.brand),
+  )
+  writeAll(LAST_OUTPUT_KEY, [entry, ...others])
+}
+
+export function getLastOutput(agent: string, brand: Brand): AgentLastOutput | undefined {
+  return readAll<AgentLastOutput>(LAST_OUTPUT_KEY).find(
+    (o) => o.agent === agent && o.brand === brand,
+  )
 }

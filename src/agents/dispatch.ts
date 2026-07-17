@@ -8,7 +8,8 @@ import { startWorkLog, finishWorkLog } from '../lib/workLog.js'
 import { getTodaySpendUsd } from '../lib/budgetGuard.js'
 import { submitForApproval } from '../lib/approvalStore.js'
 import { createEntry } from '../lib/calendarStore.js'
-import { PASS_THRESHOLD } from '../types/domain.js'
+import { setLastOutput } from '../lib/agentChatStore.js'
+import { PASS_THRESHOLD, REWRITE_THRESHOLD } from '../types/domain.js'
 import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from '../types/brand.js'
 import type { BlogRole } from '../types/blog.js'
 import { getLatestBrainReport, formatBrainFindingsForPrompt, saveBrainReport } from '../lib/brainStore.js'
@@ -27,8 +28,12 @@ export async function dispatchJob(params: {
   brand: Brand
   apiKey: string
   instruction: string
+  // 대표님이 "방금 만든 거 이렇게 고쳐줘"라고 할 때, 직전 결과물을 넘겨 그걸
+  // 수정보완하게 한다(처음부터 새로 쓰지 않음). chatDecide가 수정 요청으로
+  // 판단했을 때만 채워진다.
+  previousOutput?: { title: string; content: string }
 }): Promise<void> {
-  const { agent, brand, apiKey, instruction } = params
+  const { agent, brand, apiKey, instruction, previousOutput } = params
   const topic = instruction.trim()
   const today = new Date().toISOString().slice(0, 10)
   const marketFindings = formatBrainFindingsForPrompt(getLatestBrainReport(brand))
@@ -51,6 +56,11 @@ export async function dispatchJob(params: {
         brandContext: BRAND_CONTEXT[brand],
         marketFindings,
         pastFeedback,
+        // 수정보완 요청이면 직전 글을 기반으로 고쳐 쓴다.
+        previousDraft: previousOutput
+          ? { title: previousOutput.title, body: previousOutput.content, photoPlacements: [] }
+          : undefined,
+        feedback: previousOutput ? topic : undefined,
       })
       let reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
       const scoreOf = (rs: BlogReview[]) =>
@@ -60,7 +70,7 @@ export async function dispatchJob(params: {
       // 쓴다(무한 루프 방지) — "미달인 채로 그냥 보류"만 반복돼서 발행할
       // 콘텐츠가 안 나오는 문제를 줄이기 위함. 재작성이 오히려 더 나쁘면
       // 첫 초안을 유지한다.
-      if (reviews.length > 0 && scoreOf(reviews) < PASS_THRESHOLD) {
+      if (reviews.length > 0 && scoreOf(reviews) < REWRITE_THRESHOLD) {
         try {
           const feedback = reviews
             .map((r) => `[${r.role}] ${r.summary}\n${r.flags.map((f) => `- ${f.reason}`).join('\n')}`)
@@ -97,6 +107,8 @@ export async function dispatchJob(params: {
         detailHtml: `<b>${draft.title}</b><br/>블로그 탭에서 전체 내용을 확인하세요.`,
       })
       const contentHtml = `${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`
+      // 방금 만든 글을 기억해둔다 — 다음에 "이렇게 고쳐줘" 하면 이걸 수정보완한다.
+      setLastOutput({ agent: 'writer', brand, title: draft.title, content: draft.body })
       submitForApproval({
         agent: 'writer',
         brand,
@@ -128,6 +140,9 @@ export async function dispatchJob(params: {
         topic,
         brandVoice: MAJALNAM_THREAD_VOICE,
         marketFindings,
+        // 수정보완 요청이면 직전 스레드 글을 기반으로 고쳐 쓴다.
+        previousDraft: previousOutput ? { text: previousOutput.content } : undefined,
+        feedback: previousOutput ? topic : undefined,
       })
       const review = await runThreadReview({ apiKey, draft })
       const passed = review.totalScore >= PASS_THRESHOLD
@@ -140,6 +155,7 @@ export async function dispatchJob(params: {
       })
       const title = draft.text.slice(0, 40) + (draft.text.length > 40 ? '…' : '')
       const contentHtml = draft.text.replace(/\n/g, '<br/>')
+      setLastOutput({ agent: 'buzz', brand, title, content: draft.text })
       submitForApproval({
         agent: 'buzz',
         brand,
@@ -173,6 +189,13 @@ export async function dispatchJob(params: {
         brandContext: BRAND_CONTEXT[brand],
         marketFindings,
         pastFeedback: formatRecentFeedbackForPrompt(brand, 'youtube'),
+        // 수정보완 요청이면 직전 기획안을 기반으로 고쳐 쓴다(제목·구성 전문을 넘김).
+        revision: previousOutput
+          ? {
+              previousPlan: { title: previousOutput.title, outline: previousOutput.content, hooks: [], benchmarkNotes: [] },
+              feedback: topic,
+            }
+          : undefined,
       })
       const videoTitle = plan.title || topic
       const passed = review.totalScore >= PASS_THRESHOLD
@@ -186,6 +209,13 @@ export async function dispatchJob(params: {
         detailHtml: `${titleLine}<b>채점</b> ${scoreNote}<br/>${review.summary}`,
       })
       const contentHtml = `${titleLine}<b>훅 후보</b><br/>${plan.hooks.map((h) => `- ${h}`).join('<br/>')}<br/><br/><b>대본 구성안</b><br/>${plan.outline.replace(/\n/g, '<br/>')}<br/><br/><b>채점</b> ${scoreNote} — ${review.summary}`
+      // 방금 만든 기획을 기억해둔다(제목 + 훅 + 대본) — 다음 수정 요청 때 이걸 고친다.
+      setLastOutput({
+        agent: 'remix',
+        brand,
+        title: videoTitle,
+        content: `제목: ${plan.title}\n훅: ${plan.hooks.join(' / ')}\n\n대본 구성:\n${plan.outline}`,
+      })
       submitForApproval({
         agent: 'remix',
         brand,

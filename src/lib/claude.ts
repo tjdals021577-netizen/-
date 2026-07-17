@@ -2,6 +2,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resources/messages'
 
 export const CLAUDE_MODEL = 'claude-sonnet-5'
+// 채점·판단처럼 "생성"이 아니라 "평가"만 하는 작업은 더 싼 모델로 돌린다
+// (대표님 결정: 비용 절감). 생성 품질은 Sonnet 그대로 두고 채점만 Haiku로.
+export const CLAUDE_MODEL_CHEAP = 'claude-haiku-4-5'
 
 // 호출 1건이 걸려서 무한정 응답을 기다리는 상황을 막기 위한 기본 타임아웃.
 // 원래 120초 → 200초로 늘렸는데도 웹서치 검색을 많이 도는 경우 200초를
@@ -158,6 +161,7 @@ export async function callClaudeJson(params: {
   maxTokens?: number
   timeoutMs?: number
   onUsage?: UsageCallback
+  model?: string
 }): Promise<unknown> {
   const {
     apiKey,
@@ -166,12 +170,13 @@ export async function callClaudeJson(params: {
     maxTokens = 4096,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
+    model = CLAUDE_MODEL,
   } = params
 
   const response = await createMessage(
     apiKey,
     {
-      model: CLAUDE_MODEL,
+      model,
       max_tokens: maxTokens,
       system,
       messages: [{ role: 'user', content: user }],

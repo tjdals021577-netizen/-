@@ -1,4 +1,4 @@
-import { callClaudeJson, callClaudeVisionJson, type VisionImageInput } from '../lib/claude.js'
+import { callClaudeJson, callClaudeVisionJson, CLAUDE_MODEL_CHEAP, type VisionImageInput } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import {
   buildThreadDraftSystemPrompt,
@@ -242,6 +242,7 @@ export async function runThreadReview(params: {
   const { apiKey, draft } = params
   const raw = await callClaudeJson({
     apiKey,
+    model: CLAUDE_MODEL_CHEAP, // 채점은 판단만 — 싼 Haiku로(비용 절감)
     system: buildThreadReviewSystemPrompt(),
     user: buildThreadReviewUserPrompt(draft),
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
@@ -261,6 +262,7 @@ export async function runThreadReviewBatch(params: {
   if (drafts.length === 0) return []
   const raw = await callClaudeJson({
     apiKey,
+    model: CLAUDE_MODEL_CHEAP, // 채점은 판단만 — 싼 Haiku로(비용 절감)
     system: buildThreadReviewBatchSystemPrompt(drafts.length),
     user: buildThreadReviewBatchUserPrompt(drafts),
     maxTokens: 8192,

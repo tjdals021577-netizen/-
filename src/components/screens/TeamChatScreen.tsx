@@ -3,7 +3,7 @@ import { PreviewBanner } from './PreviewBanner'
 import { getWorkLog, syncWorkLogFromSupabase, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { decideNextStep } from '../../agents/chatDecide'
-import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact } from '../../lib/agentChatStore'
+import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact, getLastOutput } from '../../lib/agentChatStore'
 import type { AgentChatMessage } from '../../types/agentChat'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
 import { BRAND_CHANNELS, BRAND_CONTEXT, type Brand } from '../../types/brand'
@@ -306,6 +306,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     setLogVersion((v) => v + 1)
     const history = getMessages(agent, brand)
     const memory = getMemory(agent, brand).map((m) => m.fact)
+    const lastOutput = getLastOutput(agent, brand)
     const decision = await decideNextStep({
       apiKey,
       agent,
@@ -313,6 +314,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
       userMessage: text,
       history,
       memory,
+      lastOutput: lastOutput ? `제목: ${lastOutput.title}\n${lastOutput.content}` : undefined,
     })
     if (decision.memoryFacts.length > 0) {
       addMemoryFacts(agent, brand, decision.memoryFacts)
@@ -320,7 +322,17 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
     if (decision.kind === 'act') {
       addMessage({ agent, brand, role: 'agent', content: decision.text || '작업을 시작할게요.' })
       setLogVersion((v) => v + 1)
-      await dispatchJob({ agent, brand, apiKey, instruction: decision.cleanInstruction || text })
+      // 수정보완 요청이면 직전 결과물을 넘겨 그걸 고쳐 쓰게 한다(새로 안 씀).
+      await dispatchJob({
+        agent,
+        brand,
+        apiKey,
+        instruction: decision.cleanInstruction || text,
+        previousOutput:
+          decision.isRevision && lastOutput
+            ? { title: lastOutput.title, content: lastOutput.content }
+            : undefined,
+      })
     } else {
       addMessage({
         agent,

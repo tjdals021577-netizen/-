@@ -11,7 +11,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { generateBlogDraft, runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
 import { generateScoredRemixPlan } from '../../src/agents/runRemix.js'
-import { PASS_THRESHOLD } from '../../src/types/domain.js'
+import { PASS_THRESHOLD, REWRITE_THRESHOLD } from '../../src/types/domain.js'
 import { BRAND_CONTEXT } from '../../src/types/brand.js'
 import type { Brand } from '../../src/types/brand.js'
 import type { BlogRole, BlogDraft, BlogReview } from '../../src/types/blog.js'
@@ -169,7 +169,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
   // 미달이면 심사 피드백을 반영해 딱 한 번 다시 쓴다(대표님 결정: 모든 업무
   // 미달 시 1회 재작성 → 그래도 미달이면 그대로 결재함에). 재작성이 오히려
   // 더 나쁘면 첫 초안을 유지한다. 사진은 재작성 때 다시 붙이지 않는다(비용).
-  if (reviews.length > 0 && scoreOf(reviews) < PASS_THRESHOLD) {
+  if (reviews.length > 0 && scoreOf(reviews) < REWRITE_THRESHOLD) {
     try {
       const feedback = reviews
         .map((r) => `[${r.role}] ${r.summary}\n${r.flags.map((f) => `- ${f.reason}`).join('\n')}`)

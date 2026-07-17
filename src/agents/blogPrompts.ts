@@ -141,6 +141,42 @@ JSON 스키마:
 criteriaScores의 criterionId는 반드시 다음 중에서만 사용: ${rubric.map((c) => `"${c.id}"`).join(', ')}`
 }
 
+// 3인 위원회(SEO·카피·경험)를 각각 API 호출하지 않고 한 번의 호출로 세 관점을
+// 모두 채점한다(대표님 결정: 비용 절감 — 3콜 → 1콜). 각 역할의 루브릭을 모두
+// 넣고, 역할별 채점 결과를 배열로 받는다.
+const COMBINED_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
+
+export function buildCombinedReviewSystemPrompt(): string {
+  const roleBlocks = COMBINED_ROLES.map((role) => {
+    const rubric = BLOG_RUBRICS[role]
+    const rubricText = rubric.map((c) => `  - ${c.label} (${c.weight}점, id="${c.id}"): ${c.description}`).join('\n')
+    return `[역할 "${role}" — ${BLOG_ROLE_LABEL[role]}] (5개 항목, 각 20점, 합계 100점)\n${rubricText}`
+  }).join('\n\n')
+
+  return `${NAVER_KNOWLEDGE}
+
+당신은 블로그 SEO 위원회입니다. 아래 세 역할(SEO·카피라이팅·경험)의 기준으로 주어진 블로그 초안을 각 역할별로 따로 채점하세요.
+
+${roleBlocks}
+
+규칙:
+1. 각 역할마다 5개 항목을 0~20점 정수로 매기고, 각 항목에 짧은 근거(comment)를 남긴다.
+2. 각 역할의 totalScore는 그 역할 5개 항목 점수의 합(0~100)이다.
+3. flags: 역할별로 다시 확인할 부분을 quote(문제 문장 인용, 짧게)·reason(이유)·severity("info"|"check"|"risk")로 표시(없으면 빈 배열).
+4. criteriaScores의 criterionId는 반드시 해당 역할의 항목 id만 사용한다.
+5. 분량 제한(응답 잘림 방지): comment·reason은 각 1문장으로 짧게.
+6. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
+
+JSON 스키마:
+{
+  "reviews": [
+    { "role": "seo"|"copywriting"|"experience", "totalScore": number, "summary": string,
+      "criteriaScores": [ { "criterionId": string, "score": number, "comment": string } ],
+      "flags": [ { "quote": string, "reason": string, "severity": "info"|"check"|"risk" } ] }
+  ]
+}`
+}
+
 export function buildReviewUserPrompt(draft: {
   title: string
   body: string
