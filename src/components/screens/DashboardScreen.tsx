@@ -66,7 +66,6 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
   }, [brand, refreshKey])
 
   const topSource = radar?.trafficSources[0]
-  const topPage = radar?.topPages[0]
   // 유튜브 CTA(홈페이지 UTM utm_source=youtube)로 들어온 세션 — 1위가 아니어도
   // 항상 보이게 별도로 합산한다. GA4 sessionSource가 "youtube"(또는 유사)로 잡힌다.
   const youtubeInflow =
@@ -86,7 +85,6 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
       label: '유튜브 유입(CTA)',
       value: radar ? `${youtubeInflow.toLocaleString('ko-KR')}명` : '—',
     },
-    { label: '인기 페이지', value: topPage ? topPage.path : '—' },
     {
       label: `${imweb?.periodLabel ?? '어제'} 주문`,
       value: imweb ? `${imweb.orderCount ?? 0}건` : '—',
