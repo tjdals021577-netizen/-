@@ -29,6 +29,24 @@ function formatBlogReferrer(referrer: string): string {
   return match[2] ? `${blogId}의 블로그 (글 ${match[2]})` : `${blogId}의 블로그`
 }
 
+// GA4의 유입 출처(sessionSource) 값을 사람이 알아보기 쉽게 바꾼다. "(direct)"는
+// 직접 방문, "(not set)"은 GA4가 출처를 못 잡은 트래픽(앱 내 브라우저·리퍼러
+// 차단 등). 유튜브 CTA(utm_source=youtube)는 "youtube"로 들어온다.
+function isYoutubeSource(source: string): boolean {
+  return /youtube|유튜브|yt\b/i.test(source)
+}
+function formatSource(source: string): string {
+  const s = source.trim().toLowerCase()
+  if (!s || s === '(not set)') return '미확인(직접·앱)'
+  if (s === '(direct)') return '직접 방문'
+  if (isYoutubeSource(s)) return '유튜브'
+  if (s.includes('naver')) return '네이버'
+  if (s.includes('google')) return '구글'
+  if (s.includes('instagram')) return '인스타그램'
+  if (s.includes('threads')) return '스레드'
+  return source
+}
+
 function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number }) {
   const spend = todaySpendForBrand(brand)
   const [radar, setRadar] = useState<RadarSnapshot | null>(null)
@@ -53,7 +71,7 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
   // 항상 보이게 별도로 합산한다. GA4 sessionSource가 "youtube"(또는 유사)로 잡힌다.
   const youtubeInflow =
     radar?.trafficSources
-      .filter((s) => /youtube|유튜브|yt\b/i.test(s.source))
+      .filter((s) => isYoutubeSource(s.source))
       .reduce((sum, s) => sum + s.sessions, 0) ?? 0
   const stats = [
     {
@@ -62,7 +80,7 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
     },
     {
       label: '1위 유입경로',
-      value: topSource ? `${topSource.source} (${topSource.sessions.toLocaleString('ko-KR')}명)` : '—',
+      value: topSource ? `${formatSource(topSource.source)} (${topSource.sessions.toLocaleString('ko-KR')}명)` : '—',
     },
     {
       label: '유튜브 유입(CTA)',
@@ -99,7 +117,7 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
           </p>
           <div className="space-y-1">
             {radar.trafficSources.map((s) => {
-              const isYoutube = /youtube|유튜브|yt\b/i.test(s.source)
+              const isYoutube = isYoutubeSource(s.source)
               return (
                 <div key={s.source} className="flex items-center justify-between gap-2 text-[12px]">
                   <span
@@ -107,7 +125,7 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
                     title={s.source}
                   >
                     {isYoutube ? '▶ ' : ''}
-                    {s.source || '(direct)'}
+                    {formatSource(s.source)}
                   </span>
                   <span className="shrink-0 font-bold text-[var(--text)]">{s.sessions.toLocaleString('ko-KR')}명</span>
                 </div>
