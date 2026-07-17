@@ -109,7 +109,7 @@ export async function generateScoredRemixPlan(params: {
   const system = buildRemixSystemPrompt(brandContext, marketFindings, pastFeedback)
 
   async function generate(revision?: { previousPlan: RemixPlan; feedback: string }): Promise<RemixPlan> {
-    const user = buildRemixUserPrompt({
+    const baseUser = buildRemixUserPrompt({
       topic,
       referenceText,
       previousPlan: revision
@@ -117,16 +117,23 @@ export async function generateScoredRemixPlan(params: {
         : undefined,
       feedback: revision?.feedback,
     })
-    // JSON이 잘리거나(파싱 실패) 아예 안 나오는(JSON 못 찾음) 일이 가끔 있어
-    // — 응답 길이가 들쭉날쭉해서 생기는 일시적 문제라 최대 2번까지 다시 시도한다.
-    // 두 번 다 실패하면 마지막 오류를 그대로 던진다(호출부가 오류로 처리).
+    // JSON이 잘리거나(파싱 실패) 아예 안 나오는(JSON 못 찾음) 일이 가끔 있다.
+    // 특히 "이거 이어서 써줘" 같은 수정 요청은 모델이 JSON 대신 줄글로 "이어서"
+    // 써버려서 아예 JSON이 안 나오는 경우가 있다 — 그래서 재시도할 땐 같은
+    // 프롬프트를 그대로 다시 보내지 않고, JSON만 내라는 강한 지시를 덧붙여
+    // 다르게 시도한다(최대 3번). 3번 다 실패하면 마지막 오류를 던진다.
+    const strictReminder =
+      '\n\n[매우 중요] 앞선 응답이 JSON 형식이 아니었습니다. 이번에는 설명·머리말·인사·마크다운 코드블록 없이, ' +
+      "반드시 '{' 문자로 시작해서 '}'로 끝나는 순수 JSON 객체 하나만 출력하세요. " +
+      '대본을 줄글로 이어서 쓰지 말고, 반드시 아래 스키마의 outline 필드 "안에" 문자열로 담으세요. ' +
+      '스키마: {"title": string, "hooks": [string], "outline": string, "benchmarkNotes": [string]}'
     let lastErr: unknown
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const raw = await callClaudeJson({
           apiKey,
           system,
-          user,
+          user: attempt === 0 ? baseUser : baseUser + strictReminder,
           // 6단계 대본이 길어 8192에서도 가끔 JSON이 잘려 파싱 실패(대표님 리포트)
           // → 넉넉히 늘린다. 프롬프트에서도 각 단계를 간결히 쓰도록 제한한다.
           maxTokens: 12_000,
