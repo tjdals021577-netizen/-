@@ -1,6 +1,6 @@
 import type { ApprovalItem, ApprovalAgent, ApprovalStatus } from '../types/approval.js'
 import type { Brand } from '../types/brand.js'
-import { syncToSupabase } from './remoteSync.js'
+import { syncToSupabase, deleteFromSupabase } from './remoteSync.js'
 
 const STORAGE_KEY = 'ai-ops:approval-queue'
 const MAX_ITEMS = 200
@@ -112,6 +112,21 @@ export async function syncApprovalsFromSupabase(): Promise<void> {
   } catch {
     // 네트워크 실패는 조용히 무시 — 로컬 데이터로 계속 동작
   }
+}
+
+// 테스트하며 쌓인 "미달(통과 못한) 대기 항목"을 한 번에 정리(삭제)한다 —
+// 로컬 + Supabase 둘 다에서 지운다(안 그러면 다음 동기화 때 다시 딸려온다).
+// 승인/반려한 항목은 건드리지 않고, 대기중(pending) + passed=false만 지운다.
+export function clearFailedPending(brand?: Brand): number {
+  const all = readAll()
+  const toRemove = all.filter(
+    (i) => i.status === 'pending' && !i.passed && (!brand || i.brand === brand),
+  )
+  if (toRemove.length === 0) return 0
+  const removeIds = new Set(toRemove.map((i) => i.id))
+  writeAll(all.filter((i) => !removeIds.has(i.id)))
+  for (const item of toRemove) deleteFromSupabase('approval_queue', item.id)
+  return toRemove.length
 }
 
 export function reviewItem(

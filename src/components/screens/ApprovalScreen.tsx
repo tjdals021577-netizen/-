@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { getApprovalQueue, reviewItem, syncApprovalsFromSupabase } from '../../lib/approvalStore'
+import { getApprovalQueue, reviewItem, clearFailedPending, syncApprovalsFromSupabase } from '../../lib/approvalStore'
 import type { ApprovalAgent, ApprovalItem, ApprovalStatus } from '../../types/approval'
 import type { Brand } from '../../types/brand'
 
@@ -184,32 +184,57 @@ export function ApprovalScreen({ brand }: { brand: Brand }) {
 
   const items = getApprovalQueue(tab, brand)
   const pendingCount = getApprovalQueue('pending', brand).length
+  // 대기중이면서 미달(통과 못한) 항목 수 — "미달 정리" 버튼 노출/개수용.
+  const failedPendingCount = getApprovalQueue('pending', brand).filter((i) => !i.passed).length
   void version // 승인/반려 후 재조회 트리거용
+
+  function handleClearFailed() {
+    if (failedPendingCount === 0) return
+    const ok = window.confirm(
+      `${brand}의 대기중 미달 기획 ${failedPendingCount}건을 결재함에서 삭제할까요?\n(승인·반려한 항목과 통과한 기획은 그대로 유지됩니다. 되돌릴 수 없어요.)`,
+    )
+    if (!ok) return
+    clearFailedPending(brand)
+    setVersion((v) => v + 1)
+  }
 
   return (
     <div>
       <PreviewBanner message="라이터·버즈·리믹서가 산출물을 만들 때마다 자동으로 여기에 올라옵니다. 승인/반려는 지금은 기록용이며, 실제 발행(네이버·스레드·유튜브 업로드)은 아직 수동입니다." />
 
-      <div className="mb-4 flex gap-1 rounded-lg bg-[var(--surface-2)] p-1 w-fit">
-        {TABS.map((t) => (
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 rounded-lg bg-[var(--surface-2)] p-1 w-fit">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                tab === t.id
+                  ? 'bg-[var(--surface)] text-[var(--accent)] shadow-sm'
+                  : 'text-[var(--text-faint)] hover:text-[var(--text)]'
+              }`}
+            >
+              {t.label}
+              {t.id === 'pending' && pendingCount > 0 && (
+                <span className="rounded-full bg-[var(--open)] px-1.5 text-[10px] font-bold text-white">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* 미달 테스트 기획 일괄 정리 — 대기중 탭에서 미달 항목이 있을 때만 노출 */}
+        {tab === 'pending' && failedPendingCount > 0 && (
           <button
-            key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-semibold transition ${
-              tab === t.id
-                ? 'bg-[var(--surface)] text-[var(--accent)] shadow-sm'
-                : 'text-[var(--text-faint)] hover:text-[var(--text)]'
-            }`}
+            onClick={handleClearFailed}
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12px] font-bold text-[var(--open)] transition hover:bg-[var(--open-soft)]"
           >
-            {t.label}
-            {t.id === 'pending' && pendingCount > 0 && (
-              <span className="rounded-full bg-[var(--open)] px-1.5 text-[10px] font-bold text-white">
-                {pendingCount}
-              </span>
-            )}
+            미달 {failedPendingCount}건 정리
           </button>
-        ))}
+        )}
       </div>
 
       {items.length === 0 ? (
