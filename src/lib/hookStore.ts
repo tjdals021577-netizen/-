@@ -50,9 +50,16 @@ export async function triggerHookSyncNow(): Promise<{ ok: boolean; message: stri
       method: 'GET',
       headers: password ? { 'X-App-Password': password } : {},
     })
-    const data = (await res.json()) as { ok?: boolean; saved?: number; sheets?: number; note?: string; error?: string }
+    // 401 등은 본문이 JSON이 아닌 평문("Unauthorized")이라 먼저 텍스트로 읽는다.
+    const text = await res.text()
     if (!res.ok) {
-      return { ok: false, message: `실패 (상태 ${res.status})` }
+      return { ok: false, message: `실패 (상태 ${res.status}) ${text.slice(0, 200)}` }
+    }
+    let data: { ok?: boolean; saved?: number; sheets?: number; note?: string; error?: string }
+    try {
+      data = JSON.parse(text)
+    } catch {
+      return { ok: false, message: `응답을 이해하지 못했어요: ${text.slice(0, 200)}` }
     }
     if (data.note) return { ok: true, message: data.note }
     if (data.error) return { ok: false, message: data.error }

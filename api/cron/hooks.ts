@@ -14,10 +14,13 @@ import { sendJson } from '../_lib/cronHandler.js'
 // 이 엔드포인트를 부를 수 있게 앱 비밀번호(x-app-password)도 허용한다 — 대표님이
 // 터미널 없이 앱에서 바로 시트를 갱신·확인할 수 있게.
 function isAuthed(req: IncomingMessage): boolean {
-  const cronOk = req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`
+  // 자동 크론은 CRON_SECRET으로 인증.
+  if (req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`) return true
+  // 앱 설정 버튼 호출: 앱 비밀번호가 "설정돼 있으면" 그것과 일치해야 하고,
+  // 설정 안 돼 있으면(현재 로그인 보호 미적용) claude-proxy와 동일하게 허용한다.
   const pwd = process.env.VITE_APP_PASSWORD
-  const appOk = Boolean(pwd && req.headers['x-app-password'] === pwd)
-  return cronOk || appOk
+  if (!pwd) return true
+  return req.headers['x-app-password'] === pwd
 }
 
 // 후킹 문장으로 결정적 id를 만든다 — 같은 문장은 재실행해도 같은 id라
