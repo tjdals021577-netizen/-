@@ -40,6 +40,30 @@ function fromRow(row: Record<string, unknown>): ReferenceHook {
   }
 }
 
+// 설정 화면의 "지금 시트에서 후킹 불러오기" 버튼용 — 서버 함수(api/cron/hooks)를
+// 앱 비밀번호로 호출해 즉시 구글시트 → Supabase 동기화를 돌리고, 그 결과를
+// 브라우저 캐시에도 반영한다. (샌드박스와 달리 배포된 서버는 구글에 접속 가능)
+export async function triggerHookSyncNow(): Promise<{ ok: boolean; message: string }> {
+  const password = import.meta.env.VITE_APP_PASSWORD
+  try {
+    const res = await fetch('/api/cron/hooks', {
+      method: 'GET',
+      headers: password ? { 'X-App-Password': password } : {},
+    })
+    const data = (await res.json()) as { ok?: boolean; saved?: number; sheets?: number; note?: string; error?: string }
+    if (!res.ok) {
+      return { ok: false, message: `실패 (상태 ${res.status})` }
+    }
+    if (data.note) return { ok: true, message: data.note }
+    if (data.error) return { ok: false, message: data.error }
+    // 서버에 저장됐으면 브라우저 캐시도 새로고침한다.
+    await syncReferenceHooksFromSupabase()
+    return { ok: true, message: `시트 ${data.sheets ?? 0}개에서 후킹 ${data.saved ?? 0}건을 불러왔어요.` }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 export async function syncReferenceHooksFromSupabase(): Promise<void> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return
   try {

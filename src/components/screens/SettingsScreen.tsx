@@ -4,12 +4,15 @@ import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { testSupabaseConnection } from '../../lib/remoteSync'
 import { listReferences, addReference, deleteReference } from '../../lib/referenceStore'
 import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
+import { triggerHookSyncNow } from '../../lib/hookStore'
 
 export function SettingsScreen() {
   const [todaySpend] = useState(() => getTodaySpendUsd())
   const pct = Math.min(100, (todaySpend / DAILY_BUDGET_USD) * 100)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [syncingHooks, setSyncingHooks] = useState(false)
+  const [hookResult, setHookResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const [references, setReferences] = useState(() => listReferences())
   const [refLabel, setRefLabel] = useState('')
@@ -23,6 +26,14 @@ export function SettingsScreen() {
     const result = await testSupabaseConnection()
     setTestResult(result)
     setTesting(false)
+  }
+
+  async function handleSyncHooks() {
+    setSyncingHooks(true)
+    setHookResult(null)
+    const result = await triggerHookSyncNow()
+    setHookResult(result)
+    setSyncingHooks(false)
   }
 
   async function handleAddReference() {
@@ -82,6 +93,33 @@ export function SettingsScreen() {
             }`}
           >
             {testResult.message}
+          </pre>
+        )}
+      </div>
+
+      <div className="mb-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+        <p className="mb-1 text-sm font-semibold text-[var(--text)]">구글시트 후킹 지금 불러오기</p>
+        <p className="mb-3 text-xs text-[var(--text-faint)]">
+          매일 새벽 자동으로 불러오지만, 지금 바로 반영하고 싶을 때 누르세요. 웹에 게시한 시트(HOOK_SHEET_CSV_URLS)를
+          읽어 스레드 위원회·대행이 참고하는 후킹으로 저장합니다.
+        </p>
+        <button
+          type="button"
+          disabled={syncingHooks}
+          onClick={() => void handleSyncHooks()}
+          className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {syncingHooks ? '불러오는 중…' : '지금 시트에서 후킹 불러오기'}
+        </button>
+        {hookResult && (
+          <pre
+            className={`mt-3 whitespace-pre-wrap rounded-lg p-3 text-xs ${
+              hookResult.ok
+                ? 'bg-[var(--done-soft)] text-[var(--done)]'
+                : 'bg-[var(--open-soft)] text-[var(--open)]'
+            }`}
+          >
+            {hookResult.message}
           </pre>
         )}
       </div>

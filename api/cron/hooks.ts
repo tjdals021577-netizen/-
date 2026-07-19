@@ -8,7 +8,17 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { fetchHooksFromCsvUrls } from '../_lib/sheetHooks.js'
-import { requireCronAuth, sendJson } from '../_lib/cronHandler.js'
+import { sendJson } from '../_lib/cronHandler.js'
+
+// 자동 크론(Bearer CRON_SECRET)뿐 아니라, 앱 설정 화면의 "지금 불러오기" 버튼도
+// 이 엔드포인트를 부를 수 있게 앱 비밀번호(x-app-password)도 허용한다 — 대표님이
+// 터미널 없이 앱에서 바로 시트를 갱신·확인할 수 있게.
+function isAuthed(req: IncomingMessage): boolean {
+  const cronOk = req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`
+  const pwd = process.env.VITE_APP_PASSWORD
+  const appOk = Boolean(pwd && req.headers['x-app-password'] === pwd)
+  return cronOk || appOk
+}
 
 // 후킹 문장으로 결정적 id를 만든다 — 같은 문장은 재실행해도 같은 id라
 // merge-duplicates 업서트로 중복 없이 갱신된다(시트에서 지운 건 남지만, 문구가
@@ -18,7 +28,11 @@ function hookId(hook: string): string {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if (!requireCronAuth(req, res)) return
+  if (!isAuthed(req)) {
+    res.statusCode = 401
+    res.end('Unauthorized')
+    return
+  }
 
   const urlsRaw = process.env.HOOK_SHEET_CSV_URLS
   if (!urlsRaw || !urlsRaw.trim()) {
