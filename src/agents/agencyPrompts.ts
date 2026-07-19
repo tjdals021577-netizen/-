@@ -69,8 +69,9 @@ export function buildAgencyDraftSystemPrompt(params: {
   persona: string
   recentPosts?: string[]
   marketFindings?: string
+  hookReference?: string
 }): SystemBlock[] {
-  const { business, persona, recentPosts, marketFindings } = params
+  const { business, persona, recentPosts, marketFindings, hookReference } = params
 
   // 캐시되는 고정부("마잘남 – 글쓰기" 페르소나·원칙 + 전자책 방법론) — 클라이언트가 달라도 동일.
   const staticText = `${AGENCY_IDENTITY}
@@ -99,9 +100,13 @@ ${CONFIDENTIALITY_RULE}
 JSON 스키마:
 { "text": string }`
 
-  // 캐시 안 되는 변동부 — 클라이언트별 정보·리서치.
+  // 캐시 안 되는 변동부 — 클라이언트별 정보·리서치·후킹 레퍼런스.
   const marketBlock = marketFindings ? `[참고할 만한 최근 리서치]\n${marketFindings}` : ''
-  const dynamicText = [buildClientContextBlock({ business, persona, recentPosts }), marketBlock]
+  const dynamicText = [
+    buildClientContextBlock({ business, persona, recentPosts }),
+    marketBlock,
+    hookReference ?? '',
+  ]
     .filter(Boolean)
     .join('\n\n')
 
@@ -126,8 +131,9 @@ export function buildAgencyReferenceSystemPrompt(params: {
   persona: string
   variantCount: number
   recentPosts?: string[]
+  hookReference?: string
 }): SystemBlock[] {
-  const { business, persona, variantCount, recentPosts } = params
+  const { business, persona, variantCount, recentPosts, hookReference } = params
   const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
@@ -160,7 +166,10 @@ ${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해�
 JSON 스키마:
 { "drafts": [ { "text": string } ] }`
 
-  return cachedSystem(staticText, buildClientContextBlock({ business, persona, recentPosts }))
+  const dynamicText = [buildClientContextBlock({ business, persona, recentPosts }), hookReference ?? '']
+    .filter(Boolean)
+    .join('\n\n')
+  return cachedSystem(staticText, dynamicText)
 }
 
 export function buildAgencyReferenceUserPrompt(params: {

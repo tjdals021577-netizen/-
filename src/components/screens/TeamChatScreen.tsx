@@ -8,6 +8,7 @@ import type { AgentChatMessage } from '../../types/agentChat'
 import { isOverDailyBudget } from '../../lib/budgetGuard'
 import { cancelActiveClaudeCalls, ClaudeCancelledError } from '../../lib/claude'
 import { getApprovalQueue, syncApprovalsFromSupabase } from '../../lib/approvalStore'
+import { syncReferenceHooksFromSupabase } from '../../lib/hookStore'
 import { BRAND_CHANNELS, BRAND_CONTEXT, type Brand } from '../../types/brand'
 
 // "모두에게" 지시할 때, 그 브랜드가 아예 운영 안 하는 채널의 에이전트는
@@ -316,9 +317,12 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   // 결재함도 같이 당겨온다 — "방금 만든 기획 고쳐줘"의 폴백(직전 결과물)이
   // 결재함에서 나오기 때문(크론·다른 세션이 만든 기획도 수정 대상이 되게).
   useEffect(() => {
-    void Promise.all([syncWorkLogFromSupabase(), syncApprovalsFromSupabase()]).then(() =>
-      setLogVersion((v) => v + 1),
-    )
+    void Promise.all([
+      syncWorkLogFromSupabase(),
+      syncApprovalsFromSupabase(),
+      // 구글시트 후킹 레퍼런스 캐시 — 버즈(스레드) 글 생성 시 참고.
+      syncReferenceHooksFromSupabase(),
+    ]).then(() => setLogVersion((v) => v + 1))
   }, [])
 
   useEffect(() => {

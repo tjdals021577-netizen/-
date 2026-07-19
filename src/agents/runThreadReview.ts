@@ -98,15 +98,17 @@ export async function generateThreadDraft(params: {
   feedback?: string
   referenceImages?: VisionImageInput[]
   marketFindings?: string
+  // 대표님이 구글시트에 모은 "터진 후킹·CTA" 레퍼런스(구조만 참고해 우리 주제로 치환).
+  hookReference?: string
 }): Promise<ThreadDraft> {
-  const { apiKey, topic, brandVoice, recentPosts, previousDraft, feedback, referenceImages, marketFindings } =
+  const { apiKey, topic, brandVoice, recentPosts, previousDraft, feedback, referenceImages, marketFindings, hookReference } =
     params
   // 클라이언트에 레퍼런스 이미지가 등록돼 있으면 비전 호출로 스타일을
   // 참고시킨다 — 없으면 기존과 동일한 텍스트 전용 호출.
   if (referenceImages && referenceImages.length > 0) {
     const raw = await callClaudeVisionJson({
       apiKey,
-      system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts, marketFindings }),
+      system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts, marketFindings, hookReference }),
       user: buildThreadDraftUserPrompt({ topic, previousDraft, feedback }),
       images: referenceImages,
       maxTokens: 1536,
@@ -116,7 +118,7 @@ export async function generateThreadDraft(params: {
   }
   const raw = await callClaudeJson({
     apiKey,
-    system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts, marketFindings }),
+    system: buildThreadDraftSystemPrompt({ brandVoice, recentPosts, marketFindings, hookReference }),
     user: buildThreadDraftUserPrompt({ topic, previousDraft, feedback }),
     maxTokens: 1536,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
@@ -202,9 +204,10 @@ export async function generateThreadFullFormatSet(params: {
   referenceImages?: VisionImageInput[]
   note?: string
   formats?: string[]
+  hookReference?: string
 }): Promise<ThreadFormatDraft[]> {
-  const { apiKey, topic, referenceImages, note, formats } = params
-  const system = buildThreadFullFormatSystemPrompt(formats)
+  const { apiKey, topic, referenceImages, note, formats, hookReference } = params
+  const system = buildThreadFullFormatSystemPrompt(formats, hookReference)
   const user = buildThreadFullFormatUserPrompt({ topic, note, formatCount: formats?.length })
 
   const raw =

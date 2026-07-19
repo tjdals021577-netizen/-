@@ -1,5 +1,6 @@
 {
   "crons": [
+    { "path": "/api/cron/hooks", "schedule": "0 20 * * *" },
     { "path": "/api/cron/content-schedule", "schedule": "0 21 * * *" },
     { "path": "/api/cron/agency", "schedule": "30 22 * * *" },
     { "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" },

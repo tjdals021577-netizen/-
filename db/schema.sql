@@ -332,3 +332,18 @@ create policy "update thread_follower_daily" on thread_follower_daily for update
 create policy "select content_feedback" on content_feedback for select to public using (true);
 create policy "insert content_feedback" on content_feedback for insert to public with check (true);
 create policy "update content_feedback" on content_feedback for update to public using (true) with check (true);
+
+-- 구글시트(웹에 게시 CSV)에서 동기화하는 "터진 후킹·CTA" 레퍼런스.
+-- api/cron/hooks.ts 가 매일 채우고, 스레드 위원회·대행 생성 프롬프트가 참고한다.
+create table if not exists reference_hooks (
+  id text primary key,
+  hook text not null,
+  industry text,
+  structure text,
+  cta text,
+  updated_at timestamptz not null default now()
+);
+alter table reference_hooks enable row level security;
+create policy "select reference_hooks" on reference_hooks for select to public using (true);
+create policy "insert reference_hooks" on reference_hooks for insert to public with check (true);
+create policy "update reference_hooks" on reference_hooks for update to public using (true) with check (true);

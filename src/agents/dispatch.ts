@@ -15,6 +15,8 @@ import type { BlogRole } from '../types/blog.js'
 import { getLatestBrainReport, formatBrainFindingsForPrompt, saveBrainReport } from '../lib/brainStore.js'
 import { formatRecentFeedbackForPrompt } from '../lib/contentFeedbackStore.js'
 import { ClaudeCancelledError } from '../lib/claude.js'
+import { getReferenceHooks } from '../lib/hookStore.js'
+import { formatHookReference } from './hookReference.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -141,6 +143,8 @@ export async function dispatchJob(params: {
         topic,
         brandVoice: MAJALNAM_THREAD_VOICE,
         marketFindings,
+        // 대표님이 구글시트에 모은 터진 후킹·CTA 레퍼런스(구조만 참고).
+        hookReference: formatHookReference(getReferenceHooks()),
         // 수정보완 요청이면 직전 스레드 글을 기반으로 고쳐 쓴다.
         previousDraft: previousOutput ? { text: previousOutput.content } : undefined,
         feedback: previousOutput ? topic : undefined,

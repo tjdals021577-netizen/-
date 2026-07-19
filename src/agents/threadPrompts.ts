@@ -158,8 +158,9 @@ export function buildThreadDraftSystemPrompt(params: {
   brandVoice?: string
   recentPosts?: string[]
   marketFindings?: string
+  hookReference?: string
 }): SystemBlock[] {
-  const { brandVoice, recentPosts, marketFindings } = params
+  const { brandVoice, recentPosts, marketFindings, hookReference } = params
   // 캐시되는 고정부(전자책 노하우 포함) — 호출마다 100% 동일.
   const staticText = `당신은 마잘남의 스레드 콘텐츠 작가입니다.
 
@@ -196,7 +197,9 @@ JSON 스키마:
   const marketBlock = marketFindings
     ? `[브레인이 조사한 최근 시장 리서치 — 참고해서 방향성에 반영]\n${marketFindings}`
     : ''
-  const dynamicText = [voiceBlock, historyBlock, marketBlock].filter(Boolean).join('\n\n')
+  const dynamicText = [voiceBlock, historyBlock, marketBlock, hookReference ?? '']
+    .filter(Boolean)
+    .join('\n\n')
 
   return cachedSystem(staticText, dynamicText)
 }
@@ -341,8 +344,10 @@ export const THREAD_FULL_FORMATS = [
 
 export function buildThreadFullFormatSystemPrompt(
   formats: string[] = THREAD_FULL_FORMATS,
+  hookReference?: string,
 ): SystemBlock[] {
-  return cachedSystem(`당신은 세계적인 스레드 마케팅 대행 전문가이자 카피라이팅 멘토입니다.
+  return cachedSystem(
+    `당신은 세계적인 스레드 마케팅 대행 전문가이자 카피라이팅 멘토입니다.
 
 ${MAJALNAM_THREAD_VOICE}
 
@@ -374,7 +379,9 @@ ${CONFIDENTIALITY_RULE}
 4. 반드시 아래 JSON 스키마와 정확히 일치하는 JSON만 출력한다. 설명이나 마크다운 코드블록 없이 순수 JSON만 출력한다.
 
 JSON 스키마:
-{ "drafts": [ { "format": string, "text": string } ] }`)
+{ "drafts": [ { "format": string, "text": string } ] }`,
+    hookReference,
+  )
 }
 
 export function buildThreadFullFormatUserPrompt(params: {

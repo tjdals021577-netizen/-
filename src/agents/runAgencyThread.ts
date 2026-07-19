@@ -41,10 +41,11 @@ export async function generateAgencyDraft(params: {
   feedback?: string
   referenceImages?: VisionImageInput[]
   marketFindings?: string
+  hookReference?: string
 }): Promise<ThreadDraft> {
-  const { apiKey, topic, business, persona, recentPosts, previousDraft, feedback, referenceImages, marketFindings } =
+  const { apiKey, topic, business, persona, recentPosts, previousDraft, feedback, referenceImages, marketFindings, hookReference } =
     params
-  const system = buildAgencyDraftSystemPrompt({ business, persona, recentPosts, marketFindings })
+  const system = buildAgencyDraftSystemPrompt({ business, persona, recentPosts, marketFindings, hookReference })
   const user = buildAgencyDraftUserPrompt({ topic, previousDraft, feedback })
 
   if (referenceImages && referenceImages.length > 0) {
@@ -80,9 +81,10 @@ export async function generateAgencyDraftBatch(params: {
   count: number
   recentPosts?: string[]
   referenceImages?: VisionImageInput[]
+  hookReference?: string
 }): Promise<ThreadDraft[]> {
-  const { apiKey, topic, business, persona, count, recentPosts, referenceImages } = params
-  const system = buildAgencyReferenceSystemPrompt({ business, persona, variantCount: count, recentPosts })
+  const { apiKey, topic, business, persona, count, recentPosts, referenceImages, hookReference } = params
+  const system = buildAgencyReferenceSystemPrompt({ business, persona, variantCount: count, recentPosts, hookReference })
   const user = buildAgencyReferenceUserPrompt({ topic, variantCount: count })
 
   const raw =

@@ -5,6 +5,7 @@ import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import type { DraftAttempt } from '../../src/types/agency.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { fetchHookReferenceBlock } from '../_lib/sheetHooks.js'
 import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 
@@ -66,6 +67,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   )
 
   const kstDate = kstDateKey(kstNow())
+  // 구글시트에서 동기화된 "터진 후킹·CTA" 레퍼런스 — 클라이언트마다 동일하게
+  // 참고(구조만 가져와 각 클라이언트 주제로 치환). 한 번만 조회한다.
+  const hookReference = await fetchHookReferenceBlock()
   const results: string[] = []
   for (const client of clients) {
     try {
@@ -98,6 +102,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         count: DRAFT_COUNT,
         recentPosts,
         referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+        hookReference,
       })
       const reviews = await runThreadReviewBatch({ apiKey, drafts })
       const attempts: DraftAttempt[] = drafts.map((draft, i) => ({ draft, review: reviews[i] }))

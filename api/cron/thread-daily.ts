@@ -9,6 +9,7 @@ import { generateThreadFullFormatSet } from '../../src/agents/runThreadReview.js
 import { THREAD_FULL_FORMATS } from '../../src/agents/threadPrompts.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { fetchHookReferenceBlock } from '../_lib/sheetHooks.js'
 import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
 
 const BRAND = '마잘남'
@@ -98,7 +99,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   try {
     const referenceImages = await pickReferenceImages()
     const formats = pickRotatingFormats(DAILY_FORMAT_COUNT)
-    const drafts = await generateThreadFullFormatSet({ apiKey, topic, referenceImages, formats })
+    // 구글시트에서 동기화된 터진 후킹·CTA 레퍼런스(구조만 참고해 마잘남 주제로 치환).
+    const hookReference = await fetchHookReferenceBlock()
+    const drafts = await generateThreadFullFormatSet({ apiKey, topic, referenceImages, formats, hookReference })
 
     await supabaseInsert('work_log', {
       id: makeId(),

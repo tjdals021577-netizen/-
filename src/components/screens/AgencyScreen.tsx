@@ -7,6 +7,8 @@ import {
   generateAgencyVariantsWithReferences,
   generateAgencyFullFormatSet,
 } from '../../agents/runAgencyThread'
+import { formatHookReference } from '../../agents/hookReference'
+import { getReferenceHooks, syncReferenceHooksFromSupabase } from '../../lib/hookStore'
 import {
   listClients,
   createClient,
@@ -158,6 +160,8 @@ export function AgencyScreen() {
   // 만들어둔 초안을 Supabase에서 끌어와 화면에 바로 보이게 한다.
   useEffect(() => {
     syncClientsFromSupabase().then(() => refresh())
+    // 구글시트 후킹 레퍼런스도 미리 당겨와 캐시(대행 글 생성 시 참고).
+    void syncReferenceHooksFromSupabase()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -266,6 +270,7 @@ export function AgencyScreen() {
         count: DRAFT_COUNT,
         recentPosts: client.recentDraftTexts,
         referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+        hookReference: formatHookReference(getReferenceHooks()),
       })
       const reviews = await runThreadReviewBatch({ apiKey, drafts })
       const attempts: DraftAttempt[] = drafts.map((draft, i) => ({ draft, review: reviews[i] }))
