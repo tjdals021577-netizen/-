@@ -117,17 +117,30 @@ function mapRows(rows: string[][]): ParsedHook[] {
   return hooks
 }
 
-export async function fetchHooksFromCsvUrls(urls: string[]): Promise<ParsedHook[]> {
+export interface SheetFetchResult {
+  hooks: ParsedHook[]
+  // 시트별 진단 — 문제 원인(탭 하나만 내보냄·열 위치 오인 등)을 바로 파악하려고.
+  perSheet: { httpOk: boolean; status: number; rawRows: number; parsed: number }[]
+}
+
+export async function fetchHooksFromCsvUrls(urls: string[]): Promise<SheetFetchResult> {
   const all: ParsedHook[] = []
+  const perSheet: SheetFetchResult['perSheet'] = []
   for (const url of urls) {
     try {
       const res = await fetch(url)
-      if (!res.ok) continue
+      if (!res.ok) {
+        perSheet.push({ httpOk: false, status: res.status, rawRows: 0, parsed: 0 })
+        continue
+      }
       const text = await res.text()
-      all.push(...mapRows(parseCsv(text)))
+      const rows = parseCsv(text)
+      const parsed = mapRows(rows)
+      all.push(...parsed)
+      perSheet.push({ httpOk: true, status: res.status, rawRows: rows.length, parsed: parsed.length })
     } catch {
-      // 한 시트가 실패해도 나머지는 계속 — best-effort
+      perSheet.push({ httpOk: false, status: 0, rawRows: 0, parsed: 0 })
     }
   }
-  return all
+  return { hooks: all, perSheet }
 }

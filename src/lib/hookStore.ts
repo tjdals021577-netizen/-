@@ -55,7 +55,14 @@ export async function triggerHookSyncNow(): Promise<{ ok: boolean; message: stri
     if (!res.ok) {
       return { ok: false, message: `실패 (상태 ${res.status}) ${text.slice(0, 200)}` }
     }
-    let data: { ok?: boolean; saved?: number; sheets?: number; note?: string; error?: string }
+    let data: {
+      ok?: boolean
+      saved?: number
+      sheets?: number
+      note?: string
+      error?: string
+      sheetSummary?: string
+    }
     try {
       data = JSON.parse(text)
     } catch {
@@ -65,7 +72,8 @@ export async function triggerHookSyncNow(): Promise<{ ok: boolean; message: stri
     if (data.error) return { ok: false, message: data.error }
     // 서버에 저장됐으면 브라우저 캐시도 새로고침한다.
     await syncReferenceHooksFromSupabase()
-    return { ok: true, message: `시트 ${data.sheets ?? 0}개에서 후킹 ${data.saved ?? 0}건을 불러왔어요.` }
+    const detail = data.sheetSummary ? `\n(${data.sheetSummary})` : ''
+    return { ok: true, message: `시트 ${data.sheets ?? 0}개에서 후킹 ${data.saved ?? 0}건을 불러왔어요.${detail}` }
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) }
   }

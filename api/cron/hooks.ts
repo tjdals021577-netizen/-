@@ -48,7 +48,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     .filter(Boolean)
 
   try {
-    const hooks = await fetchHooksFromCsvUrls(urls)
+    const { hooks, perSheet } = await fetchHooksFromCsvUrls(urls)
     const nowIso = new Date().toISOString()
     // 같은 후킹(같은 id)이 여러 번 나오면 배치 upsert가 충돌하므로 먼저 중복 제거.
     const byId = new Map<string, object>()
@@ -67,7 +67,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (records.length > 0) {
       await supabaseInsert('reference_hooks', records)
     }
-    sendJson(res, 200, { ok: true, sheets: urls.length, saved: records.length })
+    // perSheet(시트별 원본 줄 수·파싱 수)를 함께 돌려줘서, 적게 들어온 원인
+    // (탭 하나만 게시됨·열 위치 오인 등)을 바로 파악할 수 있게 한다.
+    const sheetSummary = perSheet
+      .map((s, i) => `시트${i + 1}: ${s.httpOk ? `${s.rawRows}줄→${s.parsed}개` : `실패(${s.status})`}`)
+      .join(', ')
+    sendJson(res, 200, { ok: true, sheets: urls.length, saved: records.length, perSheet, sheetSummary })
   } catch (err) {
     sendJson(res, 200, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
