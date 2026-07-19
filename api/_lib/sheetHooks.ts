@@ -155,8 +155,16 @@ function mapRows(rows: string[][]): ParsedHook[] {
 
 export interface SheetFetchResult {
   hooks: ParsedHook[]
-  // 시트별 진단 — 문제 원인(탭 하나만 내보냄·열 위치 오인 등)을 바로 파악하려고.
-  perSheet: { httpOk: boolean; status: number; rawRows: number; parsed: number }[]
+  // 시트별 진단 — 문제 원인(탭 하나만 내보냄·열 위치 오인·빈 열 등)을 바로 파악하려고.
+  // header=첫 줄(열 이름), colAvg=열별 평균 글자수(후킹 열은 길다).
+  perSheet: {
+    httpOk: boolean
+    status: number
+    rawRows: number
+    parsed: number
+    header?: string[]
+    colAvg?: number[]
+  }[]
 }
 
 export async function fetchHooksFromCsvUrls(urls: string[]): Promise<SheetFetchResult> {
@@ -173,7 +181,14 @@ export async function fetchHooksFromCsvUrls(urls: string[]): Promise<SheetFetchR
       const rows = parseCsv(text)
       const parsed = mapRows(rows)
       all.push(...parsed)
-      perSheet.push({ httpOk: true, status: res.status, rawRows: rows.length, parsed: parsed.length })
+      perSheet.push({
+        httpOk: true,
+        status: res.status,
+        rawRows: rows.length,
+        parsed: parsed.length,
+        header: (rows[0] ?? []).map((h) => h.trim().slice(0, 20)),
+        colAvg: columnAvgLengths(rows.slice(1)).map((n) => Math.round(n)),
+      })
     } catch {
       perSheet.push({ httpOk: false, status: 0, rawRows: 0, parsed: 0 })
     }

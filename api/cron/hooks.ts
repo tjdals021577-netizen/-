@@ -72,7 +72,23 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const sheetSummary = perSheet
       .map((s, i) => `시트${i + 1}: ${s.httpOk ? `${s.rawRows}줄→${s.parsed}개` : `실패(${s.status})`}`)
       .join(', ')
-    sendJson(res, 200, { ok: true, sheets: urls.length, saved: records.length, perSheet, sheetSummary })
+    // 파싱이 0개인 시트가 있으면 열 구조(열 이름 + 평균 글자수)를 같이 보여줘서
+    // 어느 열에 후킹이 있는지 바로 짚을 수 있게 한다.
+    const zeroDiag = perSheet
+      .map((s, i) =>
+        s.httpOk && s.parsed === 0 && s.header
+          ? `[시트${i + 1} 열] ${s.header.map((h, j) => `${h || '(빈칸)'}~${s.colAvg?.[j] ?? 0}자`).join(' | ')}`
+          : '',
+      )
+      .filter(Boolean)
+      .join('\n')
+    sendJson(res, 200, {
+      ok: true,
+      sheets: urls.length,
+      saved: records.length,
+      perSheet,
+      sheetSummary: zeroDiag ? `${sheetSummary}\n${zeroDiag}` : sheetSummary,
+    })
   } catch (err) {
     sendJson(res, 200, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
