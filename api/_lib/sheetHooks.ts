@@ -87,31 +87,67 @@ function findColumn(header: string[], keywords: string[]): number {
   return -1
 }
 
+// 열별 "평균 글자 수"를 구한다 — 후킹(긴 문장)과 업종·계정명(짧은 값)을 구분하는 데 쓴다.
+function columnAvgLengths(rows: string[][]): number[] {
+  const cols = rows.reduce((m, r) => Math.max(m, r.length), 0)
+  const sum = new Array(cols).fill(0)
+  const cnt = new Array(cols).fill(0)
+  for (const r of rows) {
+    for (let i = 0; i < cols; i++) {
+      const v = (r[i] ?? '').trim()
+      if (v) {
+        sum[i] += v.length
+        cnt[i]++
+      }
+    }
+  }
+  return sum.map((s, i) => (cnt[i] ? s / cnt[i] : 0))
+}
+
 function mapRows(rows: string[][]): ParsedHook[] {
   if (rows.length === 0) return []
   const header = rows[0].map((h) => h.trim())
-  const looksLikeHeader = header.some((h) =>
-    /후킹|hook|업종|industry|구조|cta|왜/i.test(h),
-  )
-  const hookIdx = looksLikeHeader ? findColumn(header, ['후킹', 'hook', '문장', '제목']) : -1
-  const industryIdx = looksLikeHeader ? findColumn(header, ['업종', 'industry', '분야', '카테고리']) : -1
+  const looksLikeHeader = header.some((h) => /후킹|hook|업종|industry|구조|cta|왜|문장|글/i.test(h))
+
+  let hookIdx = looksLikeHeader ? findColumn(header, ['후킹', 'hook', '문장', '제목', '내용', '글', '본문']) : -1
+  let industryIdx = looksLikeHeader ? findColumn(header, ['업종', 'industry', '분야', '카테고리']) : -1
   const structIdx = looksLikeHeader ? findColumn(header, ['구조', '왜', 'structure', '유형', '분석']) : -1
   const ctaIdx = looksLikeHeader ? findColumn(header, ['cta', '행동', '유도']) : -1
 
   const dataRows = looksLikeHeader ? rows.slice(1) : rows
+
+  // 후킹 열을 헤더로 못 찾았으면 "평균 글자 수가 가장 긴 열"을 후킹으로 본다
+  // (후킹은 긴 문장, 업종·계정명은 짧다 — A=업종, B=계정, C=후킹 같은 시트 대응).
+  if (hookIdx < 0) {
+    const avgs = columnAvgLengths(dataRows)
+    let best = 0
+    for (let i = 1; i < avgs.length; i++) if (avgs[i] > avgs[best]) best = i
+    hookIdx = best
+    // 업종 후보: 후킹이 아닌 열 중 "짧고 값이 있는" 첫 열(보통 A열 업종).
+    if (industryIdx < 0) {
+      for (let i = 0; i < avgs.length; i++) {
+        if (i !== hookIdx && avgs[i] > 0 && avgs[i] <= 20) {
+          industryIdx = i
+          break
+        }
+      }
+    }
+  }
+
   const hooks: ParsedHook[] = []
   for (const r of dataRows) {
-    const get = (idx: number, fallback: number): string | undefined => {
-      const v = (idx >= 0 ? r[idx] : r[fallback])?.trim()
+    const get = (idx: number): string | undefined => {
+      const v = idx >= 0 ? r[idx]?.trim() : undefined
       return v || undefined
     }
-    const hook = get(hookIdx, 0)
-    if (!hook) continue // 빈 행 건너뜀
+    const hook = get(hookIdx)
+    // 후킹이 너무 짧으면(업종·핸들 같은 잡값) 건너뛴다 — 최소 10자 이상만 후킹으로.
+    if (!hook || hook.length < 10) continue
     hooks.push({
       hook,
-      industry: get(industryIdx, 1),
-      structure: get(structIdx, 2),
-      cta: get(ctaIdx, 3),
+      industry: get(industryIdx),
+      structure: get(structIdx),
+      cta: get(ctaIdx),
     })
   }
   return hooks
