@@ -50,9 +50,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   try {
     const hooks = await fetchHooksFromCsvUrls(urls)
     const nowIso = new Date().toISOString()
-    let saved = 0
+    // 같은 후킹(같은 id)이 여러 번 나오면 배치 upsert가 충돌하므로 먼저 중복 제거.
+    const byId = new Map<string, object>()
     for (const h of hooks) {
-      await supabaseInsert('reference_hooks', {
+      byId.set(hookId(h.hook), {
         id: hookId(h.hook),
         hook: h.hook,
         industry: h.industry ?? null,
@@ -60,9 +61,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         cta: h.cta ?? null,
         updated_at: nowIso,
       })
-      saved++
     }
-    sendJson(res, 200, { ok: true, sheets: urls.length, saved })
+    const records = [...byId.values()]
+    // 한 건씩 넣으면 시트가 크면 함수 시간 초과가 난다 — 배열 하나로 한 번에 upsert.
+    if (records.length > 0) {
+      await supabaseInsert('reference_hooks', records)
+    }
+    sendJson(res, 200, { ok: true, sheets: urls.length, saved: records.length })
   } catch (err) {
     sendJson(res, 200, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
