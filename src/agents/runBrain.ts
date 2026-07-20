@@ -65,16 +65,18 @@ export async function researchMarketResilient(params: {
   // 1차 — 웹서치.
   // ⚠️ 시간 예산: Vercel 함수는 300초에서 강제 종료된다(504). 크론은 두 브랜드를
   // 병렬로 돌리므로 "브랜드 1개당" (웹서치 + 폴백)이 300초 안에 끝나야 한다.
-  //   웹서치 190초 + 폴백 70초 = 260초 < 300초(여유 40초). maxSearches도 3→2로
-  //   줄여 검색 자체를 빠르게(웹서치가 300초를 넘겨 통째로 죽던 게 504의 원인).
+  //   실측: maxSearches=2는 검색 1회당 ~95초라 190초를 넘겨 매번 폴백됐다.
+  //   → 검색을 1회로 줄이고(그 1회는 210초까지 허용), 폴백 60초 = 270초 < 300초.
+  //   검색 1회로도 "이번 주 트렌드" 최신 정보엔 충분하고, 시간 안에 끝나야
+  //   지식폴백이 아니라 진짜 웹서치 결과(✅)가 나온다.
   try {
     const raw = await callClaudeJsonWithWebSearch({
       apiKey,
       system,
       user,
-      maxSearches: 2,
+      maxSearches: 1,
       maxTokens: 3500,
-      timeoutMs: 190_000,
+      timeoutMs: 210_000,
       onUsage: track,
     })
     return { report: parseBrainReport(raw), ok: true, note: '완료(웹검색)', usedWebSearch: true }
@@ -88,7 +90,7 @@ export async function researchMarketResilient(params: {
         system,
         user: `${user}\n\n(웹 검색이 일시적으로 불가하니, 검색 없이 아는 범위에서만 신중히 정리하세요. 확실하지 않은 수치·사실은 지어내지 말고 방향성만 제시.)`,
         maxTokens: 3500,
-        timeoutMs: 70_000,
+        timeoutMs: 60_000,
         onUsage: track,
       })
       return {
