@@ -33,6 +33,10 @@ export interface ResilientResearch {
   report: BrainReport
   ok: boolean
   note: string
+  // 이번 결과가 "실제 웹서치"로 나왔는지(true), 검색이 실패해 "지식 기반 폴백"
+  // 으로 나왔는지(false) 구분하는 값 — 대표님이 웹서치가 진짜 도는지 화면·로그
+  // 에서 바로 확인할 수 있게 한다(200만 봐서는 구분이 안 됐던 문제 해결).
+  usedWebSearch: boolean
 }
 
 // 브레인은 절대 하드 에러로 죽지 않게 한다(대표님 지시: "실패할 수 없게").
@@ -68,8 +72,10 @@ export async function researchMarketResilient(params: {
       maxTokens: 4096,
       onUsage: track,
     })
-    return { report: parseBrainReport(raw), ok: true, note: '완료' }
-  } catch {
+    return { report: parseBrainReport(raw), ok: true, note: '완료(웹검색)', usedWebSearch: true }
+  } catch (err1) {
+    // 웹서치 실패 원인을 로그에 남긴다 — 도구 버전/권한/타임아웃 등을 구분하려고.
+    console.error('[brain] 웹서치 실패, 지식 기반으로 폴백:', err1 instanceof Error ? err1.message : String(err1))
     // 2차 — 검색 없이 지식 기반(작고 빠른 호출). 검색 타임아웃/JSON 잘림을 우회.
     try {
       const raw = await callClaudeJson({
@@ -83,7 +89,8 @@ export async function researchMarketResilient(params: {
       return {
         report: parseBrainReport(raw),
         ok: true,
-        note: '완료(일시적 검색 오류로 지식 기반 대체)',
+        note: '완료(검색 실패 → 지식 기반 대체)',
+        usedWebSearch: false,
       }
     } catch (err2) {
       // 3차 — 그래도 실패: 예외를 던지지 않고 빈 리포트로 안전 종료.
@@ -91,6 +98,7 @@ export async function researchMarketResilient(params: {
         report: EMPTY_REPORT,
         ok: false,
         note: `리서치 일시 실패(다음 주기 자동 재시도): ${err2 instanceof Error ? err2.message : String(err2)}`,
+        usedWebSearch: false,
       }
     }
   }

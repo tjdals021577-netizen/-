@@ -70,7 +70,7 @@ export function BrainPanel({ brand }: { brand: Brand }) {
           status: 'done',
           statusLabel: '완료',
           costUsd: cycleCost,
-          note: `발견 ${newReport.findings.length}건`,
+          note: `발견 ${newReport.findings.length}건 · ${research.usedWebSearch ? '✅웹검색' : '⚠️검색실패→지식기반'}`,
           detailHtml: buildDetailHtml(newReport),
         })
       } else {

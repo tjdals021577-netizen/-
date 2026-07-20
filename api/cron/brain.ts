@@ -58,7 +58,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           started_at: nowIso,
           ended_at: nowIso,
           cost_usd: costUsd,
-          note: research.ok ? `발견 ${report.findings.length}건` : research.note,
+          // 웹서치로 됐는지(✅웹검색) 검색 실패로 지식기반 폴백인지(⚠️검색실패)
+          // note에 명시 — 200만 봐서는 구분이 안 됐던 문제 해결.
+          note: research.ok
+            ? `발견 ${report.findings.length}건 · ${research.usedWebSearch ? '✅웹검색' : '⚠️검색실패→지식기반'}`
+            : research.note,
           detail_html: hasFindings
             ? `<b>발견 사항</b><br/>${report.findings
                 .map((f) => `- [${f.source}] ${f.insight}`)
@@ -79,7 +83,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
             created_at: nowIso,
           })
         }
-        return `${brand}: ${research.ok ? `발견 ${report.findings.length}건` : '일시 실패(다음 주기 재시도)'}`
+        return `${brand}: ${
+          research.ok
+            ? `발견 ${report.findings.length}건 · ${research.usedWebSearch ? '✅웹검색됨' : '⚠️검색실패→지식기반'}`
+            : '일시 실패(다음 주기 재시도)'
+        }`
       } catch (err) {
         // 저장 단계 등에서의 예외 안전망 — 여기서도 500을 던지지 않고 문자열만 남긴다.
         return `${brand}: 저장 실패 (${err instanceof Error ? err.message : String(err)})`
