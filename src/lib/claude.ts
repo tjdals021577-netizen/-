@@ -250,10 +250,13 @@ export async function callClaudeJsonWithWebSearch(params: {
       messages: [{ role: 'user', content: user }],
       tools: [
         {
-          // web_search_20260318 — 설치된 SDK가 인식하는 유효한(최신) 웹서치
-          // 도구 버전. (20260209도 유효하지만 이게 더 최신이라 그대로 둔다.)
+          // web_search_20260209 — 현재 API가 지원하는 웹서치 도구 버전
+          // (Opus 4.8/4.7/4.6·Sonnet 5·Sonnet 4.6). 예전엔 20260318로 적혀
+          // 있었으나 그 버전은 존재하지 않아 400으로 거절 → 브레인이 검색 없이
+          // "검색 도구 제한" 폴백으로 빠지던 원인이었다. 계정 설정 필요 없음
+          // (서버 도구라 API로 자동 사용 가능, 사용량만큼 과금).
           name: 'web_search',
-          type: 'web_search_20260318',
+          type: 'web_search_20260209',
           max_uses: maxSearches,
         },
       ],
