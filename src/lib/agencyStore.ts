@@ -74,6 +74,7 @@ export function createClient(params: {
   startDate?: string
   monthlyFeeKrw?: number
   referenceImageIds?: string[]
+  styleDigest?: string
 }): AgencyClient {
   const startDate = params.startDate ?? toIsoDate(new Date())
   const now = new Date().toISOString()
@@ -92,6 +93,7 @@ export function createClient(params: {
     todayDrafts: [],
     recentDraftTexts: [],
     referenceImageIds: params.referenceImageIds ?? [],
+    styleDigest: params.styleDigest,
     createdAt: now,
   }
   writeAll([...readAll(), client])
@@ -172,7 +174,15 @@ export function saveReferenceImages(
   id: string,
   referenceImageIds: string[],
 ): AgencyClient | undefined {
-  const result = updateClient(id, (c) => ({ ...c, referenceImageIds }))
+  // 이미지가 바뀌면 기존 스타일 요약은 무효 — 지워서 다음 생성 때 새로 뽑게 한다.
+  const result = updateClient(id, (c) => ({ ...c, referenceImageIds, styleDigest: undefined }))
+  if (result) syncToSupabase('agency_clients', result)
+  return result
+}
+
+// 레퍼런스 이미지를 1회 읽어 뽑은 스타일 요약을 저장 — 이후 매일 생성은 이걸 참고.
+export function saveStyleDigest(id: string, styleDigest: string): AgencyClient | undefined {
+  const result = updateClient(id, (c) => ({ ...c, styleDigest }))
   if (result) syncToSupabase('agency_clients', result)
   return result
 }
@@ -222,6 +232,7 @@ function fromSupabaseRow(row: Record<string, unknown>): AgencyClient {
     referenceImageIds: Array.isArray(row.reference_image_ids)
       ? (row.reference_image_ids as string[])
       : [],
+    styleDigest: typeof row.style_digest === 'string' ? row.style_digest : undefined,
     createdAt: String(row.created_at ?? ''),
   }
 }

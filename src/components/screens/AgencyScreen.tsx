@@ -6,6 +6,7 @@ import {
   generateAgencyDraftBatch,
   generateAgencyVariantsWithReferences,
   generateAgencyFullFormatSet,
+  digestReferenceStyle,
 } from '../../agents/runAgencyThread'
 import { formatHookReference } from '../../agents/hookReference'
 import { getReferenceHooks, syncReferenceHooksFromSupabase } from '../../lib/hookStore'
@@ -17,6 +18,7 @@ import {
   resumeClient,
   saveMemo,
   saveTodayDrafts,
+  saveStyleDigest,
   deleteClient,
   daysRemaining,
   daysElapsed,
@@ -186,12 +188,24 @@ export function AgencyScreen() {
         const saved = addReference({ label: `${result.name} 레퍼런스`, imageBase64, mediaType })
         uploadedIds.push(saved.id)
       }
+      const refIds = [...onboardRefIds, ...uploadedIds]
+      // 레퍼런스 이미지를 지금 딱 1번 읽어 텍스트 스타일 요약으로 뽑아둔다 —
+      // 이후 매일 초안 생성은 이 요약만 참고하므로 이미지를 다시 읽지 않는다.
+      let styleDigest: string | undefined
+      if (refIds.length > 0) {
+        try {
+          styleDigest = await digestReferenceStyle({ apiKey, referenceImages: toVisionImages(refIds) })
+        } catch {
+          // 요약 실패해도 온보딩은 계속 — 다음 생성 때 다시 시도(ensureStyleDigest)
+        }
+      }
       createClient({
         name: result.name,
         business: result.business,
         persona: result.persona,
         threadUrl: result.threadUrl,
-        referenceImageIds: [...onboardRefIds, ...uploadedIds],
+        referenceImageIds: refIds,
+        styleDigest: styleDigest || undefined,
       })
       setOnboardingText('')
       setOnboardRefIds([])
@@ -248,6 +262,17 @@ export function AgencyScreen() {
     refresh()
   }
 
+  // 스타일 요약이 아직 없고 레퍼런스 이미지가 있으면, 이미지를 "1회만" 읽어 요약을
+  // 만들어 저장하고 반환한다. 이후 생성은 저장된 요약을 재사용(이미지 재읽기 X → 비용 절감).
+  async function ensureStyleDigest(client: AgencyClient): Promise<string | undefined> {
+    if (client.styleDigest) return client.styleDigest
+    const images = toVisionImages(client.referenceImageIds)
+    if (images.length === 0) return undefined
+    const digest = await digestReferenceStyle({ apiKey, referenceImages: images })
+    if (digest) saveStyleDigest(client.id, digest)
+    return digest || undefined
+  }
+
   async function handleGenerateDrafts(client: AgencyClient) {
     if (isOverDailyBudget()) return
     setBusyClientId(client.id)
@@ -259,9 +284,10 @@ export function AgencyScreen() {
       note: `오늘 초안 ${DRAFT_COUNT}건 생성`,
     })
     try {
-      const referenceImages = toVisionImages(client.referenceImageIds)
-      // 초안 여러 개 생성 1번 + 채점 1번으로 묶음 — 따로따로 10번 부르면 시스템
-      // 프롬프트·레퍼런스 이미지 토큰이 매번 반복 과금된다(비용 ~75% 절감).
+      // 레퍼런스 이미지는 "1회만" 읽어 텍스트 스타일 요약으로 저장해두고, 이후엔
+      // 그 요약만 참고한다(이미지 40장을 매일 다시 읽던 비전 토큰 낭비 제거).
+      const styleDigest = await ensureStyleDigest(client)
+      // 초안 여러 개 생성 1번 + 채점 1번으로 묶음(비용 절감). 후킹은 넉넉히 참고.
       const drafts = await generateAgencyDraftBatch({
         apiKey,
         topic: `${client.business} 관련 스레드 게시물`,
@@ -269,8 +295,8 @@ export function AgencyScreen() {
         persona: client.persona,
         count: DRAFT_COUNT,
         recentPosts: client.recentDraftTexts,
-        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-        hookReference: formatHookReference(getReferenceHooks()),
+        styleDigest,
+        hookReference: formatHookReference(getReferenceHooks(), 50),
       })
       const reviews = await runThreadReviewBatch({ apiKey, drafts })
       const attempts: DraftAttempt[] = drafts.map((draft, i) => ({ draft, review: reviews[i] }))
@@ -413,13 +439,13 @@ export function AgencyScreen() {
       note: '9가지 유형 전체 생성',
     })
     try {
-      const referenceImages = toVisionImages(client.referenceImageIds)
+      const styleDigest = await ensureStyleDigest(client)
       const drafts = await generateAgencyFullFormatSet({
         apiKey,
         topic: `${client.business} 관련 스레드 게시물`,
         business: client.business,
         persona: client.persona,
-        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+        styleDigest,
       })
       setFullFormatSets((prev) => ({ ...prev, [client.id]: drafts }))
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)

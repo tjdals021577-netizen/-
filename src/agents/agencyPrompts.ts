@@ -64,14 +64,24 @@ function buildClientContextBlock(params: { business: string; persona: string; re
   return `[클라이언트 정보]\n업계/배경: ${business}\n톤·말투·포지셔닝: ${persona}${recentBlock}`
 }
 
+// 클라이언트 레퍼런스 이미지를 "매번" 읽으면 비전 토큰이 매일 반복 과금된다(이미지
+// 40장이면 하루 ~6만 토큰). 그래서 온보딩 때 이미지를 딱 1번 읽어 텍스트 "스타일
+// 요약"으로 뽑아두고(styleDigest), 이후 생성은 이 텍스트만 참고한다 — 비용 95%+ 절감,
+// 스타일 반영 품질은 사실상 동일. 이 블록이 프롬프트에 그 요약을 넣어준다.
+function styleBlockOf(styleDigest?: string): string {
+  const d = styleDigest?.trim()
+  return d ? `[클라이언트 카피 스타일 — 레퍼런스 이미지에서 1회 추출한 요약]\n${d}` : ''
+}
+
 export function buildAgencyDraftSystemPrompt(params: {
   business: string
   persona: string
   recentPosts?: string[]
   marketFindings?: string
   hookReference?: string
+  styleDigest?: string
 }): SystemBlock[] {
-  const { business, persona, recentPosts, marketFindings, hookReference } = params
+  const { business, persona, recentPosts, marketFindings, hookReference, styleDigest } = params
 
   // 캐시되는 고정부("마잘남 – 글쓰기" 페르소나·원칙 + 전자책 방법론) — 클라이언트가 달라도 동일.
   const staticText = `${AGENCY_IDENTITY}
@@ -104,6 +114,7 @@ JSON 스키마:
   const marketBlock = marketFindings ? `[참고할 만한 최근 리서치]\n${marketFindings}` : ''
   const dynamicText = [
     buildClientContextBlock({ business, persona, recentPosts }),
+    styleBlockOf(styleDigest),
     marketBlock,
     hookReference ?? '',
   ]
@@ -132,8 +143,9 @@ export function buildAgencyReferenceSystemPrompt(params: {
   variantCount: number
   recentPosts?: string[]
   hookReference?: string
+  styleDigest?: string
 }): SystemBlock[] {
-  const { business, persona, variantCount, recentPosts, hookReference } = params
+  const { business, persona, variantCount, recentPosts, hookReference, styleDigest } = params
   const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
@@ -150,10 +162,10 @@ ${COPYWRITING_12BLOCKS}
 
 ${CONFIDENTIALITY_RULE}
 
-첨부된 이미지는 실제로 잘 터진 스레드 글(카피라이팅 레퍼런스)입니다. 이 글들의 "후킹 문장 구조·
-패턴"을 그대로 가져와서 재사용하되, 주제·소재만 이번 [주제]와 클라이언트 정보에 맞게 바꿔서
-쓰세요. 이미지 속 문구·에피소드·숫자를 그대로 베끼지는 말고, 후킹의 "틀"만 재사용하세요(이미지가
-없으면 이 지시는 무시하고 클라이언트 정보만으로 작성하세요).
+[클라이언트 카피 스타일] 블록이 주어지면, 그 스타일(후킹 구조·톤·문장 길이·이모지/줄바꿈 습관)을
+그대로 따라 쓰되 문구·에피소드·숫자를 베끼지 말고 "틀"만 재사용하세요. 첨부된 이미지가 있으면
+동일하게 그 이미지의 후킹 구조를 참고하세요. 스타일 정보가 없으면 클라이언트 정보만으로 작성하세요.
+[터진 후킹·CTA 레퍼런스] 블록이 주어지면, 그 후킹들의 구조를 이번 클라이언트 주제로 치환해 활용하세요.
 
 주어진 주제로 서로 다른 접근의 스레드 포스트 시안을 정확히 ${variantCount}개 작성하세요.
 ${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해야 합니다.
@@ -166,7 +178,11 @@ ${variantCount}개는 소재·훅·구성이 서로 겹치지 않게 다양해�
 JSON 스키마:
 { "drafts": [ { "text": string } ] }`
 
-  const dynamicText = [buildClientContextBlock({ business, persona, recentPosts }), hookReference ?? '']
+  const dynamicText = [
+    buildClientContextBlock({ business, persona, recentPosts }),
+    styleBlockOf(styleDigest),
+    hookReference ?? '',
+  ]
     .filter(Boolean)
     .join('\n\n')
   return cachedSystem(staticText, dynamicText)
@@ -178,7 +194,7 @@ export function buildAgencyReferenceUserPrompt(params: {
   note?: string
 }): string {
   const noteBlock = params.note?.trim() ? `\n\n[추가 요청사항 — 반드시 반영]\n${params.note.trim()}` : ''
-  return `[주제]\n${params.topic}${noteBlock}\n\n첨부된 레퍼런스 이미지의 카피라이팅 스타일을 참고해서 서로 다른 시안 ${params.variantCount}개를 작성하고 JSON으로만 답하세요.`
+  return `[주제]\n${params.topic}${noteBlock}\n\n[클라이언트 카피 스타일]과 [터진 후킹·CTA 레퍼런스]를 참고해서 서로 다른 시안 ${params.variantCount}개를 작성하고 JSON으로만 답하세요.`
 }
 
 // 대표님 프롬프트 원문의 9가지 유형 그대로 — 스레드 위원회의 7가지(+질문형)
@@ -198,8 +214,9 @@ const AGENCY_FORMAT_LIST = [
 export function buildAgencyFullFormatSystemPrompt(params: {
   business: string
   persona: string
+  styleDigest?: string
 }): SystemBlock[] {
-  const { business, persona } = params
+  const { business, persona, styleDigest } = params
   const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
@@ -219,7 +236,10 @@ ${CONFIDENTIALITY_RULE}
 JSON 스키마:
 { "drafts": [ { "format": string, "text": string } ] }`
 
-  return cachedSystem(staticText, buildClientContextBlock({ business, persona }))
+  const dynamicText = [buildClientContextBlock({ business, persona }), styleBlockOf(styleDigest)]
+    .filter(Boolean)
+    .join('\n\n')
+  return cachedSystem(staticText, dynamicText)
 }
 
 export function buildAgencyFullFormatUserPrompt(params: { topic: string; note?: string }): string {

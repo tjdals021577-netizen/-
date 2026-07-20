@@ -10,6 +10,33 @@ import {
 } from './agencyPrompts.js'
 import type { ThreadDraft, ThreadFormatDraft } from '../types/thread.js'
 
+// 클라이언트 레퍼런스 이미지를 "한 번만" 읽어 재사용 가능한 텍스트 스타일 요약으로
+// 뽑는다(digest). 이후 매일 생성은 이 텍스트만 참고 → 이미지 비전 토큰을 매일
+// 반복 과금하지 않는다(비용 95%+ 절감). 온보딩 시 1회, 또는 이미지가 바뀌었을 때만 호출.
+export async function digestReferenceStyle(params: {
+  apiKey: string
+  referenceImages: VisionImageInput[]
+}): Promise<string> {
+  const { apiKey, referenceImages } = params
+  if (referenceImages.length === 0) return ''
+  const system = `당신은 카피라이팅 스타일 분석가입니다. 첨부된 이미지들은 한 클라이언트의 실제 스레드/카피
+레퍼런스입니다. 이 이미지들에서 공통으로 드러나는 "재사용 가능한 글쓰기 스타일"만 뽑아 텍스트 가이드로
+정리하세요. 포함: 후킹(첫 문장) 패턴, 말투·톤, 문장 길이·리듬, 이모지/줄바꿈 습관, 자주 쓰는 표현·구성,
+CTA 방식, 피해야 할 것. 이미지 속 구체적 문구·숫자·에피소드는 베끼지 말고 "스타일 규칙"만 요약합니다.
+한국어 불릿 6~10개, 400자 내외. 아래 JSON만 출력: { "digest": string }`
+  const raw = await callClaudeVisionJson({
+    apiKey,
+    system,
+    user: '이 레퍼런스들의 카피 스타일을 재사용 가능한 규칙으로 요약해 JSON으로만 답하세요.',
+    images: referenceImages,
+    maxTokens: 800,
+    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+  })
+  if (typeof raw !== 'object' || raw === null) return ''
+  const digest = (raw as Record<string, unknown>).digest
+  return typeof digest === 'string' ? digest : ''
+}
+
 function parseDraft(raw: unknown): ThreadDraft {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('스레드 초안 응답 형식이 올바르지 않습니다.')
@@ -42,10 +69,11 @@ export async function generateAgencyDraft(params: {
   referenceImages?: VisionImageInput[]
   marketFindings?: string
   hookReference?: string
+  styleDigest?: string
 }): Promise<ThreadDraft> {
-  const { apiKey, topic, business, persona, recentPosts, previousDraft, feedback, referenceImages, marketFindings, hookReference } =
+  const { apiKey, topic, business, persona, recentPosts, previousDraft, feedback, referenceImages, marketFindings, hookReference, styleDigest } =
     params
-  const system = buildAgencyDraftSystemPrompt({ business, persona, recentPosts, marketFindings, hookReference })
+  const system = buildAgencyDraftSystemPrompt({ business, persona, recentPosts, marketFindings, hookReference, styleDigest })
   const user = buildAgencyDraftUserPrompt({ topic, previousDraft, feedback })
 
   if (referenceImages && referenceImages.length > 0) {
@@ -82,9 +110,10 @@ export async function generateAgencyDraftBatch(params: {
   recentPosts?: string[]
   referenceImages?: VisionImageInput[]
   hookReference?: string
+  styleDigest?: string
 }): Promise<ThreadDraft[]> {
-  const { apiKey, topic, business, persona, count, recentPosts, referenceImages, hookReference } = params
-  const system = buildAgencyReferenceSystemPrompt({ business, persona, variantCount: count, recentPosts, hookReference })
+  const { apiKey, topic, business, persona, count, recentPosts, referenceImages, hookReference, styleDigest } = params
+  const system = buildAgencyReferenceSystemPrompt({ business, persona, variantCount: count, recentPosts, hookReference, styleDigest })
   const user = buildAgencyReferenceUserPrompt({ topic, variantCount: count })
 
   const raw =
@@ -150,9 +179,10 @@ export async function generateAgencyFullFormatSet(params: {
   persona: string
   referenceImages?: VisionImageInput[]
   note?: string
+  styleDigest?: string
 }): Promise<ThreadFormatDraft[]> {
-  const { apiKey, topic, business, persona, referenceImages, note } = params
-  const system = buildAgencyFullFormatSystemPrompt({ business, persona })
+  const { apiKey, topic, business, persona, referenceImages, note, styleDigest } = params
+  const system = buildAgencyFullFormatSystemPrompt({ business, persona, styleDigest })
   const user = buildAgencyFullFormatUserPrompt({ topic, note })
 
   const raw =

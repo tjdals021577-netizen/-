@@ -69,9 +69,14 @@ create table if not exists agency_clients (
   recent_draft_texts jsonb not null default '[]',
   paused_at date,
   reference_image_ids jsonb not null default '[]',
+  -- 레퍼런스 이미지를 1회 읽어 뽑은 텍스트 스타일 요약. 매일 생성이 이미지를
+  -- 다시 읽지 않고 이 요약만 참고하게 해서 비전 토큰 반복 과금을 없앤다.
+  style_digest text,
   created_at timestamptz not null,
   synced_at timestamptz not null default now()
 );
+-- 기존 테이블에 컬럼 추가(이미 만들어져 있으면): 대표님이 Supabase SQL 편집기에서 1회 실행
+-- alter table agency_clients add column if not exists style_digest text;
 
 -- 카피라이팅 레퍼런스 이미지 라이브러리. base64로 그대로 저장한다(Storage
 -- 버킷 없이 REST insert 하나로 끝내려는 목적) — 이미지가 커서 text 컬럼이

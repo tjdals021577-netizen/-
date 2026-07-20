@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { generateAgencyDraftBatch } from '../../src/agents/runAgencyThread.js'
+import { generateAgencyDraftBatch, digestReferenceStyle } from '../../src/agents/runAgencyThread.js'
 import { runThreadReviewBatch } from '../../src/agents/runThreadReview.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
@@ -21,6 +21,7 @@ interface AgencyClientRow {
   status: string
   recent_draft_texts: string[]
   reference_image_ids: string[]
+  style_digest: string | null
 }
 
 interface ReferenceImageRow {
@@ -63,13 +64,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const clients = await supabaseSelect<AgencyClientRow>(
     'agency_clients',
-    'status=eq.active&select=id,name,business,persona,memo,status,recent_draft_texts,reference_image_ids',
+    'status=eq.active&select=id,name,business,persona,memo,status,recent_draft_texts,reference_image_ids,style_digest',
   )
 
   const kstDate = kstDateKey(kstNow())
   // 구글시트에서 동기화된 "터진 후킹·CTA" 레퍼런스 — 클라이언트마다 동일하게
   // 참고(구조만 가져와 각 클라이언트 주제로 치환). 한 번만 조회한다.
-  const hookReference = await fetchHookReferenceBlock()
+  // 대표님 요청: 대행은 후킹을 넉넉히 참고(50개 로테이션 — 며칠이면 전체 풀 활용).
+  const hookReference = await fetchHookReferenceBlock(50)
   const results: string[] = []
   for (const client of clients) {
     try {
@@ -88,12 +90,24 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         results.push(`${client.name}: 오늘 이미 생성함 — 건너뜀`)
         continue
       }
-      const referenceImages = await fetchReferenceImages(client.reference_image_ids ?? [])
       const recentPosts = client.recent_draft_texts ?? []
-      // 초안 N개를 한 번에 생성 + 채점도 한 번에 — 예전엔 클라이언트당 API를
-      // 10번(생성N+채점N) 불러서 시스템 프롬프트·레퍼런스 이미지 토큰이 매번
-      // 반복 과금됐다. 2번으로 줄여 비용 ~75% 절감(대표님 결정). 프롬프트도
-      // 대행 전용("마잘남 – 글쓰기")으로 통일 — 화면(AgencyScreen)과 동일.
+      // 레퍼런스 이미지는 "딱 1번"만 읽어 텍스트 스타일 요약으로 저장하고, 이후엔
+      // 그 요약만 참고한다 — 이미지를 매일 다시 읽던 비전 토큰 낭비 제거(비용 95%+ 절감).
+      // 요약이 아직 없고 이미지가 있으면 지금 1회 생성해 style_digest에 저장(자가 치유).
+      let styleDigest = client.style_digest ?? undefined
+      if (!styleDigest && (client.reference_image_ids?.length ?? 0) > 0) {
+        try {
+          const images = await fetchReferenceImages(client.reference_image_ids)
+          styleDigest = await digestReferenceStyle({ apiKey, referenceImages: images })
+          if (styleDigest) {
+            await supabaseInsert('agency_clients', { id: client.id, style_digest: styleDigest })
+          }
+        } catch {
+          // 요약 실패해도 생성은 계속 — 클라이언트 정보만으로 작성.
+        }
+      }
+      // 초안 N개를 한 번에 생성 + 채점도 한 번에(비용 절감). 프롬프트는 대행 전용
+      // ("마잘남 – 글쓰기")으로 화면(AgencyScreen)과 동일. 이미지 대신 스타일 요약 참고.
       const drafts = await generateAgencyDraftBatch({
         apiKey,
         topic: `${client.business} 관련 스레드 게시물`,
@@ -101,7 +115,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         persona: client.persona,
         count: DRAFT_COUNT,
         recentPosts,
-        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+        styleDigest,
         hookReference,
       })
       const reviews = await runThreadReviewBatch({ apiKey, drafts })
