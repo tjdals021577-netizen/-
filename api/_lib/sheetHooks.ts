@@ -107,10 +107,14 @@ function columnAvgLengths(rows: string[][]): number[] {
 function mapRows(rows: string[][]): ParsedHook[] {
   if (rows.length === 0) return []
   const header = rows[0].map((h) => h.trim())
-  const looksLikeHeader = header.some((h) => /후킹|hook|업종|industry|구조|cta|왜|문장|글/i.test(h))
+  // ⚠️ 한 글자 '글'은 "댓글"에도 들어 있어 댓글(숫자) 열을 후킹으로 오인식했다(실측:
+  // 파싱 0개의 원인). 짧고 위험한 부분일치(글·문장)를 빼고, 실제 후킹 열 이름
+  // ('스레드 본문')을 잡도록 '본문'·'스레드'를 넣는다. findColumn은 열 순서대로 첫
+  // 매치를 반환하므로, 앞선 '댓글'이 더는 매칭되지 않아 '스레드 본문' 열을 정확히 집는다.
+  const looksLikeHeader = header.some((h) => /후킹|hook|본문|스레드|제목|내용|업종|직업|industry|구조|cta/i.test(h))
 
-  let hookIdx = looksLikeHeader ? findColumn(header, ['후킹', 'hook', '문장', '제목', '내용', '글', '본문']) : -1
-  let industryIdx = looksLikeHeader ? findColumn(header, ['업종', 'industry', '분야', '카테고리']) : -1
+  let hookIdx = looksLikeHeader ? findColumn(header, ['후킹', 'hook', '본문', '스레드', '제목', '내용']) : -1
+  let industryIdx = looksLikeHeader ? findColumn(header, ['업종', '직업', 'industry', '분야', '카테고리']) : -1
   const structIdx = looksLikeHeader ? findColumn(header, ['구조', '왜', 'structure', '유형', '분석']) : -1
   const ctaIdx = looksLikeHeader ? findColumn(header, ['cta', '행동', '유도']) : -1
 
