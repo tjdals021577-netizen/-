@@ -122,12 +122,16 @@ create table if not exists radar_snapshots (
   traffic_sources jsonb not null default '[]',
   naver_landing_pages jsonb not null default '[]',
   blog_referrers jsonb not null default '[]',
+  -- UTM 세분화(출처×매체×캠페인별 세션) — 대시보드 "트래픽 출처 세분화"에 쓴다.
+  utm_breakdown jsonb not null default '[]',
   order_count integer,
   revenue_krw numeric,
   daily_revenue jsonb not null default '[]',
   created_at timestamptz not null,
   synced_at timestamptz not null default now()
 );
+-- 기존 테이블에 컬럼 추가(이미 있으면): 대표님이 Supabase SQL 편집기에서 1회 실행
+-- alter table radar_snapshots add column if not exists utm_breakdown jsonb not null default '[]';
 create index if not exists radar_snapshots_brand_idx on radar_snapshots (brand, created_at desc);
 
 -- 카카오 "나에게 보내기" refresh_token 저장 — 딱 한 행(id='default')만 씀.

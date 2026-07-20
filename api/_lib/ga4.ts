@@ -15,6 +15,10 @@ export interface Ga4Report {
   trafficSources: { source: string; sessions: number }[]
   naverLandingPages: { landingPage: string; sessions: number }[]
   blogReferrers: { referrer: string; views: number }[]
+  // UTM 세분화 — 출처(utm_source)·매체(utm_medium)·캠페인(utm_campaign)별 세션.
+  // "youtube / cpc / 여름세일" 처럼 어느 채널·어느 캠페인이 트래픽을 만드는지
+  // 정확히 본다(트래픽 출처 세분화). 캠페인/매체가 없으면 GA4가 "(not set)"로 준다.
+  utmBreakdown: { source: string; medium: string; campaign: string; sessions: number }[]
 }
 
 interface RunReportResponse {
@@ -96,7 +100,7 @@ export async function fetchGa4Report(params: {
   const accessToken = await getAccessToken(key)
   const dateRanges = [{ startDate: params.startDate, endDate: params.endDate }]
 
-  const [summary, pages, sources, naverLandingPages, blogReferrers] = await Promise.all([
+  const [summary, pages, sources, naverLandingPages, blogReferrers, utm] = await Promise.all([
     runReport(accessToken, params.propertyId, {
       dateRanges,
       metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'conversions' }],
@@ -150,6 +154,19 @@ export async function fetchGa4Report(params: {
       orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
       limit: '10',
     }),
+    // UTM 세분화 — 출처×매체×캠페인 조합별 세션(상위 15). utm_source=youtube&
+    // utm_medium=cta 같은 링크가 이 조합으로 정확히 잡힌다.
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [
+        { name: 'sessionSource' },
+        { name: 'sessionMedium' },
+        { name: 'sessionCampaignName' },
+      ],
+      metrics: [{ name: 'sessions' }],
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit: '15',
+    }),
   ])
 
   const summaryValues = summary.rows?.[0]?.metricValues
@@ -172,6 +189,12 @@ export async function fetchGa4Report(params: {
     blogReferrers: (blogReferrers.rows ?? []).map((r) => ({
       referrer: r.dimensionValues?.[0]?.value ?? '',
       views: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+    utmBreakdown: (utm.rows ?? []).map((r) => ({
+      source: r.dimensionValues?.[0]?.value ?? '',
+      medium: r.dimensionValues?.[1]?.value ?? '',
+      campaign: r.dimensionValues?.[2]?.value ?? '',
+      sessions: Number(r.metricValues?.[0]?.value ?? 0),
     })),
   }
 }

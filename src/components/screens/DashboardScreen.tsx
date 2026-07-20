@@ -72,6 +72,21 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
     radar?.trafficSources
       .filter((s) => isYoutubeSource(s.source))
       .reduce((sum, s) => sum + s.sessions, 0) ?? 0
+
+  // 결제 전환율 = 어제 아임웹 주문수 ÷ 어제 GA4 세션 × 100. GA4 스냅샷은 "어제"
+  // 기준이라, 아임웹도 같은 어제 날짜의 주문만 골라 같은 기간끼리 비교한다.
+  // (사이트 전체 전환율 — 채널별 구매 귀속은 결제에 UTM이 실려야 가능, 앱 연동 시.)
+  const kstYesterdayKey = (() => {
+    const k = new Date(Date.now() + 9 * 60 * 60 * 1000)
+    k.setDate(k.getDate() - 1)
+    return k.toISOString().slice(0, 10)
+  })()
+  const ordersYesterday = imweb?.dailyRevenue.find((d) => d.date === kstYesterdayKey)?.orderCount ?? null
+  const conversionRate =
+    radar && radar.sessions > 0 && ordersYesterday != null
+      ? (ordersYesterday / radar.sessions) * 100
+      : null
+
   const stats = [
     {
       label: `${radar?.periodLabel ?? '어제'} 방문자`,
@@ -88,6 +103,10 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
     {
       label: `${imweb?.periodLabel ?? '어제'} 주문`,
       value: imweb ? `${imweb.orderCount ?? 0}건` : '—',
+    },
+    {
+      label: '어제 전환율 (주문÷세션)',
+      value: conversionRate != null ? `${conversionRate.toFixed(1)}%` : '—',
     },
     {
       label: `${imweb?.periodLabel ?? '이번 달'} 매출(아임웹)`,
@@ -130,6 +149,38 @@ function BrandSection({ brand, refreshKey }: { brand: Brand; refreshKey: number 
               )
             })}
           </div>
+        </div>
+      )}
+
+      {radar && radar.utmBreakdown.length > 0 && (
+        <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3">
+          <p className="mb-2 text-[11px] font-bold text-[var(--text-faint)]">
+            트래픽 출처 세분화 (UTM 출처 · 매체 · 캠페인별 세션)
+          </p>
+          <div className="space-y-1">
+            {radar.utmBreakdown.map((u, i) => {
+              const isYoutube = isYoutubeSource(u.source)
+              const medium = u.medium && u.medium !== '(not set)' ? u.medium : '(매체없음)'
+              const campaign = u.campaign && u.campaign !== '(not set)' ? ` · ${u.campaign}` : ''
+              return (
+                <div key={`${u.source}-${u.medium}-${u.campaign}-${i}`} className="flex items-center justify-between gap-2 text-[12px]">
+                  <span
+                    className={`min-w-0 truncate ${isYoutube ? 'font-bold text-[var(--ch-yt)]' : 'text-[var(--text-dim)]'}`}
+                    title={`${u.source} / ${u.medium} / ${u.campaign}`}
+                  >
+                    {isYoutube ? '▶ ' : ''}
+                    {formatSource(u.source)}
+                    <span className="text-[var(--text-faint)]"> · {medium}{campaign}</span>
+                  </span>
+                  <span className="shrink-0 font-bold text-[var(--text)]">{u.sessions.toLocaleString('ko-KR')}명</span>
+                </div>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-[var(--text-faint)]">
+            * 전환율은 사이트 전체 기준(어제 아임웹 주문 ÷ GA4 세션)입니다. 채널별 "구매" 귀속은 결제(아임웹)에
+            UTM이 실려야 정확해져요 — 앱 링크로 퍼널을 통일한 뒤 연동하면 채널별 전환까지 볼 수 있습니다.
+          </p>
         </div>
       )}
 

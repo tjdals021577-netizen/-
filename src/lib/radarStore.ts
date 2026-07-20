@@ -24,6 +24,7 @@ export interface RadarSnapshot {
   trafficSources: { source: string; sessions: number }[]
   naverLandingPages: { landingPage: string; sessions: number }[]
   blogReferrers: { referrer: string; views: number }[]
+  utmBreakdown: { source: string; medium: string; campaign: string; sessions: number }[]
   orderCount: number | null
   revenueKrw: number | null
   dailyRevenue: { date: string; orderCount: number; revenue: number }[]
@@ -47,6 +48,9 @@ function fromRow(row: Record<string, unknown>): RadarSnapshot {
       : [],
     blogReferrers: Array.isArray(row.blog_referrers)
       ? (row.blog_referrers as RadarSnapshot['blogReferrers'])
+      : [],
+    utmBreakdown: Array.isArray(row.utm_breakdown)
+      ? (row.utm_breakdown as RadarSnapshot['utmBreakdown'])
       : [],
     orderCount: typeof row.order_count === 'number' ? row.order_count : null,
     revenueKrw: typeof row.revenue_krw === 'number' ? row.revenue_krw : null,
