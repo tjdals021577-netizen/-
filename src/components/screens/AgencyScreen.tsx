@@ -308,7 +308,7 @@ export function AgencyScreen() {
         statusLabel: '완료',
         costUsd: cycleCost,
         note: `${passCount}/${DRAFT_COUNT}건 통과`,
-        detailHtml: `<b>${client.name} 오늘 초안 5건</b><br/>${attempts
+        detailHtml: `<b>${client.name} 오늘 초안 ${DRAFT_COUNT}건</b><br/>${attempts
           .map((a, i) => `${i + 1}. ${a.review.totalScore}점`)
           .join(' · ')}`,
       })

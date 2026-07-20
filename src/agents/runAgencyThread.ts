@@ -1,8 +1,6 @@
 import { callClaudeJson, callClaudeVisionJson, type VisionImageInput } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import {
-  buildAgencyDraftSystemPrompt,
-  buildAgencyDraftUserPrompt,
   buildAgencyReferenceSystemPrompt,
   buildAgencyReferenceUserPrompt,
   buildAgencyFullFormatSystemPrompt,
@@ -54,47 +52,6 @@ function parseFormatDraft(raw: unknown): ThreadFormatDraft {
     format: typeof rec.format === 'string' ? rec.format : '',
     text: typeof rec.text === 'string' ? rec.text : '',
   }
-}
-
-// 대행 관리(클라이언트별 글) 전용 — "마잘남 – 글쓰기" 프롬프트를 쓴다.
-// 스레드 위원회(runThreadReview.ts)와는 완전히 별개 함수라 서로 섞이지 않는다.
-export async function generateAgencyDraft(params: {
-  apiKey: string
-  topic: string
-  business: string
-  persona: string
-  recentPosts?: string[]
-  previousDraft?: ThreadDraft
-  feedback?: string
-  referenceImages?: VisionImageInput[]
-  marketFindings?: string
-  hookReference?: string
-  styleDigest?: string
-}): Promise<ThreadDraft> {
-  const { apiKey, topic, business, persona, recentPosts, previousDraft, feedback, referenceImages, marketFindings, hookReference, styleDigest } =
-    params
-  const system = buildAgencyDraftSystemPrompt({ business, persona, recentPosts, marketFindings, hookReference, styleDigest })
-  const user = buildAgencyDraftUserPrompt({ topic, previousDraft, feedback })
-
-  if (referenceImages && referenceImages.length > 0) {
-    const raw = await callClaudeVisionJson({
-      apiKey,
-      system,
-      user,
-      images: referenceImages,
-      maxTokens: 1536,
-      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-    })
-    return parseDraft(raw)
-  }
-  const raw = await callClaudeJson({
-    apiKey,
-    system,
-    user,
-    maxTokens: 1536,
-    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-  })
-  return parseDraft(raw)
 }
 
 // 하루 초안 N개를 "한 번의 호출"로 생성한다 — 예전엔 초안마다 따로 불러서

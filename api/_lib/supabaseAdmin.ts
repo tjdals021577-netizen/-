@@ -38,6 +38,30 @@ export async function supabaseInsert(table: string, record: object): Promise<voi
   }
 }
 
+// 이미 있는 행의 "일부 컬럼만" 갱신할 때 쓴다(PATCH=UPDATE). supabaseInsert(=upsert)로
+// 부분 레코드를 보내면, 행이 있어도 INSERT 경로에서 name·status 등 NOT NULL 컬럼이
+// 빠져 제약 위반이 날 수 있다 — 부분 갱신은 반드시 이 함수로 한다. query는 대상
+// 행을 특정하는 PostgREST 필터(예: "id=eq.abc") — 안전을 위해 필수.
+export async function supabaseUpdate(table: string, query: string, record: object): Promise<void> {
+  const { url, key } = assertConfigured()
+  if (!query.trim()) {
+    throw new Error(`Supabase update 안전장치: ${table} 갱신에 필터(query)가 없습니다.`)
+  }
+  const res = await fetch(`${url}/rest/v1/${table}?${query}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(record),
+  })
+  if (!res.ok) {
+    throw new Error(`Supabase update 실패 (${table}): ${res.status} ${await res.text()}`)
+  }
+}
+
 // 조건에 맞는 행을 삭제하고, 삭제된 개수를 돌려준다(Prefer: return=representation).
 // query는 PostgREST 필터(예: "created_at=lt.2026-02-16") — 안전을 위해 반드시
 // 하나 이상의 필터를 넘겨야 한다(빈 query로 전체 삭제되는 사고 방지).

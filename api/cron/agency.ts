@@ -4,7 +4,7 @@ import { runThreadReviewBatch } from '../../src/agents/runThreadReview.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import type { DraftAttempt } from '../../src/types/agency.js'
-import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
+import { supabaseSelect, supabaseInsert, supabaseUpdate } from '../_lib/supabaseAdmin.js'
 import { fetchHookReferenceBlock } from '../_lib/sheetHooks.js'
 import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
@@ -100,7 +100,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           const images = await fetchReferenceImages(client.reference_image_ids)
           styleDigest = await digestReferenceStyle({ apiKey, referenceImages: images })
           if (styleDigest) {
-            await supabaseInsert('agency_clients', { id: client.id, style_digest: styleDigest })
+            // 기존 행의 일부 컬럼만 갱신 — upsert가 아니라 PATCH(UPDATE)로.
+            await supabaseUpdate('agency_clients', `id=eq.${encodeURIComponent(client.id)}`, {
+              style_digest: styleDigest,
+            })
           }
         } catch {
           // 요약 실패해도 생성은 계속 — 클라이언트 정보만으로 작성.
@@ -173,8 +176,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         source_work_log_id: logId,
       })
 
-      await supabaseInsert('agency_clients', {
-        id: client.id,
+      // 기존 클라이언트 행의 일부 컬럼만 갱신 — upsert로 부분 레코드를 보내면
+      // NOT NULL(name·status 등) 위반이 날 수 있어 PATCH(UPDATE)로 처리한다.
+      await supabaseUpdate('agency_clients', `id=eq.${encodeURIComponent(client.id)}`, {
         today_drafts: attempts,
         today_drafts_date: today,
         recent_draft_texts: [...attempts.map((a) => a.draft.text), ...recentPosts].slice(
