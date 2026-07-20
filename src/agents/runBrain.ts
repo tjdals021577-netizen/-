@@ -66,17 +66,18 @@ export async function researchMarketResilient(params: {
   // ⚠️ 시간 예산: 크론(brain.ts)에 maxDuration=800(Fluid)을 줬고, 스트리밍이라
   //   장시간 호출도 연결이 안 끊긴다. 두 브랜드 병렬이라 벽시계 = 브랜드 1개
   //   시간이므로, 웹서치에 560초까지 넉넉히 준다.
-  // ⚠️ maxSearches: 브레인은 여러 채널(블로그 알고리즘·소재·스레드·유튜브 레퍼런스)을
-  //   조사하려고 검색을 여러 번 한다. 2로 막으니 모델이 "호출 횟수 제한(Server tool
-  //   use limit exceeded)에 걸려 조사 못 했다"며 findings를 못 내놨다(실측). 스트리밍
-  //   으로 시간 여유가 생겼으니 6회까지 풀어 실제 리서치를 완주하게 한다.
+  // ⚠️ maxSearches: 프롬프트가 "중요 주제 3~4개, 총 5회 이내"로 검색을 스스로
+  //   제한하게 했고(효율), 그 위에 하드 상한 6을 둔다 — 모델은 ~5회에서 멈추므로
+  //   "호출 횟수 제한(Server tool use limit exceeded)" 에러에 닿지 않는다(헤드룸 1).
+  //   maxTokens는 3000 — 프롬프트가 findings 5개·각 2문장으로 압축을 지시하므로
+  //   잘림 없이 충분하고, 가장 비싼 출력 토큰을 아낀다.
   try {
     const raw = await callClaudeJsonWithWebSearch({
       apiKey,
       system,
       user,
       maxSearches: 6,
-      maxTokens: 4096,
+      maxTokens: 3000,
       timeoutMs: 560_000,
       onUsage: track,
     })
@@ -90,7 +91,7 @@ export async function researchMarketResilient(params: {
         apiKey,
         system,
         user: `${user}\n\n(웹 검색이 일시적으로 불가하니, 검색 없이 아는 범위에서만 신중히 정리하세요. 확실하지 않은 수치·사실은 지어내지 말고 방향성만 제시.)`,
-        maxTokens: 3500,
+        maxTokens: 3000,
         timeoutMs: 60_000,
         onUsage: track,
       })
