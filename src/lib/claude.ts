@@ -161,6 +161,35 @@ async function createMessage(
   }
 }
 
+// 웹서치처럼 오래 걸리는 서버(크론) 호출용 — 비스트리밍(messages.create)은 전체
+// 응답이 올 때까지 한 번에 기다리는데, 웹서치는 검색+생성에 수 분이 걸려 그
+// 방식으론 계속 타임아웃이 났다(실측: 검색 1회도 210초 초과). 스트리밍은 연결을
+// 살아있게 유지하며 부분 응답을 받다가 마지막에 완성본을 돌려줘, 장시간 호출을
+// 안정적으로 끝낼 수 있다(Anthropic 권장). 서버 전용(브라우저는 프록시가 비스트리밍
+// 이라 이 경로를 타지 않는다).
+async function createMessageStreamingDirect(
+  apiKey: string,
+  body: MessageCreateParamsNonStreaming,
+  timeoutMs: number,
+): Promise<{ content: { type: string; text?: string }[]; usage: { input_tokens: number; output_tokens: number } }> {
+  if (!apiKey) {
+    throw new ClaudeCallError('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
+  }
+  const client = new Anthropic({ apiKey, maxRetries: 0 })
+  try {
+    const stream = client.messages.stream(body, { timeout: timeoutMs })
+    const message = await stream.finalMessage()
+    return { content: message.content, usage: message.usage }
+  } catch (err) {
+    if (err instanceof Anthropic.APIConnectionTimeoutError) {
+      throw new ClaudeCallError(
+        `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
+      )
+    }
+    throw err
+  }
+}
+
 // 웹서치 등 서버사이드 도구를 쓰면 응답에 tool_use/tool_result 블록이 텍스트 블록
 // 사이에 섞여 나올 수 있어, "마지막" 텍스트 블록을 최종 답으로 취급한다.
 function lastTextBlock(content: { type: string; text?: string }[]): string {
@@ -241,28 +270,31 @@ export async function callClaudeJsonWithWebSearch(params: {
     onUsage,
   } = params
 
-  const response = await createMessage(
-    apiKey,
-    {
-      model: CLAUDE_MODEL,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: user }],
-      tools: [
-        {
-          // web_search_20260209 — 현재 API가 지원하는 웹서치 도구 버전
-          // (Opus 4.8/4.7/4.6·Sonnet 5·Sonnet 4.6). 예전엔 20260318로 적혀
-          // 있었으나 그 버전은 존재하지 않아 400으로 거절 → 브레인이 검색 없이
-          // "검색 도구 제한" 폴백으로 빠지던 원인이었다. 계정 설정 필요 없음
-          // (서버 도구라 API로 자동 사용 가능, 사용량만큼 과금).
-          name: 'web_search',
-          type: 'web_search_20260209',
-          max_uses: maxSearches,
-        },
-      ],
-    },
-    timeoutMs,
-  )
+  const body: MessageCreateParamsNonStreaming = {
+    model: CLAUDE_MODEL,
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: 'user', content: user }],
+    tools: [
+      {
+        // web_search_20260209 — 현재 API가 지원하는 웹서치 도구 버전
+        // (Opus 4.8/4.7/4.6·Sonnet 5·Sonnet 4.6). 예전엔 20260318로 적혀
+        // 있었으나 그 버전은 존재하지 않아 400으로 거절 → 브레인이 검색 없이
+        // "검색 도구 제한" 폴백으로 빠지던 원인이었다. 계정 설정 필요 없음
+        // (서버 도구라 API로 자동 사용 가능, 사용량만큼 과금).
+        name: 'web_search',
+        type: 'web_search_20260209',
+        max_uses: maxSearches,
+      },
+    ],
+  }
+
+  // 서버(크론): 스트리밍으로 장시간 웹서치를 안정적으로 완료.
+  // 브라우저: 프록시(비스트리밍) 경로 — 프록시가 SSE 중계를 안 하므로 그대로 둔다.
+  const response =
+    typeof window === 'undefined'
+      ? await createMessageStreamingDirect(apiKey, body, timeoutMs)
+      : await createMessage(apiKey, body, timeoutMs)
 
   onUsage?.({
     input_tokens: response.usage.input_tokens,

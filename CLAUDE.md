@@ -30,7 +30,8 @@ npm run build                            # 3) 프로덕션 빌드(rolldown-vite)
 npm run lint                             # 4) oxlint
 ```
 - **알려진 무해한 오류(무시)**: api 타입체크에서 `src/lib/claude.ts`의 `import.meta.env` / `window`
-  관련 4개 오류는 Vite가 런타임에 채우는 브라우저 전역이라 최소 api tsconfig에서만 나는 오탐이다.
+  관련 오류(현재 5개)는 Vite가 런타임에 채우는 브라우저 전역이라 최소 api tsconfig에서만 나는
+  오탐이다. 프론트 타입체크(`tsc --noEmit`)는 DOM 타입이 있어 깨끗하게 통과한다.
   그 파일 외 다른 api 오류가 새로 나면 진짜 오류.
 - 샌드박스는 외부(라이브 서비스)로 못 나간다 — 실제 호출 대신 위 4단계로 검증한다.
 

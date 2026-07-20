@@ -5,10 +5,11 @@ import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS } from '../
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 
-// 웹서치를 포함한 리서치는 오래 걸린다 — 이 함수에 Vercel 최대 실행 시간(300초)을
-// 명시해, 플랫폼 기본값(더 짧을 수 있음)에 잘려서 504가 나지 않게 한다. 실제 작업은
-// runBrain.ts에서 브랜드당 260초(웹서치190+폴백70) 예산으로 이 한계 안에 맞춘다.
-export const maxDuration = 300
+// 웹서치를 포함한 리서치는 오래 걸린다(비스트리밍일 땐 210초에도 못 끝나 504·폴백이
+// 반복됐다). 이제 runBrain은 스트리밍으로 호출하고, 이 함수엔 Fluid compute 최대치인
+// 800초를 준다 — 스트리밍이라 연결이 안 끊기고, 두 브랜드는 병렬이라 벽시계는
+// 브랜드 1개(웹서치 최대 560초 + 폴백)라 800초 안에 안전하게 끝난다.
+export const maxDuration = 800
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
