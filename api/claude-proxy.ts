@@ -17,6 +17,10 @@ import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resource
 import { supabaseSelect } from './_lib/supabaseAdmin.js'
 import { sendJson, sendText } from './_lib/cronHandler.js'
 
+// 웹서치·긴 채점 등 280초까지 걸리는 호출이 플랫폼 기본 시간제한에 잘리지 않게,
+// 이 함수의 최대 실행 시간을 Vercel 상한(300초)으로 명시한다.
+export const maxDuration = 300
+
 const DAILY_BUDGET_USD = 5
 // 처음엔 170초였는데, 브라우저 쪽(src/lib/claude.ts)은 기본 260초까지 기다리는
 // 반면 프록시가 먼저 170초에 끊어버려서 — 웹서치 블로그 생성·긴 채점처럼

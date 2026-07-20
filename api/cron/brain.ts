@@ -5,6 +5,11 @@ import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS } from '../
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
 
+// 웹서치를 포함한 리서치는 오래 걸린다 — 이 함수에 Vercel 최대 실행 시간(300초)을
+// 명시해, 플랫폼 기본값(더 짧을 수 있음)에 잘려서 504가 나지 않게 한다. 실제 작업은
+// runBrain.ts에서 브랜드당 260초(웹서치190+폴백70) 예산으로 이 한계 안에 맞춘다.
+export const maxDuration = 300
+
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
