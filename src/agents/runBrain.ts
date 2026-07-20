@@ -65,15 +65,17 @@ export async function researchMarketResilient(params: {
   // 1차 — 웹서치(서버에서는 스트리밍으로 호출 — claude.ts 참고).
   // ⚠️ 시간 예산: 크론(brain.ts)에 maxDuration=800(Fluid)을 줬고, 스트리밍이라
   //   장시간 호출도 연결이 안 끊긴다. 두 브랜드 병렬이라 벽시계 = 브랜드 1개
-  //   시간이므로, 웹서치에 560초까지 넉넉히 준다(실측상 실제로는 수백 초 이내에
-  //   끝난다 — 비스트리밍일 때 210초에도 못 끝나던 게 스트리밍으로 풀린다).
-  //   검색 2회로 충분히 조사하고, 실패 시에만 폴백 60초.
+  //   시간이므로, 웹서치에 560초까지 넉넉히 준다.
+  // ⚠️ maxSearches: 브레인은 여러 채널(블로그 알고리즘·소재·스레드·유튜브 레퍼런스)을
+  //   조사하려고 검색을 여러 번 한다. 2로 막으니 모델이 "호출 횟수 제한(Server tool
+  //   use limit exceeded)에 걸려 조사 못 했다"며 findings를 못 내놨다(실측). 스트리밍
+  //   으로 시간 여유가 생겼으니 6회까지 풀어 실제 리서치를 완주하게 한다.
   try {
     const raw = await callClaudeJsonWithWebSearch({
       apiKey,
       system,
       user,
-      maxSearches: 2,
+      maxSearches: 6,
       maxTokens: 4096,
       timeoutMs: 560_000,
       onUsage: track,
