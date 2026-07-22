@@ -551,19 +551,63 @@ export function AgencyScreen() {
               type="file"
               multiple
               accept="image/png,image/jpeg,image/webp,application/pdf"
-              onChange={(e) => setOnboardAdhocFiles(Array.from(e.target.files ?? []))}
+              onChange={(e) => {
+                // 누를 때마다 "누적"한다 — 여러 번 나눠 골라도 이전 선택이 유지된다
+                // (파일명+크기로 중복만 제거). input value는 비워서 같은 파일도 다시
+                // 고를 수 있고, 다음 선택에서 onChange가 또 발생하게 한다.
+                const picked = Array.from(e.target.files ?? [])
+                setOnboardAdhocFiles((prev) => {
+                  const merged = [...prev]
+                  for (const f of picked) {
+                    if (!merged.some((m) => m.name === f.name && m.size === f.size)) merged.push(f)
+                  }
+                  return merged
+                })
+                e.target.value = ''
+              }}
               className="block w-full text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
             />
             {onboardAdhocFiles.length > 0 && (
-              <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">
-                {(() => {
-                  const pdfs = onboardAdhocFiles.filter(isPdfFile).length
-                  const imgs = onboardAdhocFiles.length - pdfs
-                  return [imgs > 0 ? `이미지 ${imgs}장` : '', pdfs > 0 ? `PDF ${pdfs}개` : '']
-                    .filter(Boolean)
-                    .join(' · ') + ' 선택됨'
-                })()}
-              </p>
+              <div className="mt-1.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10.5px] font-medium text-[var(--text-dim)]">
+                    {(() => {
+                      const pdfs = onboardAdhocFiles.filter(isPdfFile).length
+                      const imgs = onboardAdhocFiles.length - pdfs
+                      return (
+                        [imgs > 0 ? `이미지 ${imgs}장` : '', pdfs > 0 ? `PDF ${pdfs}개` : '']
+                          .filter(Boolean)
+                          .join(' · ') + ' 선택됨 (계속 눌러서 추가 가능)'
+                      )
+                    })()}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setOnboardAdhocFiles([])}
+                    className="text-[10.5px] text-[var(--text-faint)] underline hover:text-[var(--open)]"
+                  >
+                    전체 지우기
+                  </button>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {onboardAdhocFiles.map((f, i) => (
+                    <span
+                      key={`${f.name}-${f.size}-${i}`}
+                      className="inline-flex items-center gap-1 rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)]"
+                    >
+                      <span className="max-w-[120px] truncate">{isPdfFile(f) ? '📄 ' : '🖼 '}{f.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setOnboardAdhocFiles((prev) => prev.filter((_, j) => j !== i))}
+                        className="text-[var(--text-faint)] hover:text-[var(--open)]"
+                        aria-label="삭제"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>
