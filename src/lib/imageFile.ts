@@ -18,3 +18,8 @@ export function mediaTypeOf(file: File): ReferenceMediaType | null {
   if (file.type === 'image/webp') return 'image/webp'
   return null
 }
+
+// PDF 여부 — 대행 온보딩에서 구글폼·레퍼런스를 PDF로 대체할 때 이미지와 구분한다.
+export function isPdfFile(file: File): boolean {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+}

@@ -309,13 +309,21 @@ export interface VisionImageInput {
   imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp'
 }
 
+// PDF 문서 입력 — 대행 온보딩에서 구글폼·레퍼런스를 PDF 한 개로 대체할 때 쓴다.
+// Claude는 PDF를 document 블록으로 받아 텍스트·이미지(페이지)를 함께 읽는다.
+export interface VisionDocInput {
+  dataBase64: string
+  mediaType: 'application/pdf'
+}
+
 // 코치의 네이버 통계 스크린샷 분석, 레퍼런스 이미지 기반 카피라이팅처럼
-// 이미지를 읽어야 하는 호출용. 이미지 여러 장을 한 번에 참고시킬 수 있다.
+// 이미지를 읽어야 하는 호출용. 이미지 여러 장 + PDF 문서를 한 번에 참고시킬 수 있다.
 export async function callClaudeVisionJson(params: {
   apiKey: string
   system: SystemPrompt
   user: string
   images: VisionImageInput[]
+  documents?: VisionDocInput[]
   maxTokens?: number
   timeoutMs?: number
   onUsage?: UsageCallback
@@ -325,6 +333,7 @@ export async function callClaudeVisionJson(params: {
     system,
     user,
     images,
+    documents = [],
     maxTokens = 2048,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
@@ -340,6 +349,14 @@ export async function callClaudeVisionJson(params: {
         {
           role: 'user',
           content: [
+            ...documents.map((doc) => ({
+              type: 'document' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: doc.mediaType,
+                data: doc.dataBase64,
+              },
+            })),
             ...images.map((img) => ({
               type: 'image' as const,
               source: {

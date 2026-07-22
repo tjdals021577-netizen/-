@@ -1,10 +1,10 @@
-import { callClaudeJson } from '../lib/claude.js'
+import { callClaudeJson, callClaudeVisionJson, type VisionImageInput, type VisionDocInput } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import type { AgencyOnboardingResult } from '../types/agency.js'
 
 function buildSystemPrompt(): string {
-  return `당신은 마잘남 대행 온보딩 담당자입니다. 대표님이 붙여넣은 구글폼 응답(업종·톤·타겟 등 7문항)과 스레드 링크 텍스트를 읽고,
-버즈가 페르소나로 사용할 수 있게 정리하세요.
+  return `당신은 마잘남 대행 온보딩 담당자입니다. 대표님이 준 자료(붙여넣은 구글폼 응답 텍스트, 또는 첨부한
+PDF/이미지 — 업종·톤·타겟 등)와 스레드 링크를 읽고, 버즈가 페르소나로 사용할 수 있게 정리하세요.
 
 규칙:
 1. name: 대표님 호칭(예: "OO뷰티 대표님") — 원문에 상호명이 있으면 그걸로, 없으면 "신규 대표님"으로.
@@ -33,14 +33,33 @@ function parseResult(raw: unknown): AgencyOnboardingResult {
 export async function parseAgencyOnboarding(params: {
   apiKey: string
   pastedText: string
+  images?: VisionImageInput[]
+  documents?: VisionDocInput[]
 }): Promise<AgencyOnboardingResult> {
-  const { apiKey, pastedText } = params
-  const raw = await callClaudeJson({
-    apiKey,
-    system: buildSystemPrompt(),
-    user: `[붙여넣은 내용]\n${pastedText}\n\n위 내용을 정리하고 JSON으로만 답하세요.`,
-    maxTokens: 1024,
-    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-  })
+  const { apiKey, pastedText, images = [], documents = [] } = params
+  const hasFiles = images.length > 0 || documents.length > 0
+  const textBlock = pastedText.trim()
+    ? `[붙여넣은 내용]\n${pastedText}\n\n`
+    : '[붙여넣은 텍스트 없음 — 첨부한 PDF/이미지에서 정보를 읽으세요]\n\n'
+  const user = `${textBlock}위 자료(텍스트/첨부파일)를 종합해 정리하고 JSON으로만 답하세요.`
+
+  // 텍스트만 있으면 저렴한 텍스트 호출, PDF/이미지가 있으면 비전(문서) 호출.
+  const raw = hasFiles
+    ? await callClaudeVisionJson({
+        apiKey,
+        system: buildSystemPrompt(),
+        user,
+        images,
+        documents,
+        maxTokens: 1024,
+        onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+      })
+    : await callClaudeJson({
+        apiKey,
+        system: buildSystemPrompt(),
+        user,
+        maxTokens: 1024,
+        onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+      })
   return parseResult(raw)
 }

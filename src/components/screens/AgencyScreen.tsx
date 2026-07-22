@@ -26,7 +26,8 @@ import {
   syncClientsFromSupabase,
 } from '../../lib/agencyStore'
 import { listReferences, getReferencesByIds, addReference } from '../../lib/referenceStore'
-import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
+import { fileToBase64, mediaTypeOf, isPdfFile } from '../../lib/imageFile'
+import type { VisionImageInput, VisionDocInput } from '../../lib/claude'
 import { startWorkLog, finishWorkLog } from '../../lib/workLog'
 import { submitForApproval } from '../../lib/approvalStore'
 import { createEntry } from '../../lib/calendarStore'
@@ -172,29 +173,56 @@ export function AgencyScreen() {
   }
 
   async function handleOnboard() {
-    if (onboardingText.trim().length === 0) return
+    // 텍스트(구글폼)를 붙이지 않아도, PDF/이미지를 첨부했으면 그걸로 온보딩한다.
+    if (onboardingText.trim().length === 0 && onboardAdhocFiles.length === 0 && onboardRefIds.length === 0) {
+      setOnboardError('구글폼 텍스트를 붙여넣거나, PDF/이미지를 1개 이상 첨부해주세요.')
+      return
+    }
     setOnboarding(true)
     setOnboardError(null)
     try {
-      const result = await parseAgencyOnboarding({ apiKey, pastedText: onboardingText })
-      // 직접 첨부한 사진은 라이브러리에 자동 저장해서(클라이언트 이름으로 라벨링)
-      // 매일 초안 생성에서도 계속 재사용할 수 있게 한다 — 사용자 입장에서는
-      // "라이브러리"를 신경 쓸 필요 없이 그냥 온보딩 화면에서 사진만 올리면 됨.
+      // 첨부 파일을 이미지 / PDF로 분리한다(PDF로 구글폼·레퍼런스를 대체 가능).
+      const adhocImages: VisionImageInput[] = []
+      const adhocPdfs: VisionDocInput[] = []
       const uploadedIds: string[] = []
       for (const file of onboardAdhocFiles) {
+        if (isPdfFile(file)) {
+          adhocPdfs.push({ dataBase64: await fileToBase64(file), mediaType: 'application/pdf' })
+          continue
+        }
         const mediaType = mediaTypeOf(file)
         if (!mediaType) continue
         const imageBase64 = await fileToBase64(file)
-        const saved = addReference({ label: `${result.name} 레퍼런스`, imageBase64, mediaType })
-        uploadedIds.push(saved.id)
-      }
-      const refIds = [...onboardRefIds, ...uploadedIds]
-      // 레퍼런스 이미지를 지금 딱 1번 읽어 텍스트 스타일 요약으로 뽑아둔다 —
-      // 이후 매일 초안 생성은 이 요약만 참고하므로 이미지를 다시 읽지 않는다.
-      let styleDigest: string | undefined
-      if (refIds.length > 0) {
+        adhocImages.push({ imageBase64, imageMediaType: mediaType })
+        // 이미지는 라이브러리에도 저장해 재요청·재사용에 쓴다(20~30장이면 용량
+        // 초과가 날 수 있어 실패해도 온보딩은 계속 — 스타일 요약이 본체라 무방).
         try {
-          styleDigest = await digestReferenceStyle({ apiKey, referenceImages: toVisionImages(refIds) })
+          const saved = addReference({ label: '대행 레퍼런스', imageBase64, mediaType })
+          uploadedIds.push(saved.id)
+        } catch {
+          // localStorage 용량 초과 등 — 저장은 건너뛰고 요약으로만 반영
+        }
+      }
+      // 페르소나 정리: 붙여넣은 텍스트 + 첨부(PDF/이미지)를 함께 읽어 추출.
+      const result = await parseAgencyOnboarding({
+        apiKey,
+        pastedText: onboardingText,
+        images: adhocImages,
+        documents: adhocPdfs,
+      })
+
+      const refIds = [...onboardRefIds, ...uploadedIds]
+      // 레퍼런스(이미지+PDF)를 지금 딱 1번 읽어 텍스트 스타일 요약으로 뽑아둔다 —
+      // 이후 매일 생성은 이 요약만 참고하므로 파일을 다시 읽지 않는다(비용 절감).
+      const digestImages = [...toVisionImages(onboardRefIds), ...adhocImages]
+      let styleDigest: string | undefined
+      if (digestImages.length > 0 || adhocPdfs.length > 0) {
+        try {
+          styleDigest = await digestReferenceStyle({
+            apiKey,
+            referenceImages: digestImages,
+            documents: adhocPdfs,
+          })
         } catch {
           // 요약 실패해도 온보딩은 계속 — 다음 생성 때 다시 시도(ensureStyleDigest)
         }
@@ -493,7 +521,7 @@ export function AgencyScreen() {
 
   return (
     <div>
-      <PreviewBanner message="구글폼 응답 + 스레드 링크를 붙여넣으면 페르소나를 자동으로 정리해서 카드가 생성됩니다. 계약 날짜·연장·일시중단·초안 생성까지 실제로 동작합니다." />
+      <PreviewBanner message="구글폼 응답 텍스트를 붙여넣거나, PDF/이미지를 첨부하면 페르소나·스타일을 자동 정리해 카드가 생성됩니다(PDF로 구글폼·레퍼런스 대체 가능, 여러 개 첨부 OK). 계약 날짜·연장·일시중단·초안 생성까지 실제로 동작합니다." />
 
       <div className="mt-4 space-y-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="text-sm font-semibold text-[var(--text)]">새 대행 클라이언트 온보딩</p>
@@ -516,23 +544,37 @@ export function AgencyScreen() {
           )}
           <div>
             <label className="mb-1 block text-[10.5px] text-[var(--text-faint)]">
-              또는 지금 바로 사진 첨부 (자동으로 이 클라이언트 레퍼런스로 저장됨)
+              또는 지금 바로 이미지/PDF 첨부 — 여러 개 가능. PDF로 구글폼·레퍼런스를 대체할 수 있어요
+              (이미지는 라이브러리에도 저장됨)
             </label>
             <input
               type="file"
               multiple
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg,image/webp,application/pdf"
               onChange={(e) => setOnboardAdhocFiles(Array.from(e.target.files ?? []))}
               className="block w-full text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
             />
             {onboardAdhocFiles.length > 0 && (
-              <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">{onboardAdhocFiles.length}장 선택됨</p>
+              <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">
+                {(() => {
+                  const pdfs = onboardAdhocFiles.filter(isPdfFile).length
+                  const imgs = onboardAdhocFiles.length - pdfs
+                  return [imgs > 0 ? `이미지 ${imgs}장` : '', pdfs > 0 ? `PDF ${pdfs}개` : '']
+                    .filter(Boolean)
+                    .join(' · ') + ' 선택됨'
+                })()}
+              </p>
             )}
           </div>
         </div>
         <button
           type="button"
-          disabled={onboardingText.trim().length === 0 || onboarding}
+          disabled={
+            (onboardingText.trim().length === 0 &&
+              onboardAdhocFiles.length === 0 &&
+              onboardRefIds.length === 0) ||
+            onboarding
+          }
           onClick={() => void handleOnboard()}
           className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >

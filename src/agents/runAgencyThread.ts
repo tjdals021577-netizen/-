@@ -1,4 +1,4 @@
-import { callClaudeJson, callClaudeVisionJson, type VisionImageInput } from '../lib/claude.js'
+import { callClaudeJson, callClaudeVisionJson, type VisionImageInput, type VisionDocInput } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
 import {
   buildAgencyReferenceSystemPrompt,
@@ -14,19 +14,21 @@ import type { ThreadDraft, ThreadFormatDraft } from '../types/thread.js'
 export async function digestReferenceStyle(params: {
   apiKey: string
   referenceImages: VisionImageInput[]
+  documents?: VisionDocInput[]
 }): Promise<string> {
-  const { apiKey, referenceImages } = params
-  if (referenceImages.length === 0) return ''
-  const system = `당신은 카피라이팅 스타일 분석가입니다. 첨부된 이미지들은 한 클라이언트의 실제 스레드/카피
-레퍼런스입니다. 이 이미지들에서 공통으로 드러나는 "재사용 가능한 글쓰기 스타일"만 뽑아 텍스트 가이드로
+  const { apiKey, referenceImages, documents = [] } = params
+  if (referenceImages.length === 0 && documents.length === 0) return ''
+  const system = `당신은 카피라이팅 스타일 분석가입니다. 첨부된 이미지/PDF는 한 클라이언트의 실제 스레드/카피
+레퍼런스입니다. 여기서 공통으로 드러나는 "재사용 가능한 글쓰기 스타일"만 뽑아 텍스트 가이드로
 정리하세요. 포함: 후킹(첫 문장) 패턴, 말투·톤, 문장 길이·리듬, 이모지/줄바꿈 습관, 자주 쓰는 표현·구성,
-CTA 방식, 피해야 할 것. 이미지 속 구체적 문구·숫자·에피소드는 베끼지 말고 "스타일 규칙"만 요약합니다.
+CTA 방식, 피해야 할 것. 구체적 문구·숫자·에피소드는 베끼지 말고 "스타일 규칙"만 요약합니다.
 한국어 불릿 6~10개, 400자 내외. 아래 JSON만 출력: { "digest": string }`
   const raw = await callClaudeVisionJson({
     apiKey,
     system,
     user: '이 레퍼런스들의 카피 스타일을 재사용 가능한 규칙으로 요약해 JSON으로만 답하세요.',
     images: referenceImages,
+    documents,
     maxTokens: 800,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
