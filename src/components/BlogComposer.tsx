@@ -291,13 +291,53 @@ export function BlogComposer({ brand }: { brand: Brand }) {
             type="file"
             multiple
             accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => setPhotoFiles(Array.from(e.target.files ?? []))}
+            onChange={(e) => {
+              // 누를 때마다 "누적"한다(여러 번 나눠 골라도 유지, 파일명+크기로 중복 제거).
+              const picked = Array.from(e.target.files ?? [])
+              setPhotoFiles((prev) => {
+                const merged = [...prev]
+                for (const f of picked) {
+                  if (!merged.some((m) => m.name === f.name && m.size === f.size)) merged.push(f)
+                }
+                return merged
+              })
+              e.target.value = ''
+            }}
             className="block w-full text-xs text-[var(--text-dim)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--text-dim)]"
           />
           {photoFiles.length > 0 && (
-            <p className="mt-1 text-[10.5px] text-[var(--text-faint)]">
-              {photoFiles.length}장 첨부됨 — AI가 사진을 직접 보고 배치를 제안합니다.
-            </p>
+            <div className="mt-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-[10.5px] font-medium text-[var(--text-dim)]">
+                  {photoFiles.length}장 첨부됨 (계속 눌러서 추가 가능) — AI가 사진을 직접 보고 배치 제안
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setPhotoFiles([])}
+                  className="text-[10.5px] text-[var(--text-faint)] underline hover:text-[var(--open)]"
+                >
+                  전체 지우기
+                </button>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {photoFiles.map((f, i) => (
+                  <span
+                    key={`${f.name}-${f.size}-${i}`}
+                    className="inline-flex items-center gap-1 rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)]"
+                  >
+                    <span className="max-w-[120px] truncate">🖼 {f.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPhotoFiles((prev) => prev.filter((_, j) => j !== i))}
+                      className="text-[var(--text-faint)] hover:text-[var(--open)]"
+                      aria-label="삭제"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
           <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-faint)]">
             ⚠️ 사진을 첨부하면 사진 분석이 우선이라 이번 생성에서는 웹 검색(실제 상위노출 글
