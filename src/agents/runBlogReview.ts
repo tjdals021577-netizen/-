@@ -109,6 +109,7 @@ export async function generateBlogDraft(params: {
   marketFindings?: string
   pastFeedback?: string
   photoImages?: VisionImageInput[]
+  blogVoice?: string
 }): Promise<BlogDraft> {
   const {
     apiKey,
@@ -121,6 +122,7 @@ export async function generateBlogDraft(params: {
     marketFindings,
     pastFeedback,
     photoImages,
+    blogVoice,
   } = params
   const user = buildDraftUserPrompt({
     topic,
@@ -140,7 +142,7 @@ export async function generateBlogDraft(params: {
     const raw = hasPhotos
       ? await callClaudeVisionJson({
           apiKey,
-          system: buildDraftSystemPrompt(brandContext, marketFindings, true, pastFeedback),
+          system: buildDraftSystemPrompt(brandContext, marketFindings, true, pastFeedback, blogVoice),
           user,
           images: photoImages as VisionImageInput[],
           maxTokens: 8192,
@@ -148,7 +150,7 @@ export async function generateBlogDraft(params: {
         })
       : await callClaudeJson({
           apiKey,
-          system: buildDraftSystemPrompt(brandContext, marketFindings, false, pastFeedback),
+          system: buildDraftSystemPrompt(brandContext, marketFindings, false, pastFeedback, blogVoice),
           user,
           maxTokens: 8192,
           timeoutMs: 120_000,

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BlogAgentCard, type BlogAgentStatus } from './BlogAgentCard'
 import { generateBlogDraft, runBlogAgentReview } from '../agents/runBlogReview'
+import { blogVoiceFor } from '../agents/blogPrompts'
 import type { BlogDraft, BlogReview, BlogRole } from '../types/blog'
 import { PASS_THRESHOLD } from '../types/domain'
 import {
@@ -144,6 +145,7 @@ export function BlogComposer({ brand }: { brand: Brand }) {
         marketFindings: formatBrainFindingsForPrompt(brainReport),
         pastFeedback: formatRecentFeedbackForPrompt(brand, 'blog'),
         photoImages,
+        blogVoice: blogVoiceFor(brand),
       })
       setDraft(newDraft)
     } catch (err) {

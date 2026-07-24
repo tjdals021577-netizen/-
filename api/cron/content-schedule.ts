@@ -10,6 +10,7 @@
 // 억지로 자동화하지 않음).
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { generateBlogDraft, runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
+import { blogVoiceFor } from '../../src/agents/blogPrompts.js'
 import { generateScoredRemixPlan } from '../../src/agents/runRemix.js'
 import { PASS_THRESHOLD, REWRITE_THRESHOLD } from '../../src/types/domain.js'
 import { BRAND_CONTEXT } from '../../src/types/brand.js'
@@ -156,6 +157,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     marketFindings: brainFindings,
     pastFeedback,
     photoImages: photoImages.length > 0 ? photoImages : undefined,
+    blogVoice: blogVoiceFor(brand),
   })
 
   // 3명 심사위원을 병렬로 돌리되, 1명이 실패해도 나머지 채점으로 계속
@@ -184,6 +186,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
         pastFeedback,
         previousDraft: draft,
         feedback,
+        blogVoice: blogVoiceFor(brand),
       })
       const revisedReviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft: revised })
       if (revisedReviews.length > 0 && scoreOf(revisedReviews) > scoreOf(reviews)) {
