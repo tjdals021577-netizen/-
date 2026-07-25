@@ -19,6 +19,7 @@ interface AgencyClientRow {
   persona: string
   memo: string
   status: string
+  guidance: string | null
   recent_draft_texts: string[]
   reference_image_ids: string[]
   style_digest: string | null
@@ -64,7 +65,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const clients = await supabaseSelect<AgencyClientRow>(
     'agency_clients',
-    'status=eq.active&select=id,name,business,persona,memo,status,recent_draft_texts,reference_image_ids,style_digest',
+    'status=eq.active&select=id,name,business,persona,memo,status,guidance,recent_draft_texts,reference_image_ids,style_digest',
   )
 
   const kstDate = kstDateKey(kstNow())
@@ -120,6 +121,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         count: DRAFT_COUNT,
         recentPosts,
         styleDigest,
+        guidance: client.guidance ?? undefined,
         hookReference,
       })
       const reviews = await runThreadReviewBatch({ apiKey, drafts })

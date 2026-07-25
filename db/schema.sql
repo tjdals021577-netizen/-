@@ -68,6 +68,8 @@ create table if not exists agency_clients (
   today_drafts_date date,
   recent_draft_texts jsonb not null default '[]',
   paused_at date,
+  -- 카드에서 입력하는 "매번 반영할 상시 요청/방향"(생성 프롬프트에 항상 주입).
+  guidance text,
   reference_image_ids jsonb not null default '[]',
   -- 레퍼런스 이미지를 1회 읽어 뽑은 텍스트 스타일 요약. 매일 생성이 이미지를
   -- 다시 읽지 않고 이 요약만 참고하게 해서 비전 토큰 반복 과금을 없앤다.

@@ -170,6 +170,21 @@ export function saveMemo(id: string, memo: string): AgencyClient | undefined {
   return result
 }
 
+// 이름·업종·상시요청 등 카드에서 직접 고친 값을 저장한다(온보딩이 못 잡은 정보 보완용).
+export function saveClientFields(
+  id: string,
+  fields: { name?: string; business?: string; guidance?: string },
+): AgencyClient | undefined {
+  const result = updateClient(id, (c) => ({
+    ...c,
+    name: fields.name !== undefined ? fields.name : c.name,
+    business: fields.business !== undefined ? fields.business : c.business,
+    guidance: fields.guidance !== undefined ? fields.guidance : c.guidance,
+  }))
+  if (result) syncToSupabase('agency_clients', result)
+  return result
+}
+
 export function saveReferenceImages(
   id: string,
   referenceImageIds: string[],
@@ -218,6 +233,7 @@ function fromSupabaseRow(row: Record<string, unknown>): AgencyClient {
     persona: String(row.persona ?? ''),
     threadUrl: String(row.thread_url ?? ''),
     memo: String(row.memo ?? ''),
+    guidance: typeof row.guidance === 'string' ? row.guidance : undefined,
     status: row.status === 'paused' ? 'paused' : 'active',
     startDate: String(row.start_date ?? ''),
     endDate: String(row.end_date ?? ''),

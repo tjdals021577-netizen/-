@@ -117,9 +117,10 @@ export async function generateAgencyDraftBatch(params: {
   referenceImages?: VisionImageInput[]
   hookReference?: string
   styleDigest?: string
+  guidance?: string
 }): Promise<ThreadDraft[]> {
-  const { apiKey, topic, business, persona, count, recentPosts, referenceImages, hookReference, styleDigest } = params
-  const system = buildAgencyReferenceSystemPrompt({ business, persona, variantCount: count, recentPosts, hookReference, styleDigest })
+  const { apiKey, topic, business, persona, count, recentPosts, referenceImages, hookReference, styleDigest, guidance } = params
+  const system = buildAgencyReferenceSystemPrompt({ business, persona, variantCount: count, recentPosts, hookReference, styleDigest, guidance })
   const user = buildAgencyReferenceUserPrompt({ topic, variantCount: count })
 
   const raw =
@@ -186,9 +187,10 @@ export async function generateAgencyFullFormatSet(params: {
   referenceImages?: VisionImageInput[]
   note?: string
   styleDigest?: string
+  guidance?: string
 }): Promise<ThreadFormatDraft[]> {
-  const { apiKey, topic, business, persona, referenceImages, note, styleDigest } = params
-  const system = buildAgencyFullFormatSystemPrompt({ business, persona, styleDigest })
+  const { apiKey, topic, business, persona, referenceImages, note, styleDigest, guidance } = params
+  const system = buildAgencyFullFormatSystemPrompt({ business, persona, styleDigest, guidance })
   const user = buildAgencyFullFormatUserPrompt({ topic, note })
 
   const raw =

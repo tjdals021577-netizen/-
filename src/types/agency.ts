@@ -22,6 +22,9 @@ export interface AgencyClient {
   persona: string
   threadUrl: string
   memo: string
+  // 이 클라이언트 글을 쓸 때 "매번 반드시 반영"할 상시 요청/방향(대표님이 직접 입력).
+  // 예: "할인 이벤트 강조", "더 짧고 임팩트 있게", "존댓말 유지". 생성 프롬프트에 항상 주입된다.
+  guidance?: string
   status: ClientStatus
   startDate: string // ISO date (yyyy-mm-dd)
   endDate: string // ISO date (yyyy-mm-dd)

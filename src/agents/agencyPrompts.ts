@@ -73,6 +73,12 @@ function styleBlockOf(styleDigest?: string): string {
   return d ? `[클라이언트 카피 스타일 — 레퍼런스 이미지에서 1회 추출한 요약]\n${d}` : ''
 }
 
+// 대표님이 카드에 적어둔 "이 클라이언트는 매번 이렇게 써줘" 상시 요청 — 항상 최우선 반영.
+function guidanceBlockOf(guidance?: string): string {
+  const g = guidance?.trim()
+  return g ? `[클라이언트 상시 요청 — 매번 반드시 반영]\n${g}` : ''
+}
+
 export function buildAgencyReferenceSystemPrompt(params: {
   business: string
   persona: string
@@ -80,8 +86,9 @@ export function buildAgencyReferenceSystemPrompt(params: {
   recentPosts?: string[]
   hookReference?: string
   styleDigest?: string
+  guidance?: string
 }): SystemBlock[] {
-  const { business, persona, variantCount, recentPosts, hookReference, styleDigest } = params
+  const { business, persona, variantCount, recentPosts, hookReference, styleDigest, guidance } = params
   const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
@@ -116,6 +123,7 @@ JSON 스키마:
 
   const dynamicText = [
     buildClientContextBlock({ business, persona, recentPosts }),
+    guidanceBlockOf(guidance),
     styleBlockOf(styleDigest),
     hookReference ?? '',
   ]
@@ -151,8 +159,9 @@ export function buildAgencyFullFormatSystemPrompt(params: {
   business: string
   persona: string
   styleDigest?: string
+  guidance?: string
 }): SystemBlock[] {
-  const { business, persona, styleDigest } = params
+  const { business, persona, styleDigest, guidance } = params
   const staticText = `${AGENCY_IDENTITY}
 
 ${AGENCY_WRITING_PRINCIPLES}
@@ -172,7 +181,11 @@ ${CONFIDENTIALITY_RULE}
 JSON 스키마:
 { "drafts": [ { "format": string, "text": string } ] }`
 
-  const dynamicText = [buildClientContextBlock({ business, persona }), styleBlockOf(styleDigest)]
+  const dynamicText = [
+    buildClientContextBlock({ business, persona }),
+    guidanceBlockOf(guidance),
+    styleBlockOf(styleDigest),
+  ]
     .filter(Boolean)
     .join('\n\n')
   return cachedSystem(staticText, dynamicText)

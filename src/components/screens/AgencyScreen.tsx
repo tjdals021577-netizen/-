@@ -17,6 +17,7 @@ import {
   pauseClient,
   resumeClient,
   saveMemo,
+  saveClientFields,
   saveTodayDrafts,
   saveStyleDigest,
   deleteClient,
@@ -68,10 +69,12 @@ function ReferencePicker({
   references,
   selectedIds,
   onToggle,
+  onZoom,
 }: {
   references: ReturnType<typeof listReferences>
   selectedIds: string[]
   onToggle: (id: string) => void
+  onZoom?: (src: string) => void
 }) {
   if (references.length === 0) {
     return (
@@ -102,6 +105,26 @@ function ReferencePicker({
             {selected && (
               <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-bold text-white">
                 ✓
+              </span>
+            )}
+            {onZoom && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation() // 선택 토글 대신 확대만
+                  onZoom(`data:${r.mediaType};base64,${r.imageBase64}`)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    onZoom(`data:${r.mediaType};base64,${r.imageBase64}`)
+                  }
+                }}
+                className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded bg-black/55 text-[9px] leading-none text-white"
+                title="확대"
+              >
+                🔍
               </span>
             )}
           </button>
@@ -137,6 +160,13 @@ export function AgencyScreen() {
   const [busyClientId, setBusyClientId] = useState<string | null>(null)
   const [memoDrafts, setMemoDrafts] = useState<Record<string, string>>({})
   const [todaySpend, setTodaySpend] = useState(() => getTodaySpendUsd())
+  // 카드에서 이름·업종·상시요청을 직접 수정하는 패널(온보딩이 못 잡은 정보 보완).
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [infoDrafts, setInfoDrafts] = useState<
+    Record<string, { name: string; business: string; guidance: string }>
+  >({})
+  // 레퍼런스 이미지 클릭 확대(라이트박스) — 지금 보고 있는 이미지 data URL.
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null)
 
   // "레퍼런스 넣어 재요청" — 카드별로 새 레퍼런스를 골라서 3개 시안을 받는다.
   const [reRequestClientId, setReRequestClientId] = useState<string | null>(null)
@@ -158,6 +188,30 @@ export function AgencyScreen() {
     setMemoDrafts((prev) => ({ ...drafts, ...prev }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function openEditInfo(client: AgencyClient) {
+    setInfoDrafts((prev) => ({
+      ...prev,
+      [client.id]: {
+        name: client.name,
+        business: client.business,
+        guidance: client.guidance ?? '',
+      },
+    }))
+    setEditingId((cur) => (cur === client.id ? null : client.id))
+  }
+
+  function handleSaveInfo(id: string) {
+    const d = infoDrafts[id]
+    if (!d) return
+    saveClientFields(id, {
+      name: d.name.trim() || undefined, // 비우면 기존 이름 유지(아바타 깨짐 방지)
+      business: d.business.trim(),
+      guidance: d.guidance.trim(),
+    })
+    setEditingId(null)
+    refresh()
+  }
 
   // 레이더/모닝과 같은 패턴 — 화면 진입 시 크론(api/cron/agency.ts)이 밤새
   // 만들어둔 초안을 Supabase에서 끌어와 화면에 바로 보이게 한다.
@@ -331,6 +385,7 @@ export function AgencyScreen() {
         count: DRAFT_COUNT,
         recentPosts: client.recentDraftTexts,
         styleDigest,
+        guidance: client.guidance,
         hookReference: formatHookReference(getReferenceHooks(), 50),
       })
       const reviews = await runThreadReviewBatch({ apiKey, drafts })
@@ -481,6 +536,7 @@ export function AgencyScreen() {
         business: client.business,
         persona: client.persona,
         styleDigest,
+        guidance: client.guidance,
       })
       setFullFormatSets((prev) => ({ ...prev, [client.id]: drafts }))
       const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
@@ -546,7 +602,7 @@ export function AgencyScreen() {
           {references.length > 0 && (
             <div className="mb-2">
               <p className="mb-1 text-[10.5px] text-[var(--text-faint)]">라이브러리에서 고르기</p>
-              <ReferencePicker references={references} selectedIds={onboardRefIds} onToggle={toggleOnboardRef} />
+              <ReferencePicker references={references} selectedIds={onboardRefIds} onToggle={toggleOnboardRef} onZoom={setZoomSrc} />
             </div>
           )}
           <div>
@@ -666,12 +722,72 @@ export function AgencyScreen() {
                   </a>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-[var(--text)]">{client.name}</p>
-                    <p className="truncate text-xs text-[var(--text-faint)]">{client.business}</p>
+                    <p className="truncate text-xs text-[var(--text-faint)]">{client.business || '업종 미확인 · 정보 추가 필요'}</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => openEditInfo(client)}
+                    className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-[10.5px] font-medium text-[var(--text-dim)] hover:border-[var(--accent)]"
+                  >
+                    {editingId === client.id ? '닫기' : '✏️ 정보'}
+                  </button>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${chipClass(sl.tone)}`}>
                     {sl.text}
                   </span>
                 </div>
+
+                {editingId === client.id && (
+                  <div className="mb-2 space-y-1.5 rounded-lg border border-[var(--accent)] bg-[var(--surface)] p-2.5">
+                    <input
+                      type="text"
+                      value={infoDrafts[client.id]?.name ?? ''}
+                      onChange={(e) =>
+                        setInfoDrafts((prev) => ({
+                          ...prev,
+                          [client.id]: { ...prev[client.id], name: e.target.value },
+                        }))
+                      }
+                      placeholder="이름/호칭 (예: OO뷰티 대표님)"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      value={infoDrafts[client.id]?.business ?? ''}
+                      onChange={(e) =>
+                        setInfoDrafts((prev) => ({
+                          ...prev,
+                          [client.id]: { ...prev[client.id], business: e.target.value },
+                        }))
+                      }
+                      placeholder="업종 (예: 뷰티 · 피부관리샵)"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+                    />
+                    <textarea
+                      value={infoDrafts[client.id]?.guidance ?? ''}
+                      onChange={(e) =>
+                        setInfoDrafts((prev) => ({
+                          ...prev,
+                          [client.id]: { ...prev[client.id], guidance: e.target.value },
+                        }))
+                      }
+                      placeholder='상시 요청 — 매번 반영 (예: "할인 이벤트 강조", "더 짧고 임팩트 있게", "존댓말 유지")'
+                      rows={3}
+                      className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveInfo(client.id)}
+                      className="w-full rounded-lg bg-[var(--accent)] py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                    >
+                      저장
+                    </button>
+                  </div>
+                )}
+                {client.guidance && editingId !== client.id && (
+                  <p className="mb-2 rounded-lg bg-[var(--accent-soft)] px-2 py-1.5 text-[10.5px] leading-relaxed text-[var(--accent)]">
+                    🔁 상시 요청: {client.guidance}
+                  </p>
+                )}
 
                 <div className="mb-1 flex justify-between font-mono text-[11px] text-[var(--text-faint)]">
                   <span>{client.startDate} ~ {client.endDate}</span>
@@ -749,6 +865,7 @@ export function AgencyScreen() {
                       references={references}
                       selectedIds={reRequestRefIds}
                       onToggle={toggleReRequestRef}
+                      onZoom={setZoomSrc}
                     />
                     <div>
                       <label className="mb-1 block text-[10.5px] text-[var(--text-faint)]">
@@ -850,6 +967,28 @@ export function AgencyScreen() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {zoomSrc && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setZoomSrc(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') setZoomSrc(null)
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          title="닫기"
+        >
+          <img
+            src={zoomSrc}
+            alt="레퍼런스 확대"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+          />
+          <span className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-lg text-white">
+            ✕
+          </span>
         </div>
       )}
     </div>
