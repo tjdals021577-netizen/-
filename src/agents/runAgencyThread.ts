@@ -160,22 +160,34 @@ export async function generateAgencyVariantsWithReferences(params: {
   note?: string
 }): Promise<ThreadDraft[]> {
   const { apiKey, topic, business, persona, referenceImages, variantCount = 3, note } = params
-  const raw = await callClaudeVisionJson({
-    apiKey,
-    system: buildAgencyReferenceSystemPrompt({ business, persona, variantCount }),
-    user: buildAgencyReferenceUserPrompt({ topic, variantCount, note }),
-    images: referenceImages,
-    maxTokens: 2048,
-    onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-  })
-  if (typeof raw !== 'object' || raw === null) {
-    throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+  // 이미지가 많거나(원본 풀사이즈) 응답 포맷이 어긋나 "텍스트 없음/파싱 실패"가
+  // 나던 문제 → 이미지는 최대 6장으로 제한하고, 실패 시 "순수 JSON만" 강하게
+  // 지시하며 1회 재시도한다. maxTokens도 넉넉히(4096).
+  const images = referenceImages.slice(0, 6)
+  async function attempt(strict: boolean): Promise<unknown> {
+    const noteStrict = strict
+      ? `${note ?? ''}\n\n반드시 아래 스키마와 정확히 일치하는 순수 JSON "한 개"만 출력. 설명·머리말·코드블록 금지.`
+      : note
+    return callClaudeVisionJson({
+      apiKey,
+      system: buildAgencyReferenceSystemPrompt({ business, persona, variantCount }),
+      user: buildAgencyReferenceUserPrompt({ topic, variantCount, note: noteStrict }),
+      images,
+      maxTokens: 4096,
+      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+    })
   }
-  const rec = raw as Record<string, unknown>
-  if (!Array.isArray(rec.drafts)) {
-    throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+  function toDrafts(raw: unknown): ThreadDraft[] {
+    if (typeof raw !== 'object' || raw === null) throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+    const rec = raw as Record<string, unknown>
+    if (!Array.isArray(rec.drafts)) throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
+    return rec.drafts.map((d) => parseDraft(d))
   }
-  return rec.drafts.map((d) => parseDraft(d))
+  try {
+    return toDrafts(await attempt(false))
+  } catch {
+    return toDrafts(await attempt(true))
+  }
 }
 
 // 대표님 "마잘남 – 글쓰기" 프롬프트의 9가지 유형 전체 생성.

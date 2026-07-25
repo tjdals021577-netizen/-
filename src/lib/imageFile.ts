@@ -51,6 +51,39 @@ export async function fileToDownscaledBase64(
   }
 }
 
+// 이미 저장된 base64 이미지(원본 풀사이즈일 수 있음)를 축소해 다시 base64로.
+// 재요청처럼 저장된 원본을 비전에 보낼 때 요청이 너무 무거워 실패하는 걸 막는다.
+// 실패하면 원본 base64를 그대로 반환(폴백).
+export async function downscaleBase64Image(
+  imageBase64: string,
+  mediaType: ReferenceMediaType,
+  maxDim = 1400,
+  quality = 0.82,
+): Promise<{ imageBase64: string; imageMediaType: ReferenceMediaType }> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('이미지 로드 실패'))
+      el.src = `data:${mediaType};base64,${imageBase64}`
+    })
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+    if (scale >= 1) return { imageBase64, imageMediaType: mediaType } // 이미 작으면 그대로
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas 미지원')
+    ctx.drawImage(img, 0, 0, w, h)
+    const out = canvas.toDataURL('image/jpeg', quality)
+    return { imageBase64: out.slice(out.indexOf(',') + 1), imageMediaType: 'image/jpeg' }
+  } catch {
+    return { imageBase64, imageMediaType: mediaType }
+  }
+}
+
 export function mediaTypeOf(file: File): ReferenceMediaType | null {
   if (file.type === 'image/png') return 'image/png'
   if (file.type === 'image/jpeg') return 'image/jpeg'

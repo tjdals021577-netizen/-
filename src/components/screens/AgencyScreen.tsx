@@ -27,7 +27,7 @@ import {
   syncClientsFromSupabase,
 } from '../../lib/agencyStore'
 import { listReferences, getReferencesByIds, addReference, syncReferencesFromSupabase } from '../../lib/referenceStore'
-import { fileToBase64, mediaTypeOf, isPdfFile, fileToDownscaledBase64 } from '../../lib/imageFile'
+import { fileToBase64, mediaTypeOf, isPdfFile, fileToDownscaledBase64, downscaleBase64Image } from '../../lib/imageFile'
 import type { VisionImageInput, VisionDocInput } from '../../lib/claude'
 import { startWorkLog, finishWorkLog } from '../../lib/workLog'
 import { submitForApproval } from '../../lib/approvalStore'
@@ -454,13 +454,20 @@ export function AgencyScreen() {
       note: `레퍼런스 ${reRequestRefIds.length + reRequestAdhocFiles.length}장으로 시안 ${REREQUEST_VARIANT_COUNT}개 요청`,
     })
     try {
-      const libraryImages = toVisionImages(reRequestRefIds)
+      // 저장된 레퍼런스는 원본(풀사이즈)일 수 있어 비전 요청이 무거워진다 → 축소해 보낸다.
+      const libraryImages = await Promise.all(
+        toVisionImages(reRequestRefIds).map((img) =>
+          downscaleBase64Image(img.imageBase64, img.imageMediaType),
+        ),
+      )
       const adhocImages = (
         await Promise.all(
           reRequestAdhocFiles.map(async (f) => {
-            const mediaType = mediaTypeOf(f)
-            if (!mediaType) return null
-            return { imageBase64: await fileToBase64(f), imageMediaType: mediaType }
+            if (!mediaTypeOf(f)) return null
+            return await fileToDownscaledBase64(f).then((r) => ({
+              imageBase64: r.imageBase64,
+              imageMediaType: r.mediaType,
+            }))
           }),
         )
       ).filter((img): img is { imageBase64: string; imageMediaType: 'image/png' | 'image/jpeg' | 'image/webp' } => img !== null)
