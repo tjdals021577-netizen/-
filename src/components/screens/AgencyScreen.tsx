@@ -163,7 +163,7 @@ export function AgencyScreen() {
   // 카드에서 이름·업종·상시요청을 직접 수정하는 패널(온보딩이 못 잡은 정보 보완).
   const [editingId, setEditingId] = useState<string | null>(null)
   const [infoDrafts, setInfoDrafts] = useState<
-    Record<string, { name: string; business: string; guidance: string }>
+    Record<string, { name: string; business: string; guidance: string; startDate: string; endDate: string }>
   >({})
   // 레퍼런스 이미지 클릭 확대(라이트박스) — 지금 보고 있는 이미지 data URL.
   const [zoomSrc, setZoomSrc] = useState<string | null>(null)
@@ -196,6 +196,8 @@ export function AgencyScreen() {
         name: client.name,
         business: client.business,
         guidance: client.guidance ?? '',
+        startDate: client.startDate,
+        endDate: client.endDate,
       },
     }))
     setEditingId((cur) => (cur === client.id ? null : client.id))
@@ -208,6 +210,8 @@ export function AgencyScreen() {
       name: d.name.trim() || undefined, // 비우면 기존 이름 유지(아바타 깨짐 방지)
       business: d.business.trim(),
       guidance: d.guidance.trim(),
+      startDate: d.startDate,
+      endDate: d.endDate,
     })
     setEditingId(null)
     refresh()
@@ -772,6 +776,36 @@ export function AgencyScreen() {
                       rows={3}
                       className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none"
                     />
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-1">
+                        <label className="mb-0.5 block text-[10px] text-[var(--text-faint)]">시작일</label>
+                        <input
+                          type="date"
+                          value={infoDrafts[client.id]?.startDate ?? ''}
+                          onChange={(e) =>
+                            setInfoDrafts((prev) => ({
+                              ...prev,
+                              [client.id]: { ...prev[client.id], startDate: e.target.value },
+                            }))
+                          }
+                          className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="mb-0.5 block text-[10px] text-[var(--text-faint)]">종료일</label>
+                        <input
+                          type="date"
+                          value={infoDrafts[client.id]?.endDate ?? ''}
+                          onChange={(e) =>
+                            setInfoDrafts((prev) => ({
+                              ...prev,
+                              [client.id]: { ...prev[client.id], endDate: e.target.value },
+                            }))
+                          }
+                          className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleSaveInfo(client.id)}
