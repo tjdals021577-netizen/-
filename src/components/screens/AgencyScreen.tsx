@@ -217,11 +217,10 @@ export function AgencyScreen() {
       })
 
       const refIds = [...onboardRefIds, ...uploadedIds]
-      // 레퍼런스(이미지+PDF)를 지금 딱 1번 읽어 텍스트 스타일 요약으로 뽑아둔다 —
+      // 레퍼런스(이미지 전부 + PDF)를 지금 딱 1번 읽어 텍스트 스타일 요약으로 뽑아둔다 —
       // 이후 매일 생성은 이 요약만 참고하므로 파일을 다시 읽지 않는다(비용 절감).
-      // 스타일 요약엔 대표 이미지 최대 12장만 쓴다(39장을 다 보낼 필요 없음 — 스타일
-      // 파악엔 12장이면 충분하고, 페이로드 과부하·비용을 줄인다).
-      const digestImages = [...toVisionImages(onboardRefIds), ...adhocImages].slice(0, 12)
+      // 이미지가 수십 장이어도 digestReferenceStyle이 12장씩 나눠 "전부" 읽어 하나로 합친다.
+      const digestImages = [...toVisionImages(onboardRefIds), ...adhocImages]
       let styleDigest: string | undefined
       if (digestImages.length > 0 || adhocPdfs.length > 0) {
         try {
@@ -301,8 +300,8 @@ export function AgencyScreen() {
   // 만들어 저장하고 반환한다. 이후 생성은 저장된 요약을 재사용(이미지 재읽기 X → 비용 절감).
   async function ensureStyleDigest(client: AgencyClient): Promise<string | undefined> {
     if (client.styleDigest) return client.styleDigest
-    // 스타일 파악엔 대표 12장이면 충분 — 수십 장을 한 번에 보내 과부하 나는 걸 막는다.
-    const images = toVisionImages(client.referenceImageIds).slice(0, 12)
+    // 이미지가 수십 장이어도 digestReferenceStyle이 12장씩 나눠 전부 읽어 합친다.
+    const images = toVisionImages(client.referenceImageIds)
     if (images.length === 0) return undefined
     const digest = await digestReferenceStyle({ apiKey, referenceImages: images })
     if (digest) saveStyleDigest(client.id, digest)
