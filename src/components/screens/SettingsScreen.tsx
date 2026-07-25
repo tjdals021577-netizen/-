@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { DAILY_BUDGET_USD, getTodaySpendUsd } from '../../lib/budgetGuard'
 import { testSupabaseConnection } from '../../lib/remoteSync'
-import { listReferences, addReference, deleteReference } from '../../lib/referenceStore'
-import { fileToBase64, mediaTypeOf } from '../../lib/imageFile'
+import { listReferences, addReference, deleteReference, syncReferencesFromSupabase } from '../../lib/referenceStore'
+import { mediaTypeOf, fileToDownscaledBase64 } from '../../lib/imageFile'
 import { triggerHookSyncNow } from '../../lib/hookStore'
 
 export function SettingsScreen() {
@@ -19,6 +19,12 @@ export function SettingsScreen() {
   const [refFile, setRefFile] = useState<File | null>(null)
   const [refError, setRefError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+
+  // 화면 진입 시 Supabase에 저장된 레퍼런스 이미지를 당겨와 라이브러리를 채운다
+  // (localStorage 용량을 넘겨 로컬엔 못 담은 수십 장도 여기서 되살아난다).
+  useEffect(() => {
+    void syncReferencesFromSupabase().then(() => setReferences(listReferences()))
+  }, [])
 
   async function handleTestConnection() {
     setTesting(true)
@@ -38,15 +44,15 @@ export function SettingsScreen() {
 
   async function handleAddReference() {
     if (!refFile) return
-    const mediaType = mediaTypeOf(refFile)
-    if (!mediaType) {
+    if (!mediaTypeOf(refFile)) {
       setRefError('PNG, JPEG, WEBP 이미지만 지원합니다.')
       return
     }
     setUploading(true)
     setRefError(null)
     try {
-      const imageBase64 = await fileToBase64(refFile)
+      // 원본 대신 축소본(JPEG)으로 저장 — 용량·비전 토큰 절감.
+      const { imageBase64, mediaType } = await fileToDownscaledBase64(refFile)
       addReference({
         label: refLabel.trim() || refFile.name,
         imageBase64,

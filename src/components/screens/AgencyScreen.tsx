@@ -26,8 +26,8 @@ import {
   pausedDaysSoFar,
   syncClientsFromSupabase,
 } from '../../lib/agencyStore'
-import { listReferences, getReferencesByIds, addReference } from '../../lib/referenceStore'
-import { fileToBase64, mediaTypeOf, isPdfFile } from '../../lib/imageFile'
+import { listReferences, getReferencesByIds, addReference, syncReferencesFromSupabase } from '../../lib/referenceStore'
+import { fileToBase64, mediaTypeOf, isPdfFile, fileToDownscaledBase64 } from '../../lib/imageFile'
 import type { VisionImageInput, VisionDocInput } from '../../lib/claude'
 import { startWorkLog, finishWorkLog } from '../../lib/workLog'
 import { submitForApproval } from '../../lib/approvalStore'
@@ -219,6 +219,9 @@ export function AgencyScreen() {
     syncClientsFromSupabase().then(() => refresh())
     // 구글시트 후킹 레퍼런스도 미리 당겨와 캐시(대행 글 생성 시 참고).
     void syncReferenceHooksFromSupabase()
+    // 레퍼런스 이미지를 Supabase에서 당겨와 라이브러리에 되살린다 — localStorage
+    // 용량을 넘겨 로컬엔 저장 못 한 이미지(수십 장)도 여기서 다시 보인다.
+    void syncReferencesFromSupabase().then(() => setReferences(listReferences()))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -244,18 +247,13 @@ export function AgencyScreen() {
           adhocPdfs.push({ dataBase64: await fileToBase64(file), mediaType: 'application/pdf' })
           continue
         }
-        const mediaType = mediaTypeOf(file)
-        if (!mediaType) continue
-        const imageBase64 = await fileToBase64(file)
+        if (!mediaTypeOf(file)) continue
+        // 원본 대신 축소본(JPEG)으로 — 수십 장이어도 용량이 감당되고 비전도 가볍다.
+        const { imageBase64, mediaType } = await fileToDownscaledBase64(file)
         adhocImages.push({ imageBase64, imageMediaType: mediaType })
-        // 이미지는 라이브러리에도 저장해 재요청·재사용에 쓴다(20~30장이면 용량
-        // 초과가 날 수 있어 실패해도 온보딩은 계속 — 스타일 요약이 본체라 무방).
-        try {
-          const saved = addReference({ label: '대행 레퍼런스', imageBase64, mediaType })
-          uploadedIds.push(saved.id)
-        } catch {
-          // localStorage 용량 초과 등 — 저장은 건너뛰고 요약으로만 반영
-        }
+        // 이미지는 라이브러리(Supabase)에도 저장해 재요청·재사용·확대에 쓴다.
+        const saved = addReference({ label: '대행 레퍼런스', imageBase64, mediaType })
+        uploadedIds.push(saved.id)
       }
       // 페르소나 정리: 정보 출처는 PDF(구글폼 대체)·텍스트다. 페르소나 추출에는
       // 이미지를 다 보내지 않는다 — PDF/텍스트가 있으면 이미지는 아예 안 보내고,

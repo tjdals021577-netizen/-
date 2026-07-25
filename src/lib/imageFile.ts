@@ -12,6 +12,45 @@ export function fileToBase64(file: File): Promise<string> {
   })
 }
 
+// 이미지를 캔버스로 축소해 JPEG base64로 반환한다 — 원본(수 MB)을 그대로 저장하면
+// localStorage·Supabase·비전 토큰이 다 무거워진다. 긴 변 maxDim(기본 1400px)로 줄이면
+// 스레드 스크린샷 글자는 읽히면서 용량은 5~15배 줄어든다. 실패하면 원본 base64로 폴백.
+export async function fileToDownscaledBase64(
+  file: File,
+  maxDim = 1400,
+  quality = 0.82,
+): Promise<{ imageBase64: string; mediaType: ReferenceMediaType }> {
+  try {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+    })
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('이미지 로드 실패'))
+      el.src = dataUrl
+    })
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas 미지원')
+    ctx.drawImage(img, 0, 0, w, h)
+    const out = canvas.toDataURL('image/jpeg', quality)
+    return { imageBase64: out.slice(out.indexOf(',') + 1), mediaType: 'image/jpeg' }
+  } catch {
+    // 폴백: 원본 그대로(비전은 되지만 용량은 큼)
+    const base64 = await fileToBase64(file)
+    return { imageBase64: base64, mediaType: mediaTypeOf(file) ?? 'image/png' }
+  }
+}
+
 export function mediaTypeOf(file: File): ReferenceMediaType | null {
   if (file.type === 'image/png') return 'image/png'
   if (file.type === 'image/jpeg') return 'image/jpeg'
