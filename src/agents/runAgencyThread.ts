@@ -22,18 +22,20 @@ async function digestBatch(
   images: VisionImageInput[],
   documents: VisionDocInput[],
 ): Promise<string> {
-  const system = `당신은 카피라이팅 스타일 분석가입니다. 첨부된 이미지/PDF는 한 클라이언트의 실제 스레드/카피
-레퍼런스입니다. 여기서 공통으로 드러나는 "재사용 가능한 글쓰기 스타일"만 뽑아 텍스트 가이드로
-정리하세요. 포함: 후킹(첫 문장) 패턴, 말투·톤, 문장 길이·리듬, 이모지/줄바꿈 습관, 자주 쓰는 표현·구성,
-CTA 방식, 피해야 할 것. 구체적 문구·숫자·에피소드는 베끼지 말고 "스타일 규칙"만 요약합니다.
-한국어 불릿 6~10개, 400자 내외. 아래 JSON만 출력: { "digest": string }`
+  const system = `당신은 카피라이팅 스타일 분석가입니다. 첨부된 이미지/PDF는 한 클라이언트의 실제로 잘 터진 스레드/카피
+레퍼런스입니다. 여기서 "재사용 가능한 규칙"을 뽑아 텍스트 가이드로 정리하세요.
+★ 최우선: "후킹(첫 문장·제목) 패턴"을 최대한 많이·구체적으로 뽑는다. 각 후킹의 "구조·공식"을 적되
+(예: 숫자+기간+결과형 / 도발적 질문형 / 페인포인트 공감형 / 비결·이유 예고형 / 반전·차별화형),
+실제 문구·숫자·에피소드는 그대로 베끼지 말고 "틀"만 남긴다(나중에 주제만 바꿔 재사용할 수 있게).
+그다음: 말투·톤, 문장 길이·리듬, 이모지/줄바꿈 습관, 자주 쓰는 표현·구성, CTA 방식, 피해야 할 것.
+한국어 불릿, 후킹 공식 위주로 충분히. 아래 JSON만 출력: { "digest": string }`
   const raw = await callClaudeVisionJson({
     apiKey,
     system,
     user: '이 레퍼런스들의 카피 스타일을 재사용 가능한 규칙으로 요약해 JSON으로만 답하세요.',
     images,
     documents,
-    maxTokens: 800,
+    maxTokens: 1100,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   if (typeof raw !== 'object' || raw === null) return ''
@@ -69,10 +71,12 @@ export async function digestReferenceStyle(params: {
     apiKey,
     model: CLAUDE_MODEL_CHEAP,
     system: `여러 묶음에서 각각 뽑은 "카피 스타일 요약"들을 받아, 중복을 제거하고 서로 보완해 하나의
-일관된 스타일 가이드로 합치세요. 후킹 패턴·말투·문장 길이·이모지/줄바꿈·자주 쓰는 표현·CTA·피해야 할 것을
-아우르되, 한국어 불릿 8~12개, 600자 내외로 압축. 아래 JSON만 출력: { "digest": string }`,
+일관된 스타일 가이드로 합치세요. ★ 후킹 공식은 버리지 말고 최대한 살려 목록으로 정리(숫자+기간+결과형·
+도발질문형·페인포인트형·비결예고형·반전형 등 — 주제만 바꿔 재사용할 수 있는 "틀"). 그다음 말투·문장
+길이·이모지/줄바꿈·자주 쓰는 표현·CTA·피해야 할 것. 한국어 불릿, 후킹 위주로 넉넉히(800자 내외).
+아래 JSON만 출력: { "digest": string }`,
     user: partials.map((p, i) => `[요약 ${i + 1}]\n${p}`).join('\n\n'),
-    maxTokens: 900,
+    maxTokens: 1200,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   if (typeof merged !== 'object' || merged === null) return partials.join('\n')
