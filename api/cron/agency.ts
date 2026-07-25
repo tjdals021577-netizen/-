@@ -97,7 +97,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       let styleDigest = client.style_digest ?? undefined
       if (!styleDigest && (client.reference_image_ids?.length ?? 0) > 0) {
         try {
-          const images = await fetchReferenceImages(client.reference_image_ids)
+          // 스타일 파악엔 대표 12장이면 충분 — 수십 장을 한 번에 보내 과부하 나는 걸 막는다.
+          const images = (await fetchReferenceImages(client.reference_image_ids)).slice(0, 12)
           styleDigest = await digestReferenceStyle({ apiKey, referenceImages: images })
           if (styleDigest) {
             // 기존 행의 일부 컬럼만 갱신 — upsert가 아니라 PATCH(UPDATE)로.

@@ -203,18 +203,25 @@ export function AgencyScreen() {
           // localStorage 용량 초과 등 — 저장은 건너뛰고 요약으로만 반영
         }
       }
-      // 페르소나 정리: 붙여넣은 텍스트 + 첨부(PDF/이미지)를 함께 읽어 추출.
+      // 페르소나 정리: 정보 출처는 PDF(구글폼 대체)·텍스트다. 페르소나 추출에는
+      // 이미지를 다 보내지 않는다 — PDF/텍스트가 있으면 이미지는 아예 안 보내고,
+      // 둘 다 없을 때만(이미지밖에 없을 때) 대표 몇 장만 참고한다. 수십 장을 페르소나
+      // 호출에 밀어넣으면 모델이 과부하로 JSON을 못 내놓던 문제(실측)를 막는다.
+      const personaImages =
+        adhocPdfs.length > 0 || onboardingText.trim().length > 0 ? [] : adhocImages.slice(0, 4)
       const result = await parseAgencyOnboarding({
         apiKey,
         pastedText: onboardingText,
-        images: adhocImages,
+        images: personaImages,
         documents: adhocPdfs,
       })
 
       const refIds = [...onboardRefIds, ...uploadedIds]
       // 레퍼런스(이미지+PDF)를 지금 딱 1번 읽어 텍스트 스타일 요약으로 뽑아둔다 —
       // 이후 매일 생성은 이 요약만 참고하므로 파일을 다시 읽지 않는다(비용 절감).
-      const digestImages = [...toVisionImages(onboardRefIds), ...adhocImages]
+      // 스타일 요약엔 대표 이미지 최대 12장만 쓴다(39장을 다 보낼 필요 없음 — 스타일
+      // 파악엔 12장이면 충분하고, 페이로드 과부하·비용을 줄인다).
+      const digestImages = [...toVisionImages(onboardRefIds), ...adhocImages].slice(0, 12)
       let styleDigest: string | undefined
       if (digestImages.length > 0 || adhocPdfs.length > 0) {
         try {
@@ -294,7 +301,8 @@ export function AgencyScreen() {
   // 만들어 저장하고 반환한다. 이후 생성은 저장된 요약을 재사용(이미지 재읽기 X → 비용 절감).
   async function ensureStyleDigest(client: AgencyClient): Promise<string | undefined> {
     if (client.styleDigest) return client.styleDigest
-    const images = toVisionImages(client.referenceImageIds)
+    // 스타일 파악엔 대표 12장이면 충분 — 수십 장을 한 번에 보내 과부하 나는 걸 막는다.
+    const images = toVisionImages(client.referenceImageIds).slice(0, 12)
     if (images.length === 0) return undefined
     const digest = await digestReferenceStyle({ apiKey, referenceImages: images })
     if (digest) saveStyleDigest(client.id, digest)

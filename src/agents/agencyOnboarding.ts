@@ -41,25 +41,36 @@ export async function parseAgencyOnboarding(params: {
   const textBlock = pastedText.trim()
     ? `[붙여넣은 내용]\n${pastedText}\n\n`
     : '[붙여넣은 텍스트 없음 — 첨부한 PDF/이미지에서 정보를 읽으세요]\n\n'
-  const user = `${textBlock}위 자료(텍스트/첨부파일)를 종합해 정리하고 JSON으로만 답하세요.`
 
   // 텍스트만 있으면 저렴한 텍스트 호출, PDF/이미지가 있으면 비전(문서) 호출.
-  const raw = hasFiles
-    ? await callClaudeVisionJson({
-        apiKey,
-        system: buildSystemPrompt(),
-        user,
-        images,
-        documents,
-        maxTokens: 1024,
-        onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-      })
-    : await callClaudeJson({
-        apiKey,
-        system: buildSystemPrompt(),
-        user,
-        maxTokens: 1024,
-        onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-      })
-  return parseResult(raw)
+  // 첨부가 많을 때(수십 장) 모델이 설명을 덧붙여 JSON을 못 내놓는 경우가 있어,
+  // JSON 파싱 실패 시 "순수 JSON만" 강하게 다시 지시하며 1회 재시도한다.
+  async function attempt(strict: boolean): Promise<unknown> {
+    const user = `${textBlock}위 자료(텍스트/첨부파일)를 종합해 정리하고 JSON으로만 답하세요.${
+      strict ? '\n\n반드시 아래 JSON 스키마와 정확히 일치하는 순수 JSON "한 개"만 출력하세요. 설명·머리말·코드블록 금지.' : ''
+    }`
+    return hasFiles
+      ? callClaudeVisionJson({
+          apiKey,
+          system: buildSystemPrompt(),
+          user,
+          images,
+          documents,
+          maxTokens: 1536,
+          onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+        })
+      : callClaudeJson({
+          apiKey,
+          system: buildSystemPrompt(),
+          user,
+          maxTokens: 1536,
+          onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+        })
+  }
+
+  try {
+    return parseResult(await attempt(false))
+  } catch {
+    return parseResult(await attempt(true))
+  }
 }
