@@ -300,7 +300,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     todayEntries ? `마잘남 ${todayEntries}` : '',
   ].filter(Boolean)
   if (prepared.length > 0) kakaoLines.push(`자동 기획됨: ${prepared.join(' / ')}`)
-  kakaoLines.push('주간 고정: 월·수·금 유튜브(마잘남) / 화·목·토·일 블로그(업메리·마잘남)')
+  kakaoLines.push('주간 고정: 블로그 매일(업메리·마잘남 각 1) / 유튜브 월·수·금(마잘남)')
 
   kakaoLines.push('', '✅ 내가 해야 할 것')
   try {

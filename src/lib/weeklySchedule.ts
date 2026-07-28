@@ -7,18 +7,23 @@ export interface ScheduledSlot {
 }
 
 // 대표님이 정한 주간 고정 업로드 루틴.
-// 유튜브(마잘남만 — 업메리는 유튜브 채널 없음): 월·수·금, 주 3편
-// 블로그(업메리+마잘남 둘 다): 화·목·토·일, 브랜드당 주 4편
+// 블로그(업메리+마잘남 둘 다): "매일" 브랜드당 1편(주 7편씩) — 대표님 결정.
+// 유튜브(마잘남만 — 업메리는 유튜브 채널 없음): 월·수·금, 주 3편(유지).
 // 스레드는 이 스케줄에 없음 — 대표님이 직접 관리(기존 수동/대행 자동생성만 유지).
 // Date.getDay(): 0=일 1=월 2=화 3=수 4=목 5=금 6=토
+const BLOG_EVERYDAY: ScheduledSlot[] = [
+  { brand: '업메리', channel: 'blog' },
+  { brand: '마잘남', channel: 'blog' },
+]
+const MAJALNAM_YT: ScheduledSlot = { brand: '마잘남', channel: 'youtube' }
 const WEEKLY_SCHEDULE: Record<number, ScheduledSlot[]> = {
-  0: [{ brand: '업메리', channel: 'blog' }, { brand: '마잘남', channel: 'blog' }],
-  1: [{ brand: '마잘남', channel: 'youtube' }],
-  2: [{ brand: '업메리', channel: 'blog' }, { brand: '마잘남', channel: 'blog' }],
-  3: [{ brand: '마잘남', channel: 'youtube' }],
-  4: [{ brand: '업메리', channel: 'blog' }, { brand: '마잘남', channel: 'blog' }],
-  5: [{ brand: '마잘남', channel: 'youtube' }],
-  6: [{ brand: '업메리', channel: 'blog' }, { brand: '마잘남', channel: 'blog' }],
+  0: [...BLOG_EVERYDAY], // 일
+  1: [...BLOG_EVERYDAY, MAJALNAM_YT], // 월
+  2: [...BLOG_EVERYDAY], // 화
+  3: [...BLOG_EVERYDAY, MAJALNAM_YT], // 수
+  4: [...BLOG_EVERYDAY], // 목
+  5: [...BLOG_EVERYDAY, MAJALNAM_YT], // 금
+  6: [...BLOG_EVERYDAY], // 토
 }
 
 // 이 파일의 모든 함수는 "실행 환경의 로컬 타임존이 UTC"라고 가정하고
