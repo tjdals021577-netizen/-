@@ -9,7 +9,7 @@ import { getTodaySpendUsd } from '../lib/budgetGuard.js'
 import { submitForApproval } from '../lib/approvalStore.js'
 import { createEntry } from '../lib/calendarStore.js'
 import { setLastOutput } from '../lib/agentChatStore.js'
-import { PASS_THRESHOLD, REWRITE_THRESHOLD } from '../types/domain.js'
+import { PASS_THRESHOLD } from '../types/domain.js'
 import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from '../types/brand.js'
 import type { BlogRole } from '../types/blog.js'
 import { getLatestBrainReport, formatBrainFindingsForPrompt, saveBrainReport } from '../lib/brainStore.js'
@@ -65,38 +65,16 @@ export async function dispatchJob(params: {
           : undefined,
         feedback: previousOutput ? topic : undefined,
       })
-      let reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
+      const reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
       const scoreOf = (rs: BlogReview[]) =>
         rs.length > 0 ? rs.reduce((s, r) => s + r.totalScore, 0) / rs.length : 0
 
-      // 첫 시도가 기준 미달이면, 심사위원 피드백을 반영해서 딱 한 번 다시
-      // 쓴다(무한 루프 방지) — "미달인 채로 그냥 보류"만 반복돼서 발행할
-      // 콘텐츠가 안 나오는 문제를 줄이기 위함. 재작성이 오히려 더 나쁘면
-      // 첫 초안을 유지한다.
-      if (reviews.length > 0 && scoreOf(reviews) < REWRITE_THRESHOLD) {
-        try {
-          const feedback = reviews
-            .map((r) => `[${r.role}] ${r.summary}\n${r.flags.map((f) => `- ${f.reason}`).join('\n')}`)
-            .join('\n\n')
-          const revised = await generateBlogDraft({
-            apiKey,
-            topic,
-            keyPoints: '',
-            photoDescriptions: '',
-            brandContext: BRAND_CONTEXT[brand],
-            marketFindings,
-            previousDraft: draft,
-            feedback,
-          })
-          const revisedReviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft: revised })
-          if (revisedReviews.length > 0 && scoreOf(revisedReviews) > scoreOf(reviews)) {
-            draft = revised
-            reviews = revisedReviews
-          }
-        } catch {
-          // 재작성 실패 시 첫 초안 그대로 진행 — 재작성은 보너스지 필수가 아님
-        }
-      }
+      // 팀 채팅(대화형) 경로는 "빠른 응답"이 우선이라 재작성 단계를 두지 않는다.
+      // 예전엔 미달 시 재작성+재채점을 한 번 더 돌렸는데, 생성이 타임아웃 재시도에
+      // 걸리면 파이프라인이 통째로 2배(최대 10분+)로 늘어져 "11분째 글쓰는 중"
+      // 문제가 생겼다. 대표님 지시대로 미달이어도 그대로 결재함에 올리므로
+      // (아래 submitForApproval), 재작성은 여기서 뺀다. 수정이 필요하면 대표님이
+      // 결과물을 보고 "이렇게 고쳐줘"로 다시 시키면 previousOutput 경로로 고쳐 쓴다.
 
       const reviewed = reviews.length > 0
       const avg = scoreOf(reviews)
