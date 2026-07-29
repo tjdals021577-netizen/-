@@ -81,6 +81,16 @@ const MAJALNAM_BLOG_TOPICS = [
   '저희와 결이 안 맞는 사장님 유형 (필터링)',
 ]
 
+// 업메리 블로그 "상담 신청 전환용" 6주제 — 대표님 지정. 매일 하나씩 돌아가며 쓴다.
+const UPMERY_BLOG_TOPICS = [
+  '제가 타로 교육을 시작한 이유 (대표 진정성)',
+  '업메리가 만들어진 이야기 — 왜 지식이 아니라 수익까지 책임지나 (브랜드 가치)',
+  '수강생이 플랫폼 입점하고 첫 수익 낸 과정 (포트폴리오)',
+  '상담 때 매번 똑같이 받는 질문 5개 (고객 니즈)',
+  '타로 배우려는 분들이 가장 많이 속는 말 (신뢰 구축)',
+  '타로는 잘 보는데 돈은 못 버는 사람들의 공통점 (문제 정의)',
+]
+
 // 최근 14일간 같은 브랜드·채널에 이미 쓴 제목과 안 겹치는 추천 주제를 브레인
 // 리포트에서 하나 골라온다 — 브레인 리포트가 없으면 브랜드 톤 기반 기본 주제로.
 async function pickTopic(
@@ -99,11 +109,14 @@ async function pickTopic(
     ),
   ])
   const brainFindings = formatBrainFindings(reports[0])
-  // 마잘남 블로그는 대표님이 지정한 "문의 전환용 7주제"를 매일 하나씩 돌려 쓴다
-  // (브레인 리서치는 주제가 아니라 내용 디벨롭용으로 함께 넘긴다).
-  if (brand === '마잘남' && channel === 'blog') {
-    const idx = Math.floor(Date.now() / 86_400_000) % MAJALNAM_BLOG_TOPICS.length
-    return { topic: MAJALNAM_BLOG_TOPICS[idx], brainFindings }
+  // 블로그는 대표님이 지정한 "전환용 주제군"을 매일 하나씩 돌려 쓴다(브레인
+  // 리서치는 주제가 아니라 내용 디벨롭용으로 함께 넘긴다 — 보이스가 조합해 씀).
+  const dayIdx = Math.floor(Date.now() / 86_400_000)
+  if (channel === 'blog' && brand === '마잘남') {
+    return { topic: MAJALNAM_BLOG_TOPICS[dayIdx % MAJALNAM_BLOG_TOPICS.length], brainFindings }
+  }
+  if (channel === 'blog' && brand === '업메리') {
+    return { topic: UPMERY_BLOG_TOPICS[dayIdx % UPMERY_BLOG_TOPICS.length], brainFindings }
   }
   const usedTitles = new Set(recentEntries.map((e) => e.title))
   const recommendations = reports[0]?.recommendations ?? []
