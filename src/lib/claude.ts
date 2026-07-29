@@ -253,9 +253,16 @@ export async function callClaudeJson(params: {
     assistantPrefill,
   } = params
 
+  // ⚠️ assistant prefill 미사용 — 현재 우리가 쓰는 모델(claude-sonnet-5 등)은
+  // "assistant message prefill"을 지원하지 않아, prefill을 넣으면 400
+  // ("The conversation must end with a user message")로 통째로 실패한다(실사용
+  // 확인). 예전엔 생성기가 이 400을 재시도로 넘겨 "prefill 없는 시도"로만 성공했고,
+  // chatDecide는 모든 시도를 prefill로 해 완전히 막혔다. 그래서 prefill을 아예
+  // 보내지 않는다 — JSON 강제는 시스템 프롬프트의 "JSON만 출력" 지시 + extractJson
+  // (앞의 잡글을 걷어내고 첫 {~마지막 } 추출)로 처리한다. assistantPrefill 인자는
+  // 하위호환으로 남기되 무시한다.
+  void assistantPrefill
   const messages: MessageCreateParamsNonStreaming['messages'] = [{ role: 'user', content: user }]
-  // prefill: 마지막 assistant 턴을 미리 넣으면, 응답은 이 뒤를 이어서 온다.
-  if (assistantPrefill) messages.push({ role: 'assistant', content: assistantPrefill })
 
   const response = await createMessage(
     apiKey,
@@ -273,10 +280,7 @@ export async function callClaudeJson(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  // prefill로 넣은 앞부분('{')은 응답에 포함되지 않으므로 다시 이어붙여
-  // 완전한 JSON 문자열로 만든 뒤 파싱한다.
-  const text = lastTextBlock(response)
-  return parseJsonResponse(assistantPrefill ? assistantPrefill + text : text)
+  return parseJsonResponse(lastTextBlock(response))
 }
 
 // 브레인처럼 최신 정보를 리서치해야 하는 에이전트용 — Claude의 서버사이드
@@ -396,7 +400,9 @@ export async function callClaudeVisionJson(params: {
       ],
     },
   ]
-  if (assistantPrefill) messages.push({ role: 'assistant', content: assistantPrefill })
+  // assistant prefill 미사용 — callClaudeJson과 동일한 이유(모델 미지원 400).
+  // 하위호환으로 인자는 남기되 무시하고, JSON은 지시+extractJson으로 처리한다.
+  void assistantPrefill
 
   const response = await createMessage(
     apiKey,
@@ -414,6 +420,5 @@ export async function callClaudeVisionJson(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  const text = lastTextBlock(response)
-  return parseJsonResponse(assistantPrefill ? assistantPrefill + text : text)
+  return parseJsonResponse(lastTextBlock(response))
 }

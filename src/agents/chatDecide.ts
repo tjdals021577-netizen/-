@@ -129,11 +129,12 @@ JSON으로만 답한다: {"kind": "question"|"act"|"reply", "text": "...", "clea
   const user = `[최근 대화]\n${historyText || '(대화 시작)'}\n\n[대표님의 새 메시지]\n${userMessage}`
 
   // 이 판단 호출은 팀채팅 모든 메시지의 "첫 관문"이라, 여기서 JSON이 안 나오면
-  // 대표님 화면에 "모델 응답에서 JSON을 찾지 못했습니다"만 뜨고 작업이 통째로
-  // 막힌다(특히 '이 글 재수정해줘'류에서 실제 발생). 생성기(generateBlogDraft)와
-  // 동일하게 방어한다: ① prefill '{'로 줄글·인사말을 차단, ② 응답이 잘려 닫는
-  // '}'가 사라지지 않도록 maxTokens를 넉넉히, ③ 그래도 실패하면 "JSON만 내라"는
-  // 강한 지시를 덧붙여 한 번 더 시도.
+  // 대표님 화면에 에러만 뜨고 작업이 통째로 막힌다(특히 '이 글 재수정해줘'류에서
+  // 실제 발생). 두 가지로 방어한다: ① 응답이 잘려 닫는 '}'가 사라지지 않도록
+  // maxTokens를 넉넉히(text+cleanInstruction+memoryFacts가 함께 나와 1024는
+  // 빠듯), ② 그래도 실패하면 "JSON만 내라"는 강한 지시를 덧붙여 한 번 더 시도.
+  // (prefill '{'는 우리 모델이 지원하지 않아 400을 내므로 쓰지 않는다 —
+  // claude.ts 참고. JSON 강제는 지시 + extractJson으로 충분하다.)
   const strictReminder =
     '\n\n[매우 중요] 반드시 지정된 스키마의 JSON 객체 "하나만" 출력하라. 설명·인사·머리말·' +
     '마크다운 코드블록(```) 없이, 첫 글자는 {, 마지막 글자는 } 여야 한다.'
@@ -142,11 +143,7 @@ JSON으로만 답한다: {"kind": "question"|"act"|"reply", "text": "...", "clea
       apiKey,
       system,
       user: strict ? user + strictReminder : user,
-      // text(안내 문구) + cleanInstruction(구체 수정 지시) + memoryFacts가 함께
-      // 나오므로 1024는 빠듯해 잘리기 쉽다 — 2048로 여유를 준다.
       maxTokens: 2048,
-      // '{'로 시작을 강제해 "JSON을 찾지 못함"을 원천 차단.
-      assistantPrefill: '{',
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })
     return parseDecision(raw)

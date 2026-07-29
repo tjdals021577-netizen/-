@@ -147,13 +147,11 @@ export async function generateBlogDraft(params: {
     '첫 글자는 반드시 {, 마지막 글자는 반드시 } 여야 합니다. 본문(body)은 JSON 문자열 ' +
     '값 안에 넣고 줄바꿈은 \\n으로 이스케이프하세요.'
 
-  // 두 가지 실패 모드를 각각 다른 방법으로 막는다:
-  // ① 줄글로 새서 "JSON을 찾지 못함" → 응답을 '{'로 시작하게 강제(prefill)하면 해결.
-  // ② prefill을 썼을 때 드물게 "텍스트가 없음"(빈 응답)이 나는 경우 → prefill을
-  //    빼고 "JSON만 내라"는 강한 지시로 대체하면 해결.
-  // 그래서 시도마다 prefill·강한지시 조합을 바꿔가며(둘을 서로 보완) 세 번까지
-  // 시도한다 — 어느 한 조합이 막히면 다른 조합이 성공한다.
-  async function once(strict: boolean, usePrefill: boolean): Promise<BlogDraft> {
+  // 실패 모드: 모델이 JSON 대신 줄글로 새거나(→ "JSON을 찾지 못함"), 응답이 잘려
+  // 닫는 '}'가 사라지는 것. prefill('{'로 시작 강제)은 우리 모델이 지원하지 않아
+  // 400을 내므로 쓸 수 없다(claude.ts 참고) — 대신 "JSON만 내라"는 강한 지시를
+  // 점점 세게 붙여 세 번까지 시도한다. maxTokens는 8192로 넉넉해 잘림도 방지.
+  async function once(strict: boolean): Promise<BlogDraft> {
     const effectiveUser = strict ? user + strictReminder : user
     // 실제 사진이 첨부되면 AI가 사진을 직접 보고 배치를 제안하도록 비전 호출로
     // 전환한다(이 경우 웹서치 도구는 같이 못 쓴다). 사진이 없으면 지식 베이스 기반.
@@ -164,7 +162,6 @@ export async function generateBlogDraft(params: {
           user: effectiveUser,
           images: photoImages as VisionImageInput[],
           maxTokens: 8192,
-          assistantPrefill: usePrefill ? '{' : undefined,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
       : await callClaudeJson({
@@ -173,23 +170,16 @@ export async function generateBlogDraft(params: {
           user: effectiveUser,
           maxTokens: 8192,
           timeoutMs: 120_000,
-          assistantPrefill: usePrefill ? '{' : undefined,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
     return parseDraft(raw)
   }
 
-  // [strict, usePrefill] 조합. 0번: prefill로 줄글 차단. 1번: prefill 빼고 강한
-  // 지시(빈 응답 대비). 2번: 둘 다 켠 최후의 시도.
-  const attempts: Array<[boolean, boolean]> = [
-    [false, true],
-    [true, false],
-    [true, true],
-  ]
+  // 0번: 일반 시도. 1·2번: "JSON만 내라" 강한 지시를 붙여 재시도.
   let lastErr: unknown
-  for (const [strict, usePrefill] of attempts) {
+  for (const strict of [false, true, true]) {
     try {
-      return await once(strict, usePrefill)
+      return await once(strict)
     } catch (err) {
       lastErr = err
     }
@@ -240,8 +230,6 @@ export async function runBlogReviewsResilient(params: {
       user: buildReviewUserPrompt(draft),
       maxTokens: 4096,
       timeoutMs: 120_000,
-      // 채점 응답도 '{'로 시작하도록 강제 — "채점 실패"(JSON 못 찾음)를 줄인다.
-      assistantPrefill: '{',
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })
     const rec = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
