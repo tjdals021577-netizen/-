@@ -131,6 +131,29 @@ export function cancelRunningWorkLogs(brand?: Brand): number {
   return running.length
 }
 
+// 페이지가 백그라운드로 내려가거나(특히 모바일) 새로고침되면, 진행 중이던
+// 호출은 중간에 죽는데 근무기록은 'running'으로 남는다 — 그러면 화면의
+// "처리 중… N분 경과"가 끝없이 올라가고 에러도 안 뜬다(살아있는 호출이 없어서
+// 타임아웃조차 못 친다). 실제 호출은 이미 120초 안팎에서 끝나므로(생성 재시도까지
+// 합쳐 최대 ~6분), 그보다 한참 지난(기본 8분) 'running'은 사실상 죽은 유령
+// 기록이다. 이걸 자동으로 '시간 초과'로 정리해 화면이 스스로 회복되게 한다.
+// 화면 진입 시·주기적 갱신 때 호출한다. 정리한 건수를 돌려준다.
+export function reapStaleRunningWorkLogs(maxAgeMs = 8 * 60_000): number {
+  const now = Date.now()
+  const stale = readAll().filter(
+    (e) => e.status === 'running' && now - new Date(e.startedAt).getTime() > maxAgeMs,
+  )
+  for (const e of stale) {
+    finishWorkLog(e.id, {
+      status: 'attention',
+      statusLabel: '시간 초과',
+      note: '응답이 없어 자동 정리됨',
+      detailHtml: '작업이 시간 안에 끝나지 않아 자동으로 정리했어요. 다시 시도해 주세요.',
+    })
+  }
+  return stale.length
+}
+
 export function getWorkLog(agent?: string, brand?: Brand): WorkLogEntry[] {
   let entries = readAll()
   if (agent) entries = entries.filter((e) => e.agent === agent)

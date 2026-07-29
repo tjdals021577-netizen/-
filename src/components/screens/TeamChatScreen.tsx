@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { getWorkLog, cancelRunningWorkLogs, syncWorkLogFromSupabase, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
+import { getWorkLog, cancelRunningWorkLogs, reapStaleRunningWorkLogs, syncWorkLogFromSupabase, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { decideNextStep } from '../../agents/chatDecide'
 import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact, getLastOutput } from '../../lib/agentChatStore'
@@ -335,7 +335,12 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
       syncApprovalsFromSupabase(),
       // 구글시트 후킹 레퍼런스 캐시 — 버즈(스레드) 글 생성 시 참고.
       syncReferenceHooksFromSupabase(),
-    ]).then(() => setLogVersion((v) => v + 1))
+    ]).then(() => {
+      // 다른 세션·이전 방문에서 죽은 채 'running'으로 남은 유령 기록을 정리한다
+      // (Supabase에서 막 당겨온 것 포함) — "처리 중… N분 경과"가 끝없이 뜨는 것 방지.
+      reapStaleRunningWorkLogs()
+      setLogVersion((v) => v + 1)
+    })
   }, [])
 
   useEffect(() => {
@@ -348,7 +353,12 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   // 읽던 위치가 튀면 안 되기 때문.
   const [, setClockTick] = useState(0)
   useEffect(() => {
-    const timer = setInterval(() => setClockTick((t) => t + 1), 15_000)
+    const timer = setInterval(() => {
+      // 유령 'running' 기록(백그라운드·새로고침으로 죽은 호출)을 주기적으로
+      // 자동 정리 — 화면을 켜둔 채 기다리는 동안 스스로 '시간 초과'로 회복된다.
+      reapStaleRunningWorkLogs()
+      setClockTick((t) => t + 1)
+    }, 15_000)
     return () => clearInterval(timer)
   }, [])
 
