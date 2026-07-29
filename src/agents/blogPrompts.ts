@@ -4,6 +4,18 @@ import { BLOG_RUBRICS, BLOG_ROLE_LABEL } from './blogRubric.js'
 import { cachedSystem, type SystemBlock } from '../lib/claude.js'
 import { THREAD_KNOWLEDGE, PAID_THREAD_KNOWLEDGE } from './threadPrompts.js'
 import { COPYWRITING_12BLOCKS } from './sharedRules.js'
+import { PASS_THRESHOLD } from '../types/domain.js'
+
+// 라이터가 "채점당하는 기준"을 보고 쓸 수 있도록, 채점 루브릭(3역할×5항목)을
+// 그대로 텍스트 체크리스트로 만든다. 채점표와 작성표를 일치시켜(단일 소스는
+// BLOG_RUBRICS) 첫 초안부터 통과선을 맞추게 하는 것이 목적 — 채점 기준이 바뀌면
+// 작성 기준도 자동으로 같이 바뀐다. 캐시되는 고정 프롬프트라 비용 영향은 미미.
+const RUBRIC_CHECKLIST: string = (['seo', 'copywriting', 'experience'] as BlogRole[])
+  .map((role) => {
+    const items = BLOG_RUBRICS[role].map((c) => `  · ${c.label}: ${c.description}`).join('\n')
+    return `[${BLOG_ROLE_LABEL[role]}]\n${items}`
+  })
+  .join('\n')
 
 // 업메리 블로그 보이스 — 대표님 실제 블로그 글(타로 부업 소개·후기 등)에서 뽑은 톤·구조·후킹.
 // 대표님 확인 완료. 마잘남 보이스는 자료 받은 뒤 별도 추가 예정.
@@ -174,6 +186,11 @@ ${COPYWRITING_12BLOCKS}
 
 주어진 주제·핵심 내용을 바탕으로 네이버 블로그 포스팅 한 편을 작성하세요.
 
+[채점 기준 — 발행 전 이 글은 아래 15개 항목(3역할×각 5개, 각 20점)으로 채점받는다. 통과선 ${PASS_THRESHOLD}점.
+쓰기 전에 각 항목을 모두 만족하도록 작성하고, 특히 사진 관련 항목은 "실제 사진 파일" 대신 본문 속 [📸 사진 추천]
+배치 계획(지점·장수·소재)의 품질로 채점되니 6~13군데를 구체적으로 제안하라.]
+${RUBRIC_CHECKLIST}
+
 규칙:
 1. 위 상위노출 지식과 (제공된 경우) 브레인 리서치 자료를 근거로 작성한다. 직접 웹 검색은 하지 않는다 —
    최신 트렌드가 필요하면 브레인이 조사해둔 자료를 활용하고, 그대로 베끼지 말고 우리 브랜드 관점으로 재구성한다.
@@ -265,6 +282,10 @@ ${CONVERSION_COPY_RULES}
 채점 기준:
 ${rubricText}
 
+[채점 전 반드시 읽기] 이 채점 대상은 "발행 전 초안"이며 실제 사진 파일은 첨부되지 않는다.
+본문의 [📸 사진 추천]·사진 배치 제안은 "배치 계획"이다. 사진 관련 항목은 "실제 사진이 없다"는
+이유로 감점하지 말고 제안된 배치 계획의 품질(지점 6~13군데 분산·장수·소재 적절성)로 채점한다.
+
 규칙:
 1. 각 항목 점수는 0~20점 정수로 매기고, 반드시 근거(comment)를 짧게 남긴다.
 2. totalScore는 5개 항목 점수의 합(0~100)이어야 한다.
@@ -301,6 +322,12 @@ ${CONVERSION_COPY_RULES}
 당신은 블로그 SEO 위원회입니다. 아래 세 역할(SEO·카피라이팅·경험)의 기준으로 주어진 블로그 초안을 각 역할별로 따로 채점하세요.
 
 ${roleBlocks}
+
+[채점 전 반드시 읽기] 이 채점 대상은 "발행 전 초안"이며, 실제 사진 파일은 지금 첨부되지 않는다.
+본문의 [📸 사진 추천]과 photoPlacements는 "사진 배치 계획"이다. 따라서 사진 관련 항목
+(D.I.A+ 신호·사진 배치 설득력)은 "실제 사진이 없다"는 이유로 감점하지 말고, 제안된 배치
+계획의 품질(지점 6~13군데 분산, 장수, 소재·위치의 적절성)로 채점한다 — 계획이 충분하고
+적절하면 만점을 줄 수 있다. 그 밖의 항목도 발행 전 초안 기준으로 공정하게 채점한다.
 
 규칙:
 1. 각 역할마다 5개 항목을 0~20점 정수로 매기고, 각 항목에 짧은 근거(comment)를 남긴다.
