@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { generateBlogDraft, runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
 import { blogVoiceFor } from '../../src/agents/blogPrompts.js'
 import { generateScoredRemixPlan } from '../../src/agents/runRemix.js'
-import { PASS_THRESHOLD, REWRITE_THRESHOLD } from '../../src/types/domain.js'
+import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import { BRAND_CONTEXT } from '../../src/types/brand.js'
 import type { Brand } from '../../src/types/brand.js'
 import type { BlogRole, BlogDraft, BlogReview } from '../../src/types/blog.js'
@@ -179,7 +179,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     fetchTodayPhotos(date, brand),
     fetchRecentFeedback(brand, 'blog'),
   ])
-  let draft = await generateBlogDraft({
+  const draft = await generateBlogDraft({
     apiKey,
     topic,
     keyPoints: '',
@@ -195,39 +195,11 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
   // 진행한다 — 예전엔 Promise.all이라 1명만 실패해도 이미 만들어진 초안까지
   // 통째로 버려지고 "오류"만 남았다(라이터 반복 오류의 원인 중 하나).
   // 전원 실패하면 채점 없이 저장하고 "채점 실패"로 표시한다.
-  let reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
-  const scoreOf = (rs: typeof reviews) =>
-    rs.length > 0 ? rs.reduce((s, r) => s + r.totalScore, 0) / rs.length : 0
-
-  // 미달이면 심사 피드백을 반영해 딱 한 번 다시 쓴다(대표님 결정: 모든 업무
-  // 미달 시 1회 재작성 → 그래도 미달이면 그대로 결재함에). 재작성이 오히려
-  // 더 나쁘면 첫 초안을 유지한다. 사진은 재작성 때 다시 붙이지 않는다(비용).
-  if (reviews.length > 0 && scoreOf(reviews) < REWRITE_THRESHOLD) {
-    try {
-      const feedback = reviews
-        .map((r) => `[${r.role}] ${r.summary}\n${r.flags.map((f) => `- ${f.reason}`).join('\n')}`)
-        .join('\n\n')
-      const revised = await generateBlogDraft({
-        apiKey,
-        topic,
-        keyPoints: '',
-        photoDescriptions: '',
-        brandContext: BRAND_CONTEXT[brand],
-        marketFindings: brainFindings,
-        pastFeedback,
-        previousDraft: draft,
-        feedback,
-        blogVoice: blogVoiceFor(brand),
-      })
-      const revisedReviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft: revised })
-      if (revisedReviews.length > 0 && scoreOf(revisedReviews) > scoreOf(reviews)) {
-        draft = revised
-        reviews = revisedReviews
-      }
-    } catch {
-      // 재작성 실패 시 첫 초안 그대로 진행 — 재작성은 보너스지 필수가 아님.
-    }
-  }
+  // 채점만 하고, 미달이어도 "재작성"은 하지 않는다(대표님 결정: 비용 절감).
+  // 예전엔 미달 시 한 번 더 통째로 다시 써서(생성 1회 + 채점 1회 추가) 매일
+  // 블로그 비용이 최대 2배로 나왔다. 미달 글도 그대로 결재함에 올라가므로,
+  // 대표님이 결재함에서 보고 팀채팅 "재수정"으로 직접 고치면 된다(그때만 비용 발생).
+  const reviews = await runBlogReviewsResilient({ apiKey, roles: BLOG_ROLES, draft })
 
   const reviewed = reviews.length > 0
   const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
