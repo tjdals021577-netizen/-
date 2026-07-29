@@ -193,12 +193,33 @@ export function BlogComposer({ brand }: { brand: Brand }) {
 
     const cycleCost = Math.max(0, getTodaySpendUsd() - spendBefore)
     if (finishedReviews.length < ROLES.length) {
+      // 채점이 일부/전부 실패해도 "쓴 글"은 버리지 않고 결재함에 올린다(대표님 요청:
+      // 미달·채점실패라도 일단 결재함에). 자동 크론과 동일하게 검토 후 승인/반려.
       finishWorkLog(logId, {
-        status: 'error',
-        statusLabel: '오류',
+        status: 'attention',
+        statusLabel: '보류',
         costUsd: cycleCost,
-        note: '일부 채점 실패',
+        note: '채점 실패 — 글은 결재함에 저장됨',
         detailHtml: buildDetailHtml(newDraft, finishedReviews),
+      })
+      submitForApproval({
+        agent: 'writer',
+        brand,
+        title: newDraft.title,
+        contentHtml: buildApprovalHtml(newDraft, finishedReviews),
+        passed: false,
+        scoreLabel: '채점 실패 — 검토 필요',
+        sourceWorkLogId: logId,
+      })
+      createEntry({
+        date: new Date().toISOString().slice(0, 10),
+        brand,
+        channel: 'blog',
+        title: newDraft.title,
+        status: 'open',
+        note: '채점 실패 — 결재함에서 검토',
+        contentHtml: buildApprovalHtml(newDraft, finishedReviews),
+        sourceWorkLogId: logId,
       })
     } else {
       const avg =
