@@ -85,6 +85,9 @@ function extractJson(raw: string): string {
 type ProxyResponse = {
   content: { type: string; text?: string }[]
   usage: { input_tokens: number; output_tokens: number }
+  // 응답이 왜 끝났는지 — 'end_turn'(정상) · 'max_tokens'(길이 초과로 잘림) ·
+  // 'refusal'(모델 거부) 등. 텍스트가 비어 있을 때 원인을 알려주는 데 쓴다.
+  stop_reason?: string | null
 }
 
 async function createMessageViaProxy(
@@ -171,7 +174,7 @@ async function createMessageStreamingDirect(
   apiKey: string,
   body: MessageCreateParamsNonStreaming,
   timeoutMs: number,
-): Promise<{ content: { type: string; text?: string }[]; usage: { input_tokens: number; output_tokens: number } }> {
+): Promise<ProxyResponse> {
   if (!apiKey) {
     throw new ClaudeCallError('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
   }
@@ -179,7 +182,7 @@ async function createMessageStreamingDirect(
   try {
     const stream = client.messages.stream(body, { timeout: timeoutMs })
     const message = await stream.finalMessage()
-    return { content: message.content, usage: message.usage }
+    return { content: message.content, usage: message.usage, stop_reason: message.stop_reason }
   } catch (err) {
     if (err instanceof Anthropic.APIConnectionTimeoutError) {
       throw new ClaudeCallError(
@@ -191,15 +194,29 @@ async function createMessageStreamingDirect(
 }
 
 // 웹서치 등 서버사이드 도구를 쓰면 응답에 tool_use/tool_result 블록이 텍스트 블록
-// 사이에 섞여 나올 수 있어, "마지막" 텍스트 블록을 최종 답으로 취급한다.
-function lastTextBlock(content: { type: string; text?: string }[]): string {
+// 사이에 섞여 나올 수 있어, "마지막(비어있지 않은)" 텍스트 블록을 최종 답으로 취급한다.
+// 텍스트가 아예 없으면 stop_reason으로 "왜 비었는지"를 함께 알려준다 —
+// max_tokens(길이 초과로 잘림)·refusal(모델 거부)를 구분해야 대응이 달라진다.
+function lastTextBlock(response: {
+  content: { type: string; text?: string }[]
+  stop_reason?: string | null
+}): string {
+  const { content, stop_reason } = response
   for (let i = content.length - 1; i >= 0; i--) {
     const block = content[i]
-    if (block.type === 'text' && typeof block.text === 'string') {
+    if (block.type === 'text' && typeof block.text === 'string' && block.text.trim().length > 0) {
       return block.text
     }
   }
-  throw new ClaudeCallError('모델 응답에 텍스트가 없습니다.')
+  const hint =
+    stop_reason === 'max_tokens'
+      ? ' (응답이 최대 길이에 도달해 잘렸습니다 — 조금 더 짧게 요청하거나 다시 시도해 주세요)'
+      : stop_reason === 'refusal'
+        ? ' (모델이 요청을 거부했습니다 — 표현을 바꿔 다시 시도해 주세요)'
+        : stop_reason
+          ? ` (종료 사유: ${stop_reason})`
+          : ''
+  throw new ClaudeCallError(`모델 응답에 텍스트가 없습니다.${hint}`)
 }
 
 function parseJsonResponse(text: string): unknown {
@@ -258,7 +275,7 @@ export async function callClaudeJson(params: {
 
   // prefill로 넣은 앞부분('{')은 응답에 포함되지 않으므로 다시 이어붙여
   // 완전한 JSON 문자열로 만든 뒤 파싱한다.
-  const text = lastTextBlock(response.content)
+  const text = lastTextBlock(response)
   return parseJsonResponse(assistantPrefill ? assistantPrefill + text : text)
 }
 
@@ -314,7 +331,7 @@ export async function callClaudeJsonWithWebSearch(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  return parseJsonResponse(lastTextBlock(response.content))
+  return parseJsonResponse(lastTextBlock(response))
 }
 
 export interface VisionImageInput {
@@ -397,6 +414,6 @@ export async function callClaudeVisionJson(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  const text = lastTextBlock(response.content)
+  const text = lastTextBlock(response)
   return parseJsonResponse(assistantPrefill ? assistantPrefill + text : text)
 }

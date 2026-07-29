@@ -147,7 +147,13 @@ export async function generateBlogDraft(params: {
     '첫 글자는 반드시 {, 마지막 글자는 반드시 } 여야 합니다. 본문(body)은 JSON 문자열 ' +
     '값 안에 넣고 줄바꿈은 \\n으로 이스케이프하세요.'
 
-  async function once(strict: boolean): Promise<BlogDraft> {
+  // 두 가지 실패 모드를 각각 다른 방법으로 막는다:
+  // ① 줄글로 새서 "JSON을 찾지 못함" → 응답을 '{'로 시작하게 강제(prefill)하면 해결.
+  // ② prefill을 썼을 때 드물게 "텍스트가 없음"(빈 응답)이 나는 경우 → prefill을
+  //    빼고 "JSON만 내라"는 강한 지시로 대체하면 해결.
+  // 그래서 시도마다 prefill·강한지시 조합을 바꿔가며(둘을 서로 보완) 세 번까지
+  // 시도한다 — 어느 한 조합이 막히면 다른 조합이 성공한다.
+  async function once(strict: boolean, usePrefill: boolean): Promise<BlogDraft> {
     const effectiveUser = strict ? user + strictReminder : user
     // 실제 사진이 첨부되면 AI가 사진을 직접 보고 배치를 제안하도록 비전 호출로
     // 전환한다(이 경우 웹서치 도구는 같이 못 쓴다). 사진이 없으면 지식 베이스 기반.
@@ -158,8 +164,7 @@ export async function generateBlogDraft(params: {
           user: effectiveUser,
           images: photoImages as VisionImageInput[],
           maxTokens: 8192,
-          // 응답을 '{'로 시작하도록 강제 — 모델이 줄글로 새는 것을 원천 차단.
-          assistantPrefill: '{',
+          assistantPrefill: usePrefill ? '{' : undefined,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
       : await callClaudeJson({
@@ -168,17 +173,23 @@ export async function generateBlogDraft(params: {
           user: effectiveUser,
           maxTokens: 8192,
           timeoutMs: 120_000,
-          assistantPrefill: '{',
+          assistantPrefill: usePrefill ? '{' : undefined,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
     return parseDraft(raw)
   }
 
+  // [strict, usePrefill] 조합. 0번: prefill로 줄글 차단. 1번: prefill 빼고 강한
+  // 지시(빈 응답 대비). 2번: 둘 다 켠 최후의 시도.
+  const attempts: Array<[boolean, boolean]> = [
+    [false, true],
+    [true, false],
+    [true, true],
+  ]
   let lastErr: unknown
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (const [strict, usePrefill] of attempts) {
     try {
-      // 첫 시도는 원래 프롬프트, 이후 재시도는 "JSON만" 강한 지시를 덧붙인다.
-      return await once(attempt > 0)
+      return await once(strict, usePrefill)
     } catch (err) {
       lastErr = err
     }

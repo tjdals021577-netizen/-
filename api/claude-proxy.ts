@@ -90,7 +90,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const client = new Anthropic({ apiKey, maxRetries: 0 })
   try {
     const response = await client.messages.create(parsed.body, { timeout: REQUEST_TIMEOUT_MS })
-    sendJson(res, 200, { content: response.content, usage: response.usage })
+    // stop_reason도 함께 넘긴다 — 응답 텍스트가 비어 있을 때 브라우저에서
+    // "왜 비었는지"(max_tokens/refusal 등)를 구분해 안내하기 위함.
+    sendJson(res, 200, { content: response.content, usage: response.usage, stop_reason: response.stop_reason })
   } catch (err) {
     if (err instanceof Anthropic.APIConnectionTimeoutError) {
       sendJson(res, 504, { error: '응답 시간이 초과됐습니다. 잠시 후 다시 시도해주세요.' })
