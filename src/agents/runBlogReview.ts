@@ -158,6 +158,8 @@ export async function generateBlogDraft(params: {
           user: effectiveUser,
           images: photoImages as VisionImageInput[],
           maxTokens: 8192,
+          // 응답을 '{'로 시작하도록 강제 — 모델이 줄글로 새는 것을 원천 차단.
+          assistantPrefill: '{',
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
       : await callClaudeJson({
@@ -166,6 +168,7 @@ export async function generateBlogDraft(params: {
           user: effectiveUser,
           maxTokens: 8192,
           timeoutMs: 120_000,
+          assistantPrefill: '{',
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
     return parseDraft(raw)
@@ -226,6 +229,8 @@ export async function runBlogReviewsResilient(params: {
       user: buildReviewUserPrompt(draft),
       maxTokens: 4096,
       timeoutMs: 120_000,
+      // 채점 응답도 '{'로 시작하도록 강제 — "채점 실패"(JSON 못 찾음)를 줄인다.
+      assistantPrefill: '{',
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })
     const rec = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>

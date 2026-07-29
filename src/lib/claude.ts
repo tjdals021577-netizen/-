@@ -219,6 +219,11 @@ export async function callClaudeJson(params: {
   timeoutMs?: number
   onUsage?: UsageCallback
   model?: string
+  // 응답 첫 부분을 미리 채워(assistant prefill) 모델이 그 뒤를 "이어서" 쓰게
+  // 강제한다. '{'를 넣으면 모델이 인사·설명·줄글 없이 곧바로 JSON 본문을
+  // 이어 쓸 수밖에 없어, "모델 응답에서 JSON을 찾지 못했습니다" 실패를
+  // 원천 차단한다(특히 '이 글 고쳐줘' 재수정에서 모델이 줄글로 새던 문제).
+  assistantPrefill?: string
 }): Promise<unknown> {
   const {
     apiKey,
@@ -228,7 +233,12 @@ export async function callClaudeJson(params: {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
     model = CLAUDE_MODEL,
+    assistantPrefill,
   } = params
+
+  const messages: MessageCreateParamsNonStreaming['messages'] = [{ role: 'user', content: user }]
+  // prefill: 마지막 assistant 턴을 미리 넣으면, 응답은 이 뒤를 이어서 온다.
+  if (assistantPrefill) messages.push({ role: 'assistant', content: assistantPrefill })
 
   const response = await createMessage(
     apiKey,
@@ -236,7 +246,7 @@ export async function callClaudeJson(params: {
       model,
       max_tokens: maxTokens,
       system,
-      messages: [{ role: 'user', content: user }],
+      messages,
     },
     timeoutMs,
   )
@@ -246,7 +256,10 @@ export async function callClaudeJson(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  return parseJsonResponse(lastTextBlock(response.content))
+  // prefill로 넣은 앞부분('{')은 응답에 포함되지 않으므로 다시 이어붙여
+  // 완전한 JSON 문자열로 만든 뒤 파싱한다.
+  const text = lastTextBlock(response.content)
+  return parseJsonResponse(assistantPrefill ? assistantPrefill + text : text)
 }
 
 // 브레인처럼 최신 정보를 리서치해야 하는 에이전트용 — Claude의 서버사이드
@@ -327,6 +340,8 @@ export async function callClaudeVisionJson(params: {
   maxTokens?: number
   timeoutMs?: number
   onUsage?: UsageCallback
+  // callClaudeJson과 동일 — 응답을 '{'로 시작하도록 강제해 JSON 실패를 막는다.
+  assistantPrefill?: string
 }): Promise<unknown> {
   const {
     apiKey,
@@ -337,7 +352,34 @@ export async function callClaudeVisionJson(params: {
     maxTokens = 2048,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
+    assistantPrefill,
   } = params
+
+  const messages: MessageCreateParamsNonStreaming['messages'] = [
+    {
+      role: 'user',
+      content: [
+        ...documents.map((doc) => ({
+          type: 'document' as const,
+          source: {
+            type: 'base64' as const,
+            media_type: doc.mediaType,
+            data: doc.dataBase64,
+          },
+        })),
+        ...images.map((img) => ({
+          type: 'image' as const,
+          source: {
+            type: 'base64' as const,
+            media_type: img.imageMediaType,
+            data: img.imageBase64,
+          },
+        })),
+        { type: 'text' as const, text: user },
+      ],
+    },
+  ]
+  if (assistantPrefill) messages.push({ role: 'assistant', content: assistantPrefill })
 
   const response = await createMessage(
     apiKey,
@@ -345,30 +387,7 @@ export async function callClaudeVisionJson(params: {
       model: CLAUDE_MODEL,
       max_tokens: maxTokens,
       system,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            ...documents.map((doc) => ({
-              type: 'document' as const,
-              source: {
-                type: 'base64' as const,
-                media_type: doc.mediaType,
-                data: doc.dataBase64,
-              },
-            })),
-            ...images.map((img) => ({
-              type: 'image' as const,
-              source: {
-                type: 'base64' as const,
-                media_type: img.imageMediaType,
-                data: img.imageBase64,
-              },
-            })),
-            { type: 'text' as const, text: user },
-          ],
-        },
-      ],
+      messages,
     },
     timeoutMs,
   )
@@ -378,5 +397,6 @@ export async function callClaudeVisionJson(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  return parseJsonResponse(lastTextBlock(response.content))
+  const text = lastTextBlock(response.content)
+  return parseJsonResponse(assistantPrefill ? assistantPrefill + text : text)
 }
