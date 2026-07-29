@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { getWorkLog, cancelRunningWorkLogs, reapStaleRunningWorkLogs, syncWorkLogFromSupabase, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
-import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
+import { DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
+import { dispatchJobRemote } from '../../lib/remoteDispatch'
 import { decideNextStep } from '../../agents/chatDecide'
 import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact, getLastOutput } from '../../lib/agentChatStore'
 import type { AgentChatMessage } from '../../types/agentChat'
@@ -256,7 +257,7 @@ function ChatBubbles({ items, onCancelRunning }: { items: TimelineItem[]; onCanc
                   }`}
                 >
                   {entry.status === 'running'
-                    ? `${STATUS_ICON.running} 처리 중이에요… (${elapsedLabel(entry.startedAt)} 경과 · ${AGENT_ETA_KO[entry.agent] ?? '보통 몇 분'} 걸려요)`
+                    ? `${STATUS_ICON.running} 처리 중이에요… (${elapsedLabel(entry.startedAt)} 경과 · ${AGENT_ETA_KO[entry.agent] ?? '보통 몇 분'} 걸려요)\n💡 서버에서 작성 중이라 탭을 꺼도 됩니다 — 나중에 들어오면 결재함에 올라와 있어요.`
                     : `${STATUS_ICON[entry.status]} ${stripHtml(entry.detailHtml) || entry.statusLabel}`}
                 </div>
                 {/* 진행 중인 작업 바로 옆에 '중단' 버튼을 둔다 — 하단 입력창의
@@ -357,10 +358,20 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
       // 유령 'running' 기록(백그라운드·새로고침으로 죽은 호출)을 주기적으로
       // 자동 정리 — 화면을 켜둔 채 기다리는 동안 스스로 '시간 초과'로 회복된다.
       reapStaleRunningWorkLogs()
+      // 진행 중인 작업이 있으면 서버가 방금 끝냈을 수 있으니 결과를 당겨온다 —
+      // 이제 생성은 서버에서 돌기 때문에, 탭을 켜둔 채 기다리는 동안 서버 완료가
+      // 자동으로 결재함·근무기록에 반영된다(새로고침 없이).
+      const hasRunning = getWorkLog(undefined, brand).some((e) => e.status === 'running')
+      if (hasRunning) {
+        void Promise.all([syncWorkLogFromSupabase(), syncApprovalsFromSupabase()]).then(() => {
+          reapStaleRunningWorkLogs()
+          setLogVersion((v) => v + 1)
+        })
+      }
       setClockTick((t) => t + 1)
     }, 15_000)
     return () => clearInterval(timer)
-  }, [])
+  }, [brand])
 
   // 한 에이전트가 지시 한 건을 어떻게 받아들일지 처리하는 단위 — 역할마다
   // 판단이 다를 수 있어서("모두에게"를 보내도 각자 따로 되묻거나 실행할 수
@@ -392,11 +403,13 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
       addMessage({ agent, brand, role: 'agent', content: decision.text || '작업을 시작할게요.' })
       setLogVersion((v) => v + 1)
       try {
-        // 수정보완 요청이면 직전 결과물을 넘겨 그걸 고쳐 쓰게 한다(새로 안 씀).
-        await dispatchJob({
+        // 생성·채점은 서버(/api/dispatch)에서 끝까지 돌린다 — 탭을 벗어나거나
+        // 새로고침해도 서버가 결과를 결재함에 올린다(브라우저에서 돌리다 죽어서
+        // "처리 중"이 무한히 뜨던 문제 해결). 수정보완 요청이면 직전 결과물을
+        // 넘겨 그걸 고쳐 쓰게 한다(새로 안 씀).
+        await dispatchJobRemote({
           agent,
           brand,
-          apiKey,
           instruction: decision.cleanInstruction || text,
           previousOutput: decision.isRevision && effectiveLast ? effectiveLast : undefined,
         })
