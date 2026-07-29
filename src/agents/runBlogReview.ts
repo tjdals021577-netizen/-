@@ -135,15 +135,27 @@ export async function generateBlogDraft(params: {
 
   // 본문 2,500~3,000자(한국어)면 4096 토큰으로는 JSON이 잘려 파싱 실패하던
   // 위험이 있었다 → 8192로 넉넉히. 그리고 응답이 잘리거나 안 나오는 일시적
-  // 실패에 대비해 최대 2번까지 다시 시도한다(라이터 반복 오류 방지).
-  async function once(): Promise<BlogDraft> {
+  // 실패에 대비해 최대 3번까지 다시 시도한다(라이터 반복 오류 방지).
+  //
+  // 특히 "방금 글 이렇게 고쳐줘"(재수정) 요청은, 모델이 JSON 대신 고친 본문을
+  // 줄글로 그냥 이어 써버려서 "모델 응답에서 JSON을 찾지 못했습니다"로 실패하는
+  // 일이 잦았다(실제 발생) — 리믹서와 동일하게, 재시도할 땐 같은 프롬프트를
+  // 그대로 다시 보내지 않고 "JSON만 내라"는 강한 지시를 덧붙여 다르게 시도한다.
+  const strictReminder =
+    '\n\n[매우 중요] 앞선 응답이 JSON 형식이 아니었습니다. 이번에는 설명·머리말·인사·' +
+    '마크다운 코드블록(```) 없이, 지정된 스키마의 JSON 객체 "하나만" 출력하세요. ' +
+    '첫 글자는 반드시 {, 마지막 글자는 반드시 } 여야 합니다. 본문(body)은 JSON 문자열 ' +
+    '값 안에 넣고 줄바꿈은 \\n으로 이스케이프하세요.'
+
+  async function once(strict: boolean): Promise<BlogDraft> {
+    const effectiveUser = strict ? user + strictReminder : user
     // 실제 사진이 첨부되면 AI가 사진을 직접 보고 배치를 제안하도록 비전 호출로
     // 전환한다(이 경우 웹서치 도구는 같이 못 쓴다). 사진이 없으면 지식 베이스 기반.
     const raw = hasPhotos
       ? await callClaudeVisionJson({
           apiKey,
           system: buildDraftSystemPrompt(brandContext, marketFindings, true, pastFeedback, blogVoice),
-          user,
+          user: effectiveUser,
           images: photoImages as VisionImageInput[],
           maxTokens: 8192,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
@@ -151,7 +163,7 @@ export async function generateBlogDraft(params: {
       : await callClaudeJson({
           apiKey,
           system: buildDraftSystemPrompt(brandContext, marketFindings, false, pastFeedback, blogVoice),
-          user,
+          user: effectiveUser,
           maxTokens: 8192,
           timeoutMs: 120_000,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
@@ -160,9 +172,10 @@ export async function generateBlogDraft(params: {
   }
 
   let lastErr: unknown
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await once()
+      // 첫 시도는 원래 프롬프트, 이후 재시도는 "JSON만" 강한 지시를 덧붙인다.
+      return await once(attempt > 0)
     } catch (err) {
       lastErr = err
     }
