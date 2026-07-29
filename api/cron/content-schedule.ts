@@ -69,6 +69,18 @@ function buildBlogHtml(draft: BlogDraft, reviews: BlogReview[]): string {
   return `<b>${draft.title}</b><br/>${draft.body.replace(/\n/g, '<br/>')}<br/><br/>${reviewHtml}`
 }
 
+// 마잘남 블로그 "문의 전환용" 7주제 — 대표님 지정. 매일 하나씩 돌아가며 쓴다
+// (7일에 한 바퀴). 브레인 리서치는 topic이 아니라 내용 디벨롭(brainFindings)으로 함께 반영.
+const MAJALNAM_BLOG_TOPICS = [
+  '내가 스레드를 고집하는 이유 (대표 진정성)',
+  '마잘남이라는 이름이 만들어진 이야기 (브랜드 가치)',
+  '계정 비포/애프터 실제 운영 사례 (포트폴리오)',
+  '상담 때 매번 똑같이 답하는 질문 5개 (고객 니즈)',
+  '사장님들이 가장 많이 속는 스레드 상식 (신뢰 구축)',
+  '팔로워는 늘려도 매출이 안 붙는 계정의 공통점 (문제 정의)',
+  '저희와 결이 안 맞는 사장님 유형 (필터링)',
+]
+
 // 최근 14일간 같은 브랜드·채널에 이미 쓴 제목과 안 겹치는 추천 주제를 브레인
 // 리포트에서 하나 골라온다 — 브레인 리포트가 없으면 브랜드 톤 기반 기본 주제로.
 async function pickTopic(
@@ -87,6 +99,12 @@ async function pickTopic(
     ),
   ])
   const brainFindings = formatBrainFindings(reports[0])
+  // 마잘남 블로그는 대표님이 지정한 "문의 전환용 7주제"를 매일 하나씩 돌려 쓴다
+  // (브레인 리서치는 주제가 아니라 내용 디벨롭용으로 함께 넘긴다).
+  if (brand === '마잘남' && channel === 'blog') {
+    const idx = Math.floor(Date.now() / 86_400_000) % MAJALNAM_BLOG_TOPICS.length
+    return { topic: MAJALNAM_BLOG_TOPICS[idx], brainFindings }
+  }
   const usedTitles = new Set(recentEntries.map((e) => e.title))
   const recommendations = reports[0]?.recommendations ?? []
   const fresh = recommendations.find((r) => !usedTitles.has(r))
