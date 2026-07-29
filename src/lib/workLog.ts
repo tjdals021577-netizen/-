@@ -109,6 +109,28 @@ export function finishWorkLog(
   syncToSupabase('work_log', entries[idx])
 }
 
+// 진행 중(running)으로 멈춰 있는 근무기록을 전부 '취소됨'으로 정리한다.
+// 페이지를 새로고침하면 진행 중이던 비동기 작업(Promise)은 사라지는데
+// 근무기록은 localStorage/Supabase에 'running'으로 남아 "처리 중…"이 영원히
+// 떠 있는(그래서 취소 버튼도 안 뜨는) 문제가 있었다 — 대표님이 누르는 '중단'이
+// 이 고아 기록을 강제로 정리한다. 실제로 아직 돌고 있는 프록시 호출은
+// cancelActiveClaudeCalls()가 따로 abort한다(이 함수는 기록 정리만 담당).
+// 정리한 건수를 돌려준다(0이면 이미 진행 중인 게 없었다는 뜻).
+export function cancelRunningWorkLogs(brand?: Brand): number {
+  const running = readAll().filter(
+    (e) => e.status === 'running' && (!brand || e.brand === brand),
+  )
+  for (const e of running) {
+    finishWorkLog(e.id, {
+      status: 'attention',
+      statusLabel: '취소됨',
+      note: '대표님이 중단함',
+      detailHtml: '작업을 중단했습니다.',
+    })
+  }
+  return running.length
+}
+
 export function getWorkLog(agent?: string, brand?: Brand): WorkLogEntry[] {
   let entries = readAll()
   if (agent) entries = entries.filter((e) => e.agent === agent)

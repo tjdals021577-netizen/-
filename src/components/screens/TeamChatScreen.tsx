@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { getWorkLog, syncWorkLogFromSupabase, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
+import { getWorkLog, cancelRunningWorkLogs, syncWorkLogFromSupabase, type WorkLogEntry, type WorkLogStatus } from '../../lib/workLog'
 import { dispatchJob, DISPATCHABLE_AGENTS, type DispatchableAgent } from '../../agents/dispatch'
 import { decideNextStep } from '../../agents/chatDecide'
 import { addMessage, getMessages, getMemory, addMemoryFacts, deleteMemoryFact, getLastOutput } from '../../lib/agentChatStore'
@@ -180,7 +180,7 @@ function buildTimeline(entries: WorkLogEntry[], messages: AgentChatMessage[]): T
 
 // 통합 피드라 한 버블 묶음에 여러 에이전트가 섞여 나오므로, 상단에 고정된
 // 이름 하나 대신 매 항목마다 어느 에이전트인지 배지를 붙여서 보여준다.
-function ChatBubbles({ items }: { items: TimelineItem[] }) {
+function ChatBubbles({ items, onCancelRunning }: { items: TimelineItem[]; onCancelRunning: () => void }) {
   return (
     <>
       {items.map((item) => {
@@ -259,6 +259,19 @@ function ChatBubbles({ items }: { items: TimelineItem[] }) {
                     ? `${STATUS_ICON.running} 처리 중이에요… (${elapsedLabel(entry.startedAt)} 경과 · ${AGENT_ETA_KO[entry.agent] ?? '보통 몇 분'} 걸려요)`
                     : `${STATUS_ICON[entry.status]} ${stripHtml(entry.detailHtml) || entry.statusLabel}`}
                 </div>
+                {/* 진행 중인 작업 바로 옆에 '중단' 버튼을 둔다 — 하단 입력창의
+                    취소 버튼은 이 세션에서 방금 보낸 작업일 때만 떠서, 새로고침
+                    했거나 다른 곳에서 시작된 '처리 중'은 멈출 방법이 없었다.
+                    이 버튼은 어떤 경우든 그 작업을 중단·정리한다. */}
+                {entry.status === 'running' && (
+                  <button
+                    type="button"
+                    onClick={onCancelRunning}
+                    className="mt-1 rounded-lg border border-[var(--open)] px-2.5 py-1 text-[11px] font-bold text-[var(--open)] transition hover:bg-[var(--open-soft)]"
+                  >
+                    ⛔ 이 작업 중단하기
+                  </button>
+                )}
               </div>
             </div>
             {entry.status !== 'running' && (
@@ -460,12 +473,19 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   }
 
   // 진행 중인 지시를 즉시 중단한다 — 잘못 입력해서 엉뚱한 분석·작성이 돌기
-  // 시작했을 때 대표님이 바로 끊을 수 있게. 떠 있는 프록시 호출을 전부 abort
-  // 하면, 각 에이전트의 dispatchJob이 '취소됨'으로 근무기록을 정리한다.
+  // 시작했을 때 대표님이 바로 끊을 수 있게. ①떠 있는 프록시 호출을 전부 abort
+  // 하면 이 세션의 dispatchJob이 '취소됨'으로 근무기록을 정리한다. ②새로고침·
+  // 다른 세션 때문에 진행 중이던 비동기는 사라졌는데 근무기록만 'running'으로
+  // 남아 "처리 중…"이 영원히 떠 있는 고아 기록은 abort로 안 지워지므로,
+  // cancelRunningWorkLogs가 강제로 '취소됨' 처리해 즉시 정리한다.
   function handleCancel() {
     setCancelling(true)
-    setDispatchMessage('취소하는 중이에요…')
+    setDispatchMessage('작업을 중단했어요.')
     cancelActiveClaudeCalls()
+    cancelRunningWorkLogs(brand)
+    setDispatching(false)
+    setCancelling(false)
+    setLogVersion((v) => v + 1)
   }
 
   const todayCount = log.filter(
@@ -630,7 +650,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
             {timeline.length === 0 ? (
               <p className="py-10 text-center text-sm text-[var(--text-faint)]">아직 대화 기록이 없습니다.</p>
             ) : (
-              <ChatBubbles items={timeline} />
+              <ChatBubbles items={timeline} onCancelRunning={handleCancel} />
             )}
             <div ref={feedEndRef} />
           </div>
@@ -654,7 +674,8 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               onChange={(e) => setInstruction(e.target.value)}
               disabled={dispatchTarget === null}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !dispatching && dispatchTarget !== null) void handleDispatch()
+                if (e.key === 'Enter' && !dispatching && busyAgents.length === 0 && dispatchTarget !== null)
+                  void handleDispatch()
               }}
               placeholder={
                 dispatchTarget === null
@@ -665,17 +686,18 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               }
               className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] focus:border-[var(--accent)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
-            {dispatching ? (
-              // 실행 중에는 전송 대신 "취소" 버튼을 보여준다 — 잘못 입력했을 때
-              // 진행 중인 작업을 바로 끊을 수 있게. 취소를 누르면 붉은 버튼이
-              // '취소 중…'으로 바뀌고, 곧 실행이 중단된다.
+            {dispatching || busyAgents.length > 0 ? (
+              // 실행 중(이 세션에서 보낸 작업 or 다른 곳에서 시작돼 아직 '처리
+              // 중'인 작업)에는 전송 대신 "중단" 버튼을 보여준다 — 잘못 입력했거나
+              // 새로고침 후 멈춰버린 작업을 바로 끊을 수 있게. 누르면 진행 중인
+              // 호출을 abort하고, 남아 있는 '처리 중' 기록도 정리한다.
               <button
                 type="button"
                 disabled={cancelling}
                 onClick={handleCancel}
                 className="shrink-0 rounded-lg bg-[var(--open)] px-4 py-2 text-[12.5px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {cancelling ? '취소 중…' : '취소'}
+                {cancelling ? '중단 중…' : '중단'}
               </button>
             ) : (
               <button
