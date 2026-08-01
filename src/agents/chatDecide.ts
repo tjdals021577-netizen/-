@@ -151,6 +151,23 @@ JSON으로만 답한다: {"kind": "question"|"act"|"reply", "text": "...", "clea
   try {
     return await decideOnce(false)
   } catch {
-    return await decideOnce(true)
+    try {
+      return await decideOnce(true)
+    } catch {
+      // 판단 호출이 두 번 다 실패해도(모델이 빈 응답·일시 오류를 내는 경우) 대표님
+      // 화면에 에러만 띄우고 멈추지 않는다 — 대표님은 분명 "무언가 해달라"고 입력한
+      // 것이므로, 안전한 기본값으로 "실행(act)"을 택해 실제 생성 파이프라인(재시도가
+      // 튼튼함)으로 넘긴다. 직전 결과물이 있으면 그걸 고치는 수정 요청으로, 없으면
+      // 새 글로 처리한다. (되묻기/잡담 판단은 못 하지만, 첫 관문에서 하드 에러로
+      // 막히는 것보다 낫다 — 판단 호출 자체가 실패하는 건 드문 일이다.)
+      const hasLast = !!lastOutput?.trim()
+      return {
+        kind: 'act',
+        text: hasLast ? '네, 방금 글을 반영해서 다시 써볼게요.' : '네, 바로 작성해볼게요.',
+        cleanInstruction: userMessage,
+        memoryFacts: [],
+        isRevision: hasLast,
+      }
+    }
   }
 }
