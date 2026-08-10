@@ -6,7 +6,7 @@ import type { VisionImageInput } from '../../src/lib/claude.js'
 import type { DraftAttempt } from '../../src/types/agency.js'
 import { supabaseSelect, supabaseInsert, supabaseUpdate } from '../_lib/supabaseAdmin.js'
 import { fetchHookReferenceBlock } from '../_lib/sheetHooks.js'
-import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
+import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 
 const DRAFT_COUNT = 3
@@ -57,6 +57,7 @@ async function fetchReferenceImages(ids: string[]): Promise<VisionImageInput[]> 
 // 레퍼런스 이미지가 등록된 클라이언트는 그 스타일을 참고해서 쓴다.
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
+  if (haltIfPaused(res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')

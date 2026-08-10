@@ -20,7 +20,7 @@ import type { VisionImageInput } from '../../src/lib/claude.js'
 import { getScheduledSlots, kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 import { makeDefaultChecklist } from '../../src/types/calendar.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
-import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
+import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -312,6 +312,7 @@ async function generateYoutubeForBrand(apiKey: string, brand: Brand, date: strin
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
+  if (haltIfPaused(res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')

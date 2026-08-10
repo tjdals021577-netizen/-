@@ -9,7 +9,7 @@
 // 5개월이면 이미 발행이 끝난 지 한참 지난 것이어서 안전하다.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { supabaseDelete } from '../_lib/supabaseAdmin.js'
-import { requireCronAuth, sendJson } from '../_lib/cronHandler.js'
+import { requireCronAuth, haltIfPaused, sendJson } from '../_lib/cronHandler.js'
 
 const RETENTION_DAYS = 150 // 약 5개월
 
@@ -23,6 +23,7 @@ function cutoffDateKst(): string {
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
+  if (haltIfPaused(res)) return
 
   const cutoff = cutoffDateKst()
   try {

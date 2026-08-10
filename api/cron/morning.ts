@@ -4,7 +4,7 @@ import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
 import { buildMorningSystemPrompt, buildMorningUserPrompt } from '../../src/agents/morningPrompts.js'
 import { BRANDS } from '../../src/types/brand.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
-import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
+import { requireCronAuth, haltIfPaused, sendText, sendJson } from '../_lib/cronHandler.js'
 import { getKakaoAccessToken, sendKakaoMemoToSelf } from '../_lib/kakao.js'
 import { getScheduledSlots, kstNow, kstDateKey, kstWeekdayLabel, addDaysKst } from '../../src/lib/weeklySchedule.js'
 
@@ -229,6 +229,7 @@ function parseBriefing(raw: unknown): MorningBriefing {
 // 알아도 그냥 못 부르게 막는 최소한의 보호장치.
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
+  if (haltIfPaused(res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')

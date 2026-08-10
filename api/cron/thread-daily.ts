@@ -10,7 +10,7 @@ import { THREAD_FULL_FORMATS } from '../../src/agents/threadPrompts.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { fetchHookReferenceBlock } from '../_lib/sheetHooks.js'
-import { requireCronAuth, sendJson, sendText } from '../_lib/cronHandler.js'
+import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
 
 const BRAND = '마잘남'
 // 하루에 8개는 다 못 쓴다는 대표님 결정 — 형식 8개 풀에서 매일 5개씩
@@ -87,6 +87,7 @@ function buildDetailHtml(drafts: { format: string; text: string }[]): string {
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
+  if (haltIfPaused(res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')

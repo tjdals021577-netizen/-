@@ -3,7 +3,7 @@ import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
 import { researchMarketResilient } from '../../src/agents/runBrain.js'
 import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS } from '../../src/types/brand.js'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
-import { requireCronAuth, sendText, sendJson } from '../_lib/cronHandler.js'
+import { requireCronAuth, haltIfPaused, sendText, sendJson } from '../_lib/cronHandler.js'
 
 // 웹서치를 포함한 리서치는 오래 걸린다(비스트리밍일 땐 210초에도 못 끝나 504·폴백이
 // 반복됐다). 이제 runBrain은 스트리밍으로 호출하고, 이 함수엔 Fluid compute 최대치인
@@ -22,6 +22,7 @@ function makeId(): string {
 // 기본 주제로 돌아서 매주 놓치지 않고 시장을 한 번씩 훑는다.
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
+  if (haltIfPaused(res)) return
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')

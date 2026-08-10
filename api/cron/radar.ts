@@ -6,7 +6,7 @@ import { fetchRecentVideoStats } from '../_lib/youtube.js'
 import { fetchThreadStats } from '../_lib/threads.js'
 import { analyzeYoutubeContent } from '../../src/agents/runYoutubeAnalysis.js'
 import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../../src/types/brand.js'
-import { requireCronAuth, sendJson } from '../_lib/cronHandler.js'
+import { requireCronAuth, haltIfPaused, sendJson } from '../_lib/cronHandler.js'
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -57,6 +57,7 @@ const THREADS_TOKEN_ENV_KEY: Record<Brand, string> = {
 // 저장한다. 모닝 크론이 이 값을 읽어서 브리핑에 반영하고, 대시보드도 이 테이블을 읽는다.
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
+  if (haltIfPaused(res)) return
 
   const results: string[] = []
   const apiKey = process.env.ANTHROPIC_API_KEY
