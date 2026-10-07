@@ -24,7 +24,7 @@ export function requireCronAuth(req: IncomingMessage, res: ServerResponse): bool
 //  ① 코드: 아래 PAUSED_DEFAULT를 false로 바꿔 푸시(배포) → 다시 자동 실행.
 //  ② Vercel 환경변수 AUTOMATION_PAUSED = "1"(멈춤) / "0"(진행) → 코드 기본값보다
 //     우선한다(재배포 없이 다음 크론 실행부터 반영).
-const PAUSED_DEFAULT = true
+const PAUSED_DEFAULT = false
 
 export function isAutomationPaused(): boolean {
   const env = process.env.AUTOMATION_PAUSED
