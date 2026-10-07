@@ -7,21 +7,22 @@ export interface ScheduledSlot {
 }
 
 // 대표님이 정한 주간 고정 업로드 루틴.
-// 블로그: "마잘남만" 매일 1편 자동(주 7편) — 대표님 결정(2026-10): 당분간 블로그만,
-//   그중에서도 마잘남 블로그만 자동으로 올린다.
-// 업메리 블로그·마잘남 유튜브는 자동 크론에서 제외 — 필요할 때 팀채팅에서 직접 시킨다.
+// 블로그: "마잘남만" 매일 1편 자동(주 7편) — 대표님 결정(2026-10): 당분간 블로그는
+//   마잘남만 자동으로 올린다. 업메리 블로그는 자동 제외(필요 시 팀채팅에서 직접).
+// 유튜브: 마잘남만 월·수·금 주 3편 자동(2026-10 대표님 요청으로 재개).
 // 스레드는 이 스케줄에 없음 — 대표님이 직접 관리(기존 수동/대행 자동생성만 유지).
 // Date.getDay(): 0=일 1=월 2=화 3=수 4=목 5=금 6=토
 const BLOG_EVERYDAY: ScheduledSlot[] = [
   { brand: '마잘남', channel: 'blog' },
 ]
+const MAJALNAM_YT: ScheduledSlot = { brand: '마잘남', channel: 'youtube' }
 const WEEKLY_SCHEDULE: Record<number, ScheduledSlot[]> = {
   0: [...BLOG_EVERYDAY], // 일
-  1: [...BLOG_EVERYDAY], // 월
+  1: [...BLOG_EVERYDAY, MAJALNAM_YT], // 월
   2: [...BLOG_EVERYDAY], // 화
-  3: [...BLOG_EVERYDAY], // 수
+  3: [...BLOG_EVERYDAY, MAJALNAM_YT], // 수
   4: [...BLOG_EVERYDAY], // 목
-  5: [...BLOG_EVERYDAY], // 금
+  5: [...BLOG_EVERYDAY, MAJALNAM_YT], // 금
   6: [...BLOG_EVERYDAY], // 토
 }
 
