@@ -87,9 +87,10 @@ npm run lint                             # 4) oxlint
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
 - **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `agency` 07:30,
-  `radar` 07:50, `morning` 08:00, `brain`(월) 09:00, `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
-  - `thread-daily`(07:40, 스레드 5포맷 자동)는 **스케줄에서 뺐다**(2026-10 대표님: 비용 절감). 파일은 그대로 —
-    다시 켜려면 vercel.json에 `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }` 한 줄 추가.
+  `radar` 07:50, `brain`(월) 09:00, `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
+  - 2026-10 대표님 비용 절감으로 **스케줄에서 뺀 크론**(파일은 그대로 — vercel.json에 한 줄 추가하면 다시 켜짐):
+    - `thread-daily`(07:40, 스레드 5포맷 자동): `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }`
+    - `morning`(08:00, 모닝 브리핑 + 카톡 발송): `{ "path": "/api/cron/morning", "schedule": "0 23 * * *" }`
   - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일. 업메리 블로그 자동 OFF.
     **유튜브는 일시정지** — `YOUTUBE_ACTIVE = false`면 월·수·금 유튜브 기획과 content-brain(유튜브 소재 리서치)이
     함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
