@@ -11,6 +11,7 @@ import { collectBlogBrainData } from '../_lib/naverBlogData.js'
 import {
   blogBrainWeekStatus,
   contentBrainWeekStatus,
+  countBrainRunsThisWeek,
   getLatestBlogBrain,
   getRecentMainKeywords,
   insertBrainReport,
@@ -39,6 +40,20 @@ const BLOG_BRAIN_BRANDS: Brand[] = ['마잘남']
 
 function isKstMonday(): boolean {
   return kstNow().getUTCDay() === 1
+}
+
+// 주당 시도 상한(대표님 결정: 최악의 경우 비용도 묶어둔다) — 성공·실패 무관하게 실제로 돈
+// 횟수가 이만큼 차면 그 주는 더 시도하지 않고 지난주 리서치를 유지, 다음 주 월요일에 다시 시작.
+// 정상 1회 + 재시도 최대 2회 → 최악의 추가 비용 약 $0.5/주.
+const MAX_RUNS_PER_WEEK = 3
+const BLOG_BRAIN_KIND = 'blog-brain 주간 분석(자동)'
+const CONTENT_BRAIN_KIND = 'content-brain 주간 리서치(자동)'
+
+// 이번 주에 더 돌려도 되는지 — 횟수를 못 세면(근무기록 조회 실패) 비용 안전을 위해 월요일에만.
+async function underWeeklyCap(brand: Brand, kind: string): Promise<{ ok: boolean; runs: number | null }> {
+  const runs = await countBrainRunsThisWeek(brand, kind)
+  if (runs === null) return { ok: isKstMonday(), runs }
+  return { ok: runs < MAX_RUNS_PER_WEEK, runs }
 }
 // content-brain은 유튜브 소재 전용이라 유튜브 일시정지(YOUTUBE_ACTIVE=false) 동안은 돌지 않는다.
 const CONTENT_BRAIN_BRANDS: Brand[] = YOUTUBE_ACTIVE ? ['마잘남'] : []
@@ -85,7 +100,14 @@ async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Pr
     const status = await blogBrainWeekStatus(brand, week)
     if (status === 'done') return `${brand} blog-brain: ${week} 이미 완료 — 건너뜀`
     if (status === 'unknown' && !isKstMonday()) return `${brand} blog-brain: 저장 테이블 확인 불가 — 월요일에만 실행`
-    const retryNote = isKstMonday() ? '' : ' · 월요일 미완료분 자동 재시도'
+    const cap = await underWeeklyCap(brand, BLOG_BRAIN_KIND)
+    if (!cap.ok) {
+      return `${brand} blog-brain: 이번 주 시도 ${cap.runs ?? '?'}/${MAX_RUNS_PER_WEEK}회 소진 — 지난주 리서치 유지, 다음 주 월요일 재개`
+    }
+    const tryNo = (cap.runs ?? 0) + 1
+    const retryNote = ` · 이번 주 ${tryNo}/${MAX_RUNS_PER_WEEK}번째 시도${
+      tryNo < MAX_RUNS_PER_WEEK ? '' : '(마지막 — 실패하면 다음 주 월요일 재개)'
+    }`
 
     // 타깃 키워드 = 최근 4주 메인 키워드 + 고정 핵심 키워드(중복 제거, 최근 것 우선).
     const [recent, lastWeek] = await Promise.all([getRecentMainKeywords(brand), getLatestBlogBrain(brand, week)])
@@ -105,7 +127,7 @@ async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Pr
     if (collected.posts.length === 0 && collected.notices.length === 0) {
       await logBrain({
         brand,
-        kind: 'blog-brain 주간 분석(자동)',
+        kind: BLOG_BRAIN_KIND,
         ok: false,
         costUsd,
         note: `수집 실패 — 지난주 리서치 유지, 내일 자동 재시도 · ${collected.note}${retryNote}`,
@@ -125,7 +147,7 @@ async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Pr
     if (!result) {
       await logBrain({
         brand,
-        kind: 'blog-brain 주간 분석(자동)',
+        kind: BLOG_BRAIN_KIND,
         ok: false,
         costUsd,
         note: `분석 실패 — 지난주 리서치 유지, 내일 자동 재시도 · ${collected.note}${retryNote}`,
@@ -145,7 +167,7 @@ async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Pr
       : '없음'
     await logBrain({
       brand,
-      kind: 'blog-brain 주간 분석(자동)',
+      kind: BLOG_BRAIN_KIND,
       ok: saved,
       costUsd,
       note: `${week} · ${collected.note}${saved ? '' : ' · ⚠️저장 실패(blog_brain_reports 테이블 확인 필요)'}`,
@@ -158,8 +180,18 @@ async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Pr
     })
     return `${brand} blog-brain: ${saved ? '저장' : '저장 실패'} · ${collected.note}`
   } catch (err) {
-    // 안전망 — 크론 전체를 500으로 죽이지 않는다.
-    return `${brand} blog-brain: 실패 (${err instanceof Error ? err.message : String(err)})`
+    // 안전망 — 크론 전체를 500으로 죽이지 않는다. 예외로 끝나도 "1회 시도"로 근무기록에 남겨
+    // 주당 상한이 우회되지 않게 한다(기록 자체가 실패해도 크론은 계속).
+    const message = err instanceof Error ? err.message : String(err)
+    await logBrain({
+      brand,
+      kind: BLOG_BRAIN_KIND,
+      ok: false,
+      costUsd,
+      note: `예외로 중단 — 지난주 리서치 유지 · ${message}`,
+      detailHtml: message,
+    }).catch(() => undefined)
+    return `${brand} blog-brain: 실패 (${message})`
   }
 }
 
@@ -170,6 +202,8 @@ async function runContentBrain(apiKey: string, brand: Brand): Promise<string> {
   const status = await contentBrainWeekStatus(brand)
   if (status === 'done') return `${brand} content-brain: 이번 주 이미 완료 — 건너뜀`
   if (status === 'unknown' && !isKstMonday()) return `${brand} content-brain: 확인 불가 — 월요일에만 실행`
+  const cap = await underWeeklyCap(brand, CONTENT_BRAIN_KIND)
+  if (!cap.ok) return `${brand} content-brain: 이번 주 시도 ${cap.runs ?? '?'}/${MAX_RUNS_PER_WEEK}회 소진 — 다음 주 월요일 재개`
   try {
     let costUsd = 0
     // researchMarketResilient는 예외를 던지지 않는다(웹서치 실패 → 지식 기반 → 빈 리포트).
@@ -199,7 +233,7 @@ async function runContentBrain(apiKey: string, brand: Brand): Promise<string> {
     const list = (title: string, items: string[]) => (items.length ? `<b>${title}</b><br/>${items.join('<br/>')}<br/><br/>` : '')
     await logBrain({
       brand,
-      kind: 'content-brain 주간 리서치(자동)',
+      kind: CONTENT_BRAIN_KIND,
       ok: research.ok && hasAny,
       costUsd,
       note: research.ok ? summaryNote : research.note,
@@ -226,7 +260,12 @@ async function runContentBrain(apiKey: string, brand: Brand): Promise<string> {
     }
     return `${brand} content-brain: ${research.ok ? summaryNote : '일시 실패(다음 주기 재시도)'}`
   } catch (err) {
-    return `${brand} content-brain: 저장 실패 (${err instanceof Error ? err.message : String(err)})`
+    const message = err instanceof Error ? err.message : String(err)
+    // 예외로 끝나도 1회 시도로 기록(주당 상한 우회 방지).
+    await logBrain({ brand, kind: CONTENT_BRAIN_KIND, ok: false, costUsd: 0, note: `예외로 중단 · ${message}`, detailHtml: message }).catch(
+      () => undefined,
+    )
+    return `${brand} content-brain: 저장 실패 (${message})`
   }
 }
 

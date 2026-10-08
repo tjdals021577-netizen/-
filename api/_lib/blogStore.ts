@@ -137,6 +137,22 @@ export async function blogBrainWeekStatus(brand: Brand, week: string): Promise<W
   }
 }
 
+// 이번 주(월요일 이후) 실제로 돌린 횟수 — 성공·실패 상관없이 실행할 때마다 근무기록에 1행씩
+// 남기므로 그 수를 센다. 주당 시도 상한(비용 최악의 경우 차단, 대표님 결정)에 쓴다.
+// null = 근무기록 조회 실패(셀 수 없음).
+export async function countBrainRunsThisWeek(brand: Brand, kind: string): Promise<number | null> {
+  try {
+    const rows = await supabaseSelect<{ id: string }>(
+      'work_log',
+      `agent=eq.brain&brand=eq.${encodeURIComponent(brand)}&kind=eq.${encodeURIComponent(kind)}` +
+        `&started_at=gte.${kstMondayKey()}T00:00:00%2B09:00&select=id`,
+    )
+    return rows.length
+  } catch {
+    return null
+  }
+}
+
 // content-brain(유튜브 소재)도 같은 방식 — 이번 주 월요일 이후 자동 리서치 행이 있으면 끝난 것.
 export async function contentBrainWeekStatus(brand: Brand): Promise<WeekStatus> {
   try {
