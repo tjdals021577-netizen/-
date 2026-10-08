@@ -11,6 +11,7 @@ import { cancelActiveClaudeCalls, ClaudeCancelledError } from '../../lib/claude'
 import { getApprovalQueue, syncApprovalsFromSupabase } from '../../lib/approvalStore'
 import { syncReferenceHooksFromSupabase } from '../../lib/hookStore'
 import { BRAND_CHANNELS, BRAND_CONTEXT, type Brand } from '../../types/brand'
+import { YOUTUBE_ACTIVE } from '../../lib/weeklySchedule'
 
 // "모두에게" 지시할 때, 그 브랜드가 아예 운영 안 하는 채널의 에이전트는
 // 애초에 빼고 보낸다(버즈/리믹서는 무조건 에러가 날 걸 알면서 보낼 이유가
@@ -300,6 +301,10 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
   const [cancelling, setCancelling] = useState(false)
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null)
   const [logVersion, setLogVersion] = useState(0)
+  // 유튜브 일시정지 중엔 팀채팅을 열 때마다 재개 시점을 묻는다(대표님 요청).
+  // 닫아도 이번 방문에만 숨김 — 저장하지 않아서 다음에 열면 다시 뜬다.
+  // YOUTUBE_ACTIVE를 true로 바꿔 배포하면 자동으로 사라진다.
+  const [youtubeAskDismissed, setYoutubeAskDismissed] = useState(false)
   const feedEndRef = useRef<HTMLDivElement>(null)
 
   const viewingAgent = feedFilter === 'all' ? null : (AGENT_BY_KEY.get(feedFilter) ?? null)
@@ -663,6 +668,34 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
               </>
             )}
           </div>
+
+          {!YOUTUBE_ACTIVE && !youtubeAskDismissed && (
+            <div
+              role="alert"
+              className="mx-3.5 mt-3 flex items-start gap-2.5 rounded-xl border-[1.5px] border-[var(--ch-yt)] bg-[var(--surface-2)] p-3"
+            >
+              <span
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11.5px] font-bold text-white"
+                style={{ background: 'var(--ch-yt)' }}
+              >
+                리
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-bold text-[var(--text)]">🔔 대표님, 유튜브 기획은 언제 다시 들어가시나요?</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-[var(--text-dim)]">
+                  지금은 마잘남 유튜브가 일시정지라 월·수·금 자동 기획과 유튜브 소재 리서치가 멈춰 있어요.
+                  다시 시작하실 땐 Claude에게 "유튜브 실행"이라고 말해 주세요. 리믹서에게 직접 시키는 기획은 지금도 돼요.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setYoutubeAskDismissed(true)}
+                className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-[11px] font-bold text-[var(--text-dim)] hover:bg-[var(--surface)]"
+              >
+                아직이에요
+              </button>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto p-3.5">
             <p className="mb-3 text-center text-[11px] text-[var(--text-faint)]">

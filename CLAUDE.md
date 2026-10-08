@@ -94,6 +94,8 @@ npm run lint                             # 4) oxlint
   - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일. 업메리 블로그 자동 OFF.
     **유튜브는 일시정지** — `YOUTUBE_ACTIVE = false`면 월·수·금 유튜브 기획과 content-brain(유튜브 소재 리서치)이
     함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
+    일시정지 동안 팀채팅을 열 때마다 "유튜브 기획은 언제 다시 들어가시나요?" 알림 카드가 뜬다
+    (`TeamChatScreen.tsx`, 닫아도 다음 방문에 다시 뜸). true로 바꾸면 자동으로 사라진다.
   - `brain` = 한 함수에서 **blog-brain + content-brain** 병렬(함수 한도 때문에 분리 안 함), 둘 다 마잘남만
     (content-brain은 `YOUTUBE_ACTIVE`일 때만). **매일 깨어나되 이번 주 분석이 없을 때만 일한다**
     (월요일 실패 시 다음 날 자동 재시도, 이미 있으면 Claude 호출 0). 테이블 확인 불가(SQL 전)면 월요일만.
