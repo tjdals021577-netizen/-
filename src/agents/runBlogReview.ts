@@ -200,6 +200,7 @@ export async function runBlogAgentReview(params: {
     // 작성 화면의 3인 실시간 표시용이라 3콜 구조를 유지한다(자동/팀채팅 경로는
     // runBlogReviewsResilient에서 1콜로 통합).
     model: CLAUDE_MODEL_CHEAP,
+    effort: 'low',
     system: buildReviewSystemPrompt(role),
     user: buildReviewUserPrompt(draft),
     // 채점은 검색 없는 단순 호출이라 보통 1분 안에 끝난다 — 기본값(260초)을
@@ -230,6 +231,7 @@ export async function runBlogReviewsResilient(params: {
     const raw = await callClaudeJson({
       apiKey,
       model: CLAUDE_MODEL_CHEAP,
+      effort: 'low',
       system: system ?? buildCombinedReviewSystemPrompt(),
       user: buildReviewUserPrompt(draft),
       maxTokens: 4096,

@@ -4,7 +4,7 @@ import { researchMarketResilient } from '../../src/agents/runBrain.js'
 import { analyzeBlogBrain } from '../../src/agents/runMajalnamBlog.js'
 import { MAJALNAM_CORE_KEYWORDS } from '../../src/agents/majalnamBlogPrompts.js'
 import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from '../../src/types/brand.js'
-import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
+import { kstNow, kstDateKey, YOUTUBE_ACTIVE } from '../../src/lib/weeklySchedule.js'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, haltIfPaused, sendText, sendJson } from '../_lib/cronHandler.js'
 import { collectBlogBrainData } from '../_lib/naverBlogData.js'
@@ -28,7 +28,8 @@ export const maxDuration = 800
 //                     블로그만 운영해 유튜브·스레드 소재가 필요 없다.
 // 매주 월요일 09:00 KST(월 00:00 UTC) — vercel.json.
 const BLOG_BRAIN_BRANDS: Brand[] = ['마잘남']
-const CONTENT_BRAIN_BRANDS: Brand[] = ['마잘남']
+// content-brain은 유튜브 소재 전용이라 유튜브 일시정지(YOUTUBE_ACTIVE=false) 동안은 돌지 않는다.
+const CONTENT_BRAIN_BRANDS: Brand[] = YOUTUBE_ACTIVE ? ['마잘남'] : []
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`

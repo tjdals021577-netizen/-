@@ -9,20 +9,27 @@ export interface ScheduledSlot {
 // 대표님이 정한 주간 고정 업로드 루틴.
 // 블로그: "마잘남만" 매일 1편 자동(주 7편) — 대표님 결정(2026-10): 당분간 블로그는
 //   마잘남만 자동으로 올린다. 업메리 블로그는 자동 제외(필요 시 팀채팅에서 직접).
-// 유튜브: 마잘남만 월·수·금 주 3편 자동(2026-10 대표님 요청으로 재개).
+// 유튜브: 마잘남만 월·수·금 주 3편 자동 — 단, YOUTUBE_ACTIVE가 켜져 있을 때만.
 // 스레드는 이 스케줄에 없음 — 대표님이 직접 관리(기존 수동/대행 자동생성만 유지).
 // Date.getDay(): 0=일 1=월 2=화 3=수 4=목 5=금 6=토
+
+// ★ 유튜브 일시정지 스위치(2026-10 대표님: "유튜브 실행하면 그때 서치와 기획 시작, 지금은 중단").
+// false면 ① 월·수·금 유튜브 자동 기획이 빠지고 ② 주간 content-brain(유튜브 소재 리서치)도
+// 돌지 않는다(api/cron/brain.ts가 이 값을 본다). 대표님이 "유튜브 실행"하면 true로 바꿔 배포.
+// 팀채팅에서 리믹서에게 직접 시키는 유튜브 기획은 이 스위치와 상관없이 언제든 된다.
+export const YOUTUBE_ACTIVE = false
+
 const BLOG_EVERYDAY: ScheduledSlot[] = [
   { brand: '마잘남', channel: 'blog' },
 ]
-const MAJALNAM_YT: ScheduledSlot = { brand: '마잘남', channel: 'youtube' }
+const MAJALNAM_YT: ScheduledSlot[] = YOUTUBE_ACTIVE ? [{ brand: '마잘남', channel: 'youtube' }] : []
 const WEEKLY_SCHEDULE: Record<number, ScheduledSlot[]> = {
   0: [...BLOG_EVERYDAY], // 일
-  1: [...BLOG_EVERYDAY, MAJALNAM_YT], // 월
+  1: [...BLOG_EVERYDAY, ...MAJALNAM_YT], // 월
   2: [...BLOG_EVERYDAY], // 화
-  3: [...BLOG_EVERYDAY, MAJALNAM_YT], // 수
+  3: [...BLOG_EVERYDAY, ...MAJALNAM_YT], // 수
   4: [...BLOG_EVERYDAY], // 목
-  5: [...BLOG_EVERYDAY, MAJALNAM_YT], // 금
+  5: [...BLOG_EVERYDAY, ...MAJALNAM_YT], // 금
   6: [...BLOG_EVERYDAY], // 토
 }
 

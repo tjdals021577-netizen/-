@@ -68,6 +68,7 @@ export async function generateMorningBriefing(params: {
       spendText: `$${todaySpendUsd.toFixed(3)} / $5`,
     }),
     maxTokens: 2048,
+    effort: 'low', // 기록 요약은 단순 작업(비용 절감 A)
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   return parseBriefing(raw)

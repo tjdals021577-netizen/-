@@ -70,13 +70,15 @@ export async function digestReferenceStyle(params: {
   const merged = await callClaudeJson({
     apiKey,
     model: CLAUDE_MODEL_CHEAP,
+    effort: 'low',
     system: `여러 묶음에서 각각 뽑은 "카피 스타일 요약"들을 받아, 중복을 제거하고 서로 보완해 하나의
 일관된 스타일 가이드로 합치세요. ★ 후킹 공식은 버리지 말고 최대한 살려 목록으로 정리(숫자+기간+결과형·
 도발질문형·페인포인트형·비결예고형·반전형 등 — 주제만 바꿔 재사용할 수 있는 "틀"). 그다음 말투·문장
 길이·이모지/줄바꿈·자주 쓰는 표현·CTA·피해야 할 것. 한국어 불릿, 후킹 위주로 넉넉히(800자 내외).
 아래 JSON만 출력: { "digest": string }`,
     user: partials.map((p, i) => `[요약 ${i + 1}]\n${p}`).join('\n\n'),
-    maxTokens: 1200,
+    // Haiku 5.5는 생각 토큰도 한도에 포함 — 800자 요약이 잘리지 않게 여유를 둔다.
+    maxTokens: 2400,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
   if (typeof merged !== 'object' || merged === null) return partials.join('\n')
@@ -131,6 +133,7 @@ export async function generateAgencyDraftBatch(params: {
           user,
           images: referenceImages,
           maxTokens: 8192,
+          effort: 'medium', // 대행 시안은 "보통" 깊이(비용 절감 A)
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
       : await callClaudeJson({
@@ -138,6 +141,7 @@ export async function generateAgencyDraftBatch(params: {
           system,
           user,
           maxTokens: 8192,
+          effort: 'medium', // 대행 시안은 "보통" 깊이(비용 절감 A)
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
   if (typeof raw !== 'object' || raw === null) {
@@ -213,6 +217,7 @@ export async function generateAgencyFullFormatSet(params: {
           user,
           images: referenceImages,
           maxTokens: 8192,
+          effort: 'medium', // 대행 시안은 "보통" 깊이(비용 절감 A)
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
       : await callClaudeJson({
@@ -220,6 +225,7 @@ export async function generateAgencyFullFormatSet(params: {
           system,
           user,
           maxTokens: 8192,
+          effort: 'medium', // 대행 시안은 "보통" 깊이(비용 절감 A)
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
 

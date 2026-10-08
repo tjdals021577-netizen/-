@@ -4,7 +4,15 @@ import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resource
 export const CLAUDE_MODEL = 'claude-sonnet-5'
 // 채점·판단처럼 "생성"이 아니라 "평가"만 하는 작업은 더 싼 모델로 돌린다
 // (대표님 결정: 비용 절감). 생성 품질은 Sonnet 그대로 두고 채점만 Haiku로.
-export const CLAUDE_MODEL_CHEAP = 'claude-haiku-4-5'
+// 2026-10 대표님 결정(비용 절감 B): Haiku 4.5($1/$5) → Haiku 5.5($0.10/$0.50, 최신·10분의 1 가격).
+// Haiku 5.5는 생각(thinking)이 기본으로 켜져 있어 생각 토큰도 max_tokens에 포함된다 —
+// 채점·키워드 호출은 effort 'low'로 보내 생각을 짧게 하고, max_tokens도 여유 있게 둔다.
+export const CLAUDE_MODEL_CHEAP = 'claude-haiku-5-5'
+
+// 생각 깊이(effort) — 2026-10 비용 절감 A. 설정하지 않으면 모델 기본값(Sonnet 5 = high)으로
+// 깊게 생각하고, 그 생각 토큰도 출력 요금으로 과금된다. 품질이 핵심인 블로그 글쓰기만
+// 기본값(high)을 유지하고, 단순 작업은 'low', 기획·분석은 'medium'으로 낮춘다.
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 // 호출 1건이 걸려서 무한정 응답을 기다리는 상황을 막기 위한 기본 타임아웃.
 // 원래 120초 → 200초로 늘렸는데도 웹서치 검색을 많이 도는 경우 200초를
@@ -241,6 +249,7 @@ export async function callClaudeJson(params: {
   // 이어 쓸 수밖에 없어, "모델 응답에서 JSON을 찾지 못했습니다" 실패를
   // 원천 차단한다(특히 '이 글 고쳐줘' 재수정에서 모델이 줄글로 새던 문제).
   assistantPrefill?: string
+  effort?: Effort
 }): Promise<unknown> {
   const {
     apiKey,
@@ -251,6 +260,7 @@ export async function callClaudeJson(params: {
     onUsage,
     model = CLAUDE_MODEL,
     assistantPrefill,
+    effort,
   } = params
 
   // ⚠️ assistant prefill 미사용 — 현재 우리가 쓰는 모델(claude-sonnet-5 등)은
@@ -271,6 +281,7 @@ export async function callClaudeJson(params: {
       max_tokens: maxTokens,
       system,
       messages,
+      ...(effort ? { output_config: { effort } } : {}),
     },
     timeoutMs,
   )
@@ -293,6 +304,7 @@ export async function callClaudeJsonWithWebSearch(params: {
   maxSearches?: number
   timeoutMs?: number
   onUsage?: UsageCallback
+  effort?: Effort
 }): Promise<unknown> {
   const {
     apiKey,
@@ -302,6 +314,7 @@ export async function callClaudeJsonWithWebSearch(params: {
     maxSearches = 3,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
+    effort,
   } = params
 
   const body: MessageCreateParamsNonStreaming = {
@@ -309,6 +322,7 @@ export async function callClaudeJsonWithWebSearch(params: {
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
+    ...(effort ? { output_config: { effort } } : {}),
     tools: [
       {
         // web_search_20260209 — 현재 API가 지원하는 웹서치 도구 버전
@@ -363,6 +377,7 @@ export async function callClaudeVisionJson(params: {
   onUsage?: UsageCallback
   // callClaudeJson과 동일 — 응답을 '{'로 시작하도록 강제해 JSON 실패를 막는다.
   assistantPrefill?: string
+  effort?: Effort
 }): Promise<unknown> {
   const {
     apiKey,
@@ -374,6 +389,7 @@ export async function callClaudeVisionJson(params: {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onUsage,
     assistantPrefill,
+    effort,
   } = params
 
   const messages: MessageCreateParamsNonStreaming['messages'] = [
@@ -411,6 +427,7 @@ export async function callClaudeVisionJson(params: {
       max_tokens: maxTokens,
       system,
       messages,
+      ...(effort ? { output_config: { effort } } : {}),
     },
     timeoutMs,
   )

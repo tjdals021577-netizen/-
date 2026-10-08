@@ -260,6 +260,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       system: buildMorningSystemPrompt(),
       user: buildMorningUserPrompt({ brand, dateLabel, logText, spendText, radarText }),
       maxTokens: 2048,
+      // 어제 기록 요약은 단순 작업 — 깊게 생각할 필요 없음(비용 절감 A, 생각 토큰이 2048 한도도 잡아먹지 않게).
+      effort: 'low',
       onUsage: (usage) => {
         costUsd = estimateCostUsd(usage)
       },

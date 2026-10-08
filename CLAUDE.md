@@ -45,7 +45,11 @@ npm run lint                             # 4) oxlint
 
 ## 모델·비용 규칙
 - `CLAUDE_MODEL = 'claude-sonnet-5'` — 생성(글·기획).
-- `CLAUDE_MODEL_CHEAP = 'claude-haiku-4-5'` — 채점·판단만(비용 절감). `src/lib/claude.ts`.
+- `CLAUDE_MODEL_CHEAP = 'claude-haiku-5-5'` — 채점·키워드 판단만(비용 절감, 2026-10 4.5→5.5). `src/lib/claude.ts`.
+  Haiku 5.5는 생각이 기본 ON이라 생각 토큰도 max_tokens에 포함 → 호출마다 `effort: 'low'` + 한도 여유.
+- **생각 깊이(effort, 2026-10 비용 절감)**: Sonnet 5는 미설정 시 high로 깊게 생각하고 그 토큰도 출력 과금.
+  블로그 글쓰기만 기본(high) 유지 / 모닝·팀채팅 판단·브레인 자료수집 `low` / 유튜브 기획·대행·blog-brain 분석 `medium`.
+  `callClaudeJson`·`callClaudeVisionJson`·`callClaudeJsonWithWebSearch`의 `effort` 옵션(→ `output_config.effort`).
 - 예산 가드: `src/lib/budgetGuard.ts`(일일 상한), 프록시에도 `DAILY_BUDGET_USD` 상한.
 - `PASS_THRESHOLD = 85`(통과) — `src/types/domain.ts`. 블로그는 미달이어도 재작성 안 함(비용 절감).
 - **Vercel Hobby = 서버리스 함수 12개 한도(현재 12개 꽉 참).** `api/` 아래 `_`로 시작하지 않는
@@ -86,8 +90,11 @@ npm run lint                             # 4) oxlint
   `radar` 07:50, `morning` 08:00, `brain`(월) 09:00, `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
   - `thread-daily`(07:40, 스레드 5포맷 자동)는 **스케줄에서 뺐다**(2026-10 대표님: 비용 절감). 파일은 그대로 —
     다시 켜려면 vercel.json에 `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }` 한 줄 추가.
-  - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일 / 마잘남 유튜브 월·수·금. 업메리 블로그 자동 OFF.
-  - `brain`(월) = 한 함수에서 **blog-brain + content-brain** 병렬(함수 한도 때문에 분리 안 함), 둘 다 마잘남만.
+  - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일. 업메리 블로그 자동 OFF.
+    **유튜브는 일시정지** — `YOUTUBE_ACTIVE = false`면 월·수·금 유튜브 기획과 content-brain(유튜브 소재 리서치)이
+    함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
+  - `brain`(월) = 한 함수에서 **blog-brain + content-brain** 병렬(함수 한도 때문에 분리 안 함), 둘 다 마잘남만
+    (content-brain은 `YOUTUBE_ACTIVE`일 때만).
 - **데이터 흐름**: 크론이 **Supabase**에 쓰고, 브라우저는 **localStorage**를 읽는다 →
   화면 진입 시 `remoteSync`가 당겨온다(그래서 방금 크론 결과가 안 보이면 새로고침/탭 재진입).
 

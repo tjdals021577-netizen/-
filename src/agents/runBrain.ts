@@ -91,6 +91,8 @@ export async function researchMarketResilient(params: {
       user,
       maxSearches: maxSearches + 1,
       maxTokens: 4000,
+      // 자료 수집·정리 위주라 얕게 생각해도 충분(비용 절감 A).
+      effort: 'low',
       timeoutMs: 560_000,
       onUsage: track,
     })
@@ -105,6 +107,7 @@ export async function researchMarketResilient(params: {
         system,
         user: `${user}\n\n(웹 검색이 일시적으로 불가하니, 검색 없이 아는 범위에서만 신중히 정리하세요. 확실하지 않은 수치·사실은 지어내지 말고 방향성만 제시.)`,
         maxTokens: 3000,
+        effort: 'low',
         timeoutMs: 60_000,
         onUsage: track,
       })

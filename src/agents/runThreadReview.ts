@@ -246,6 +246,7 @@ export async function runThreadReview(params: {
   const raw = await callClaudeJson({
     apiKey,
     model: CLAUDE_MODEL_CHEAP, // 채점은 판단만 — 싼 Haiku로(비용 절감)
+    effort: 'low',
     system: buildThreadReviewSystemPrompt(),
     user: buildThreadReviewUserPrompt(draft),
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
@@ -266,6 +267,7 @@ export async function runThreadReviewBatch(params: {
   const raw = await callClaudeJson({
     apiKey,
     model: CLAUDE_MODEL_CHEAP, // 채점은 판단만 — 싼 Haiku로(비용 절감)
+    effort: 'low',
     system: buildThreadReviewBatchSystemPrompt(drafts.length),
     user: buildThreadReviewBatchUserPrompt(drafts),
     maxTokens: 8192,

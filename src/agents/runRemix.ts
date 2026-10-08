@@ -71,6 +71,7 @@ export async function reviewRemixPlan(params: {
     apiKey,
     // 채점은 판단만 하므로 더 싼 Haiku로(비용 절감).
     model: CLAUDE_MODEL_CHEAP,
+    effort: 'low',
     system: buildRemixReviewSystemPrompt(),
     user: buildRemixReviewUserPrompt(plan),
     // 6개 항목 코멘트 + flags + summary가 한국어로 길어져 2048에서 JSON이
@@ -137,6 +138,8 @@ export async function generateScoredRemixPlan(params: {
           // 6단계 대본이 길어 8192에서도 가끔 JSON이 잘려 파싱 실패(대표님 리포트)
           // → 넉넉히 늘린다. 프롬프트에서도 각 단계를 간결히 쓰도록 제한한다.
           maxTokens: 12_000,
+          // 기획은 "보통" 깊이로(비용 절감 A — 블로그 글쓰기만 기본 high 유지).
+          effort: 'medium',
           timeoutMs: 150_000,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })

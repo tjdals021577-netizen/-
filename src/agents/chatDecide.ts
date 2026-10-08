@@ -144,6 +144,8 @@ JSON으로만 답한다: {"kind": "question"|"act"|"reply", "text": "...", "clea
       system,
       user: strict ? user + strictReminder : user,
       maxTokens: 2048,
+      // "물어볼지/바로 할지/대화만 할지" 판단은 단순 — 깊게 생각할 필요 없음(비용 절감 A).
+      effort: 'low',
       onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
     })
     return parseDecision(raw)

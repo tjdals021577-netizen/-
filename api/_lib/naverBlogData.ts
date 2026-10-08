@@ -293,6 +293,8 @@ ${postPart}[수집 ${includePosts ? '2' : '1'} — 공식 공지]
     maxSearches,
     maxTokens: 3000,
     timeoutMs: 300_000,
+    // 사실 수집만 하는 단계 — 얕게(비용 절감 A).
+    effort: 'low',
     onUsage,
   })) as Record<string, unknown>
   const posts = (Array.isArray(raw.posts) ? raw.posts : [])
