@@ -1,6 +1,7 @@
 // 매일 06:00 KST(대행 크론보다 먼저)에 돌아서, 대표님이 정한 주간 고정
-// 업로드 루틴(블로그 매일 업메리+마잘남 각 1 / 유튜브 월·수·금 마잘남)에 맞춰
-// 오늘 해당하는 콘텐츠를 자동으로 기획(초안 생성)해서 캘린더에 올린다.
+// 업로드 루틴(weeklySchedule.ts — 현재 마잘남 블로그 매일 / 마잘남 유튜브 월·수·금)에
+// 맞춰 오늘 해당하는 콘텐츠를 자동으로 기획(초안 생성)해서 캘린더에 올린다.
+// 마잘남 블로그는 재설계 파이프라인(키워드 생성 → 새 라이터 → 채점, _lib/majalnamBlogPipeline).
 // 사람이 라이터/리믹서 화면에서 "생성" 버튼을 누른 것과 같은 결과물이며,
 // 채점(라이터는 3인 위원회, 리믹서는 채점 없음)까지 동일하게 거친다.
 //
@@ -21,33 +22,11 @@ import { getScheduledSlots, kstNow, kstDateKey } from '../../src/lib/weeklySched
 import { makeDefaultChecklist } from '../../src/types/calendar.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
+// 브레인 리포트 조회·포맷은 공용 헬퍼로(extras 컬럼 유무 방어 + 유튜브 작업물 소재 포함).
+import { fetchLatestBrainReport, formatBrainFindings } from '../_lib/blogStore.js'
+import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from '../_lib/majalnamBlogPipeline.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
-
-interface BrainReportRow {
-  topic: string
-  summary: string
-  recommendations: string[]
-  findings: { source: string; insight: string }[]
-}
-
-// 브레인이 조사해둔 최신 리서치를 라이터·리믹서가 참고할 프롬프트 텍스트로
-// 만든다 — 이제 이들은 직접 검색하지 않고 이 자료를 공유받는다(비용 절감).
-function formatBrainFindings(report: BrainReportRow | undefined): string | undefined {
-  if (!report) return undefined
-  // 리서치가 많고 길면(특히 마잘남) 프롬프트가 비대해져 응답이 잘리는 원인이
-  // 됐다 → 상위 8건·각 240자로 제한(방향성 참고엔 충분).
-  const findingsText = (report.findings ?? [])
-    .slice(0, 8)
-    .map((f) => `- [${f.source}] ${f.insight.slice(0, 240)}`)
-    .join('\n')
-  // 추천 액션도 포함한다 — 브레인이 잡아낸 "블로그 로직 변화 → 이렇게 바꿔라"가
-  // recommendations에 담기므로, 이게 빠지면 자동 글이 로직 변화를 반영하지 못한다.
-  const recoText = (report.recommendations ?? []).slice(0, 5).join(' / ')
-  return `주제: ${report.topic}\n요약: ${report.summary.slice(0, 400)}\n${findingsText}${
-    recoText ? `\n추천 액션: ${recoText}` : ''
-  }`
-}
 
 interface CalendarTitleRow {
   title: string
@@ -98,17 +77,15 @@ async function pickTopic(
   channel: 'blog' | 'youtube',
 ): Promise<{ topic: string; brainFindings?: string }> {
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-  const [reports, recentEntries] = await Promise.all([
-    supabaseSelect<BrainReportRow>(
-      'brain_reports',
-      `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1&select=topic,summary,recommendations,findings`,
-    ),
+  const [latestReport, recentEntries] = await Promise.all([
+    fetchLatestBrainReport(brand),
     supabaseSelect<CalendarTitleRow>(
       'calendar_entries',
       `brand=eq.${encodeURIComponent(brand)}&channel=eq.${channel}&created_at=gte.${encodeURIComponent(since)}&select=title`,
     ),
   ])
-  const brainFindings = formatBrainFindings(reports[0])
+  const reports = latestReport ? [latestReport] : []
+  const brainFindings = formatBrainFindings(latestReport)
   // 블로그는 대표님이 지정한 "전환용 주제군"을 매일 하나씩 돌려 쓴다(브레인
   // 리서치는 주제가 아니라 내용 디벨롭용으로 함께 넘긴다 — 보이스가 조합해 씀).
   const dayIdx = Math.floor(Date.now() / 86_400_000)
@@ -173,7 +150,76 @@ async function fetchRecentFeedback(
   }
 }
 
+// 마잘남 블로그(재설계 지시서, 2026-10): 키워드 생성(2번) → 새 라이터(1번) → 채점.
+// 기존 브레인 marketFindings 주입은 제거됐고(지시서 5번), 매주 blog-brain이 만든
+// researchBlock이 대신 들어간다. 주제는 기존 "전환용 7주제" 로테이션 그대로.
+async function generateMajalnamBlog(apiKey: string, date: string): Promise<string> {
+  const brand: Brand = '마잘남'
+  const { topic } = await pickTopic(brand, 'blog')
+  const photoImages = await fetchTodayPhotos(date, brand)
+  const result = await runMajalnamBlogPipeline({
+    apiKey,
+    topic,
+    date,
+    // 새 라이터는 사진을 "한 줄 설명"으로 받는다 — 대표님이 올린 사진은 설명이 없으니
+    // 장수만 알려주고 배치 위치만 표시하게 한다.
+    photos:
+      photoImages.length > 0
+        ? `대표님이 오늘 올린 사진 ${photoImages.length}장(설명 없음) — 사진 추천 지점 중 어울리는 곳에 "[📸 첨부 사진: 대표님 사진 N번]"으로 배치`
+        : undefined,
+  })
+  const { draft, reviews, keyword } = result
+  const reviewed = reviews.length > 0
+  const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
+  const passed = reviewed && avg >= PASS_THRESHOLD
+  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
+  const html = buildMajalnamBlogHtml(result)
+  const kwNote = `키워드 "${keyword.mainKeyword}" ${keyword.readerStage}`
+  const nowIso = new Date().toISOString()
+  const logId = makeId()
+
+  await supabaseInsert('work_log', {
+    id: logId,
+    agent: 'writer',
+    brand,
+    kind: '주간 스케줄 자동 기획',
+    status: 'done',
+    status_label: '완료',
+    started_at: nowIso,
+    ended_at: nowIso,
+    note: `${scoreNote} · ${kwNote} · 사진 ${photoImages.length}장`,
+    detail_html: html,
+  })
+  await supabaseInsert('approval_queue', {
+    id: makeId(),
+    agent: 'writer',
+    brand,
+    title: draft.title,
+    content_html: html,
+    passed,
+    score_label: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
+    created_at: nowIso,
+    status: 'pending',
+    source_work_log_id: logId,
+  })
+  await supabaseInsert('calendar_entries', {
+    id: makeId(),
+    date,
+    brand,
+    channel: 'blog',
+    title: draft.title,
+    status: passed ? 'planned' : 'open',
+    note: `${scoreNote} (주간 스케줄 자동 기획) · ${kwNote} · 발행 전 [경험 삽입] 채우기`,
+    content_html: html,
+    checklist: makeDefaultChecklist(true),
+    created_at: nowIso,
+    source_work_log_id: logId,
+  })
+  return `${brand} 블로그: ${scoreNote} · ${kwNote}`
+}
+
 async function generateBlogForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {
+  if (brand === '마잘남') return generateMajalnamBlog(apiKey, date)
   const { topic, brainFindings } = await pickTopic(brand, 'blog')
   const [photoImages, pastFeedback] = await Promise.all([
     fetchTodayPhotos(date, brand),

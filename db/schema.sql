@@ -106,6 +106,37 @@ create table if not exists brain_reports (
   synced_at timestamptz not null default now()
 );
 create index if not exists brain_reports_brand_idx on brain_reports (brand, created_at desc);
+-- content-brain 유튜브 작업물 소재(workAngles·rebuttals·references) — 재설계 지시서 8번(2026-10).
+alter table brain_reports add column if not exists extras jsonb not null default '{}';
+
+-- 마잘남 블로그 재설계(2026-10): 키워드 생성 이력 — 최근 4주 중복 제외·주간 독자 단계 비율에 쓴다.
+create table if not exists blog_keywords (
+  id text primary key,
+  date date not null,
+  brand text not null,
+  main_keyword text,
+  sub_keywords jsonb not null default '[]',
+  reader_stage text,
+  search_volume integer,
+  reason text,
+  created_at timestamptz not null default now()
+);
+create index if not exists blog_keywords_brand_date_idx on blog_keywords (brand, date desc);
+
+-- blog-brain 주간 리포트(1주 1행, id = 주차-브랜드). research_block이 블로그 라이터에 주입된다.
+-- rule_overrides 이력은 result(jsonb)에 주차별로 남는다("관찰" 근거는 2주 연속일 때만 반영).
+create table if not exists blog_brain_reports (
+  id text primary key,
+  week text not null,
+  brand text not null,
+  raw_metrics jsonb not null default '{}',
+  result jsonb not null default '{}',
+  research_block text,
+  created_at timestamptz not null default now()
+);
+create index if not exists blog_brain_reports_brand_idx on blog_brain_reports (brand, created_at desc);
+alter table blog_keywords enable row level security;
+alter table blog_brain_reports enable row level security;
 
 -- 레이더(GA4·아임웹 등 외부 성과 데이터)가 매일 수집한 스냅샷 — 모닝 브리핑이
 -- 참고하고, 대시보드가 방문자/유입경로/주문/매출 등을 표시할 때 이 테이블의

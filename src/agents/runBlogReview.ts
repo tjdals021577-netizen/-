@@ -2,6 +2,7 @@ import {
   callClaudeJson,
   callClaudeVisionJson,
   CLAUDE_MODEL_CHEAP,
+  type SystemPrompt,
   type VisionImageInput,
 } from '../lib/claude.js'
 import { estimateCostUsd, recordSpendUsd } from '../lib/budgetGuard.js'
@@ -220,13 +221,16 @@ export async function runBlogReviewsResilient(params: {
   apiKey: string
   roles: BlogRole[]
   draft: BlogDraft
+  // 브랜드 전용 채점표를 쓸 때(마잘남 재설계: majalnamBlogPrompts.buildMajalnamReviewSystem).
+  // 항목 id는 BLOG_RUBRICS와 같아야 한다(parseBlogReview가 그 id로 검증).
+  system?: SystemPrompt
 }): Promise<BlogReview[]> {
-  const { apiKey, draft } = params
+  const { apiKey, draft, system } = params
   try {
     const raw = await callClaudeJson({
       apiKey,
       model: CLAUDE_MODEL_CHEAP,
-      system: buildCombinedReviewSystemPrompt(),
+      system: system ?? buildCombinedReviewSystemPrompt(),
       user: buildReviewUserPrompt(draft),
       maxTokens: 4096,
       timeoutMs: 120_000,

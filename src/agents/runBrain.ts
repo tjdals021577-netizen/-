@@ -12,20 +12,31 @@ function parseBrainReport(raw: unknown): BrainReport {
     return { ...EMPTY_REPORT }
   }
   const rec = raw as Record<string, unknown>
-  const findings = Array.isArray(rec.findings)
-    ? rec.findings
-        .filter((f): f is Record<string, unknown> => typeof f === 'object' && f !== null)
-        .map((f) => ({
-          source: typeof f.source === 'string' ? f.source : '',
-          insight: typeof f.insight === 'string' ? f.insight : '',
-        }))
-    : []
+  const objs = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null) : []
+  const s = (v: unknown): string => (typeof v === 'string' ? v : '')
+  const findings = objs(rec.findings).map((f) => ({ source: s(f.source), insight: s(f.insight) }))
   return {
     findings,
-    summary: typeof rec.summary === 'string' ? rec.summary : '',
+    summary: s(rec.summary),
     recommendations: Array.isArray(rec.recommendations)
       ? rec.recommendations.filter((r): r is string => typeof r === 'string')
       : [],
+    // content-brain 유튜브 작업물 소재(지시서 8번) — 비어 있는 항목은 버린다.
+    workAngles: objs(rec.workAngles)
+      .map((w) => ({ problem: s(w.problem), showInVideo: s(w.showInVideo) }))
+      .filter((w) => w.problem.trim() !== ''),
+    rebuttals: objs(rec.rebuttals)
+      .map((r) => ({ myth: s(r.myth), counterDirection: s(r.counterDirection) }))
+      .filter((r) => r.myth.trim() !== ''),
+    references: objs(rec.references)
+      .map((r) => ({
+        titleType: s(r.titleType),
+        thumbnailPattern: s(r.thumbnailPattern),
+        hookPattern: s(r.hookPattern),
+        source: s(r.source),
+      }))
+      .filter((r) => r.titleType.trim() !== '' || r.hookPattern.trim() !== ''),
   }
 }
 
@@ -53,10 +64,12 @@ export async function researchMarketResilient(params: {
   context: string
   focus?: string
   onUsage?: UsageCallback
+  // 웹서치 횟수 — 기본 5(팀채팅·수동 리서치). 주간 content-brain 크론은 8(지시서 8번).
+  maxSearches?: number
 }): Promise<ResilientResearch> {
-  const { apiKey, topic, context, focus, onUsage } = params
-  const system = buildBrainSystemPrompt()
-  const user = buildBrainUserPrompt({ topic, context, focus })
+  const { apiKey, topic, context, focus, onUsage, maxSearches = 5 } = params
+  const system = buildBrainSystemPrompt(maxSearches)
+  const user = buildBrainUserPrompt({ topic, context, focus, maxSearches })
   const track: UsageCallback = (usage) => {
     onUsage?.(usage)
     recordSpendUsd(estimateCostUsd(usage))
@@ -66,18 +79,18 @@ export async function researchMarketResilient(params: {
   // ⚠️ 시간 예산: 크론(brain.ts)에 maxDuration=800(Fluid)을 줬고, 스트리밍이라
   //   장시간 호출도 연결이 안 끊긴다. 두 브랜드 병렬이라 벽시계 = 브랜드 1개
   //   시간이므로, 웹서치에 560초까지 넉넉히 준다.
-  // ⚠️ maxSearches: 프롬프트가 "중요 주제 3~4개, 총 5회 이내"로 검색을 스스로
-  //   제한하게 했고(효율), 그 위에 하드 상한 6을 둔다 — 모델은 ~5회에서 멈추므로
-  //   "호출 횟수 제한(Server tool use limit exceeded)" 에러에 닿지 않는다(헤드룸 1).
-  //   maxTokens는 3000 — 프롬프트가 findings 5개·각 2문장으로 압축을 지시하므로
-  //   잘림 없이 충분하고, 가장 비싼 출력 토큰을 아낀다.
+  // ⚠️ maxSearches: 프롬프트가 "총 N회 이내"로 검색을 스스로 제한하게 했고(효율),
+  //   그 위에 하드 상한 N+1을 둔다 — 모델은 ~N회에서 멈추므로 "호출 횟수 제한
+  //   (Server tool use limit exceeded)" 에러에 닿지 않는다(헤드룸 1).
+  //   maxTokens는 4000 — findings 5개 + 유튜브 소재(작업 각도·반박·레퍼런스 각 3개)까지
+  //   잘림 없이 담기에 충분하고, 그 이상은 비싼 출력 토큰 낭비.
   try {
     const raw = await callClaudeJsonWithWebSearch({
       apiKey,
       system,
       user,
-      maxSearches: 6,
-      maxTokens: 3000,
+      maxSearches: maxSearches + 1,
+      maxTokens: 4000,
       timeoutMs: 560_000,
       onUsage: track,
     })

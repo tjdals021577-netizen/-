@@ -26,6 +26,8 @@ import { makeDefaultChecklist } from '../src/types/calendar.js'
 import { kstNow, kstDateKey } from '../src/lib/weeklySchedule.js'
 import { supabaseSelect, supabaseInsert } from './_lib/supabaseAdmin.js'
 import { sendJson, sendText } from './_lib/cronHandler.js'
+import { fetchLatestBrainReport, formatBrainFindings, insertBrainReport } from './_lib/blogStore.js'
+import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from './_lib/majalnamBlogPipeline.js'
 
 // 웹서치·긴 채점까지 안전하게 끝내기 위해 Vercel 상한(300초)으로 명시한다.
 export const maxDuration = 300
@@ -67,36 +69,9 @@ async function getTodaySpendUsd(): Promise<number> {
   return rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0)
 }
 
-// ── 브레인 리서치·피드백·후킹 참고자료 (content-schedule 크론과 동일 패턴) ──
-interface BrainReportRow {
-  topic: string
-  summary: string
-  recommendations: string[]
-  findings: { source: string; insight: string }[]
-}
-
-function formatBrainFindings(report: BrainReportRow | undefined): string | undefined {
-  if (!report) return undefined
-  const findingsText = (report.findings ?? [])
-    .slice(0, 8)
-    .map((f) => `- [${f.source}] ${f.insight.slice(0, 240)}`)
-    .join('\n')
-  const recoText = (report.recommendations ?? []).slice(0, 5).join(' / ')
-  return `주제: ${report.topic}\n요약: ${report.summary.slice(0, 400)}\n${findingsText}${
-    recoText ? `\n추천 액션: ${recoText}` : ''
-  }`
-}
-
+// ── 브레인 리서치·피드백·후킹 참고자료 (content-schedule 크론과 동일 — 공용 헬퍼) ──
 async function fetchBrainFindings(brand: Brand): Promise<string | undefined> {
-  try {
-    const reports = await supabaseSelect<BrainReportRow>(
-      'brain_reports',
-      `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=1&select=topic,summary,recommendations,findings`,
-    )
-    return formatBrainFindings(reports[0])
-  } catch {
-    return undefined
-  }
+  return formatBrainFindings(await fetchLatestBrainReport(brand))
 }
 
 interface ContentFeedbackRow {
@@ -237,8 +212,42 @@ async function finishContentJob(opts: {
 }
 
 // ── 에이전트별 실행 ──
+// 마잘남 블로그는 재설계 파이프라인(키워드 생성 → 새 라이터 → 채점) — 06:00 크론과 동일.
+// 팀채팅 지시문은 "주제", 재수정이면 직전 글 + 지시문을 넘긴다.
+async function runMajalnamWriter(body: DispatchBody, apiKey: string, startedAt: string, date: string): Promise<string> {
+  const { instruction, previousOutput } = body
+  const result = await runMajalnamBlogPipeline({
+    apiKey,
+    topic: instruction,
+    date,
+    previousDraft: previousOutput ? { title: previousOutput.title, body: previousOutput.content } : undefined,
+    feedback: previousOutput ? instruction : undefined,
+  })
+  const { draft, reviews, keyword } = result
+  const reviewed = reviews.length > 0
+  const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
+  const passed = reviewed && avg >= PASS_THRESHOLD
+  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
+  await finishContentJob({
+    logId: body.logId,
+    agent: 'writer',
+    brand: '마잘남',
+    channel: 'blog',
+    kind: '수동 지시(팀 채팅)',
+    title: draft.title,
+    contentHtml: buildMajalnamBlogHtml(result),
+    passed,
+    scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
+    note: `${scoreNote} · 키워드 "${keyword.mainKeyword}" ${keyword.readerStage}`,
+    startedAt,
+    date,
+  })
+  return scoreNote
+}
+
 async function runWriter(apiKey: string, body: DispatchBody, startedAt: string, date: string): Promise<string> {
   const { brand, instruction, previousOutput } = body
+  if (brand === '마잘남') return runMajalnamWriter(body, apiKey, startedAt, date)
   const [marketFindings, pastFeedback] = await Promise.all([
     fetchBrainFindings(brand),
     fetchRecentFeedback(brand, 'blog'),
@@ -383,17 +392,21 @@ async function runBrainJob(apiKey: string, body: DispatchBody, startedAt: string
     focus: BRAND_RESEARCH_FOCUS[brand],
   })
   const report = research.report
-  const hasFindings = report.findings.length > 0
+  // 유튜브 작업물 소재(작업 각도·반박·레퍼런스)만 나와도 의미 있는 결과로 본다.
+  const hasFindings =
+    report.findings.length > 0 ||
+    (report.workAngles?.length ?? 0) > 0 ||
+    (report.rebuttals?.length ?? 0) > 0 ||
+    (report.references?.length ?? 0) > 0
   // 결과가 있을 때만 브레인 리포트로 저장한다(빈 리포트로 직전 자료를 덮지 않게).
   if (research.ok && hasFindings) {
-    await supabaseInsert('brain_reports', {
-      id: makeId(),
+    await insertBrainReport({
       brand,
       topic: instruction,
       findings: report.findings,
       summary: report.summary,
       recommendations: report.recommendations,
-      created_at: new Date().toISOString(),
+      extras: { workAngles: report.workAngles, rebuttals: report.rebuttals, references: report.references },
     })
   }
   const detailHtml = hasFindings
