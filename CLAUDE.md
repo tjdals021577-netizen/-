@@ -87,15 +87,18 @@ npm run lint                             # 4) oxlint
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
 - **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `agency` 07:30,
-  `radar` 07:50, `brain`(월) 09:00, `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
+  `radar` 07:50, `brain` 매일 09:00(주 1회 분량, 아래 참고), `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
   - 2026-10 대표님 비용 절감으로 **스케줄에서 뺀 크론**(파일은 그대로 — vercel.json에 한 줄 추가하면 다시 켜짐):
     - `thread-daily`(07:40, 스레드 5포맷 자동): `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }`
     - `morning`(08:00, 모닝 브리핑 + 카톡 발송): `{ "path": "/api/cron/morning", "schedule": "0 23 * * *" }`
   - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일. 업메리 블로그 자동 OFF.
     **유튜브는 일시정지** — `YOUTUBE_ACTIVE = false`면 월·수·금 유튜브 기획과 content-brain(유튜브 소재 리서치)이
     함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
-  - `brain`(월) = 한 함수에서 **blog-brain + content-brain** 병렬(함수 한도 때문에 분리 안 함), 둘 다 마잘남만
-    (content-brain은 `YOUTUBE_ACTIVE`일 때만).
+  - `brain` = 한 함수에서 **blog-brain + content-brain** 병렬(함수 한도 때문에 분리 안 함), 둘 다 마잘남만
+    (content-brain은 `YOUTUBE_ACTIVE`일 때만). **매일 깨어나되 이번 주 분석이 없을 때만 일한다**
+    (월요일 실패 시 다음 날 자동 재시도, 이미 있으면 Claude 호출 0). 테이블 확인 불가(SQL 전)면 월요일만.
+    blog-brain 단계별 폴백: 웹서치 재시도(범위 축소) → 지난주 상위글 URL 재측정 → 분석 3회(마지막은 입력 축소),
+    전부 760초 데드라인 안에서.
 - **데이터 흐름**: 크론이 **Supabase**에 쓰고, 브라우저는 **localStorage**를 읽는다 →
   화면 진입 시 `remoteSync`가 당겨온다(그래서 방금 크론 결과가 안 보이면 새로고침/탭 재진입).
 

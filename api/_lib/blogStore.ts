@@ -102,6 +102,8 @@ export interface BlogBrainRow {
   week: string
   result: BlogBrainResult | null
   research_block: string | null
+  // 수집 원자료 — 이번 주 수집이 전부 실패하면 지난주 상위글 URL을 다시 측정하는 데 쓴다.
+  raw_metrics?: { posts?: { keyword: string; rank: number; title: string; url: string }[] } | null
 }
 
 // 가장 최근 리포트(글쓰기용) — excludeWeek를 주면 그 주를 뺀 최신(=지난주 리포트용).
@@ -109,11 +111,43 @@ export async function getLatestBlogBrain(brand: Brand, excludeWeek?: string): Pr
   try {
     const rows = await supabaseSelect<BlogBrainRow>(
       'blog_brain_reports',
-      `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=3&select=week,result,research_block`,
+      `brand=eq.${encodeURIComponent(brand)}&order=created_at.desc&limit=3&select=week,result,research_block,raw_metrics`,
     )
     return rows.find((r) => !excludeWeek || r.week !== excludeWeek)
   } catch {
     return undefined
+  }
+}
+
+// 이번 주 분석이 이미 끝났는지 — 브레인 크론은 매일 09:00에 깨어나서 이번 주 것이
+// 없을 때만 일한다(월요일에 실패해도 화~일에 자동 재시도, 이미 있으면 비용 0으로 건너뜀).
+// 'unknown' = 테이블이 아직 없어(SQL 실행 전) 확인 불가 → 호출부가 월요일에만 돌린다
+// (확인이 안 되는데 매일 돌리면 비용만 7배가 되므로).
+export type WeekStatus = 'done' | 'missing' | 'unknown'
+
+export async function blogBrainWeekStatus(brand: Brand, week: string): Promise<WeekStatus> {
+  try {
+    const rows = await supabaseSelect<{ id: string }>(
+      'blog_brain_reports',
+      `brand=eq.${encodeURIComponent(brand)}&week=eq.${encodeURIComponent(week)}&select=id&limit=1`,
+    )
+    return rows.length > 0 ? 'done' : 'missing'
+  } catch {
+    return 'unknown'
+  }
+}
+
+// content-brain(유튜브 소재)도 같은 방식 — 이번 주 월요일 이후 자동 리서치 행이 있으면 끝난 것.
+export async function contentBrainWeekStatus(brand: Brand): Promise<WeekStatus> {
+  try {
+    const rows = await supabaseSelect<{ id: string }>(
+      'brain_reports',
+      `brand=eq.${encodeURIComponent(brand)}&created_at=gte.${kstMondayKey()}T00:00:00%2B09:00` +
+        `&topic=like.${encodeURIComponent('이번 주*')}&select=id&limit=1`,
+    )
+    return rows.length > 0 ? 'done' : 'missing'
+  } catch {
+    return 'unknown'
   }
 }
 

@@ -264,9 +264,10 @@ async function webSearchCollect(params: {
   includePosts: boolean
   todayKst: string
   maxSearches: number
+  timeoutMs: number
   onUsage?: UsageCallback
 }): Promise<CollectorResult> {
-  const { apiKey, keywords, includePosts, todayKst, maxSearches, onUsage } = params
+  const { apiKey, keywords, includePosts, todayKst, maxSearches, timeoutMs, onUsage } = params
   const postPart = includePosts
     ? `[수집 1 — 상위노출 글]
 아래 키워드 각각으로 네이버 블로그(blog.naver.com)에서 상위에 노출되는 글을 찾아, 키워드당 최대 5개까지 제목과 URL을 적는다.
@@ -292,7 +293,7 @@ ${postPart}[수집 ${includePosts ? '2' : '1'} — 공식 공지]
     user: `오늘은 ${todayKst}입니다. 위 지시대로 수집해 JSON으로만 답하세요.`,
     maxSearches,
     maxTokens: 3000,
-    timeoutMs: 300_000,
+    timeoutMs,
     // 사실 수집만 하는 단계 — 얕게(비용 절감 A).
     effort: 'low',
     onUsage,
@@ -319,20 +320,29 @@ ${postPart}[수집 ${includePosts ? '2' : '1'} — 공식 공지]
   return { posts, notices }
 }
 
-// 동시에 너무 많이 긁지 않게(네이버 차단 방지) 4개씩.
-async function mapPool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+// 동시에 너무 많이 긁지 않게(네이버 차단 방지) 4개씩. stopAt이 지나면 남은 항목은
+// 측정하지 않고 skip 값으로 채운다 — 측정이 길어져 크론 시간 한도에 걸리지 않게.
+async function mapPool<T, R>(
+  items: T[],
+  size: number,
+  fn: (item: T) => Promise<R>,
+  skip: (item: T) => R,
+  stopAt: number,
+): Promise<R[]> {
   const out: R[] = new Array(items.length)
   let next = 0
   await Promise.all(
     Array.from({ length: Math.min(size, items.length) }, async () => {
       while (next < items.length) {
         const i = next++
-        out[i] = await fn(items[i])
+        out[i] = Date.now() < stopAt ? await fn(items[i]) : skip(items[i])
       }
     }),
   )
   return out
 }
+
+type RawPost = { keyword: string; rank: number; title: string; url: string }
 
 export interface BlogBrainCollection {
   mode: 'A' | 'B'
@@ -341,53 +351,101 @@ export interface BlogBrainCollection {
   note: string
 }
 
+// "실패해도 결국 데이터를 갖고 끝나게" 단계별로 낮춰 간다(대표님: 실패하지 말 것):
+//   ① 정상 수집(A: 검색API / B: 웹서치 4키워드·6회)
+//   ② B가 실패·0건이면 범위를 줄여(2키워드·4회) 한 번 더
+//   ③ 그래도 상위글이 0건이면 지난주 상위글 URL 목록을 "다시 측정"(순위는 지난주 기준이지만
+//      본문 수치는 오늘 값) — 첫 주가 아니면 분석이 빈손으로 끝나지 않는다.
+// 모든 단계는 deadline(크론 시간 한도 전)을 보고, 시간이 모자라면 다음 시도를 건너뛴다.
 export async function collectBlogBrainData(params: {
   apiKey: string
   keywords: string[]
   todayKst: string
   onUsage?: UsageCallback
+  // 이 시각(ms)까지 수집·측정을 끝내야 한다(그 뒤엔 분석 시간).
+  deadline: number
+  fallbackPosts?: RawPost[]
 }): Promise<BlogBrainCollection> {
-  const { apiKey, keywords, todayKst, onUsage } = params
+  const { apiKey, keywords, todayKst, onUsage, deadline, fallbackPosts } = params
   const notes: string[] = []
-  let rawPosts: { keyword: string; rank: number; title: string; url: string }[] = []
+  let rawPosts: RawPost[] = []
   let notices: OfficialNotice[] = []
   const mode: 'A' | 'B' = hasNaverSearchKeys() ? 'A' : 'B'
+  // 측정에 최소 60초는 남겨두고 수집한다.
+  const collectUntil = deadline - 60_000
+  const timeLeft = () => collectUntil - Date.now()
 
   if (mode === 'A') {
-    // A: 키워드 6개 × 상위 7개(측정 부담·분석 토큰을 고려한 상한).
+    // A: 키워드 6개 × 상위 7개(측정 부담·분석 토큰을 고려한 상한). 키워드별 독립이라 일부 실패해도 나머지 사용.
     const targets = keywords.slice(0, 6)
     const results = await Promise.all(
       targets.map(async (kw) => {
-        try {
-          return (await naverBlogSearch(kw, 7)).map((it, i) => ({ keyword: kw, rank: i + 1, title: it.title, url: it.url }))
-        } catch (err) {
-          notes.push(`검색API 실패(${kw}): ${err instanceof Error ? err.message : String(err)}`)
-          return []
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            return (await naverBlogSearch(kw, 7)).map((it, i) => ({ keyword: kw, rank: i + 1, title: it.title, url: it.url }))
+          } catch (err) {
+            if (attempt === 1) notes.push(`검색API 실패(${kw}): ${err instanceof Error ? err.message : String(err)}`)
+          }
         }
+        return []
       }),
     )
     rawPosts = results.flat()
-    try {
-      notices = (await webSearchCollect({ apiKey, keywords: [], includePosts: false, todayKst, maxSearches: 2, onUsage })).notices
-    } catch (err) {
-      notes.push(`공지 수집 실패: ${err instanceof Error ? err.message : String(err)}`)
+    if (timeLeft() > 60_000) {
+      try {
+        notices = (
+          await webSearchCollect({
+            apiKey,
+            keywords: [],
+            includePosts: false,
+            todayKst,
+            maxSearches: 2,
+            timeoutMs: Math.min(150_000, timeLeft()),
+            onUsage,
+          })
+        ).notices
+      } catch (err) {
+        notes.push(`공지 수집 실패: ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
   } else {
-    // B: 웹서치로 키워드 4개 상위글 + 공지를 한 번에(검색 6회 이내).
-    try {
-      const collected = await webSearchCollect({
-        apiKey,
-        keywords: keywords.slice(0, 4),
-        includePosts: true,
-        todayKst,
-        maxSearches: 6,
-        onUsage,
-      })
-      rawPosts = collected.posts
-      notices = collected.notices
-    } catch (err) {
-      notes.push(`웹서치 수집 실패: ${err instanceof Error ? err.message : String(err)}`)
+    // B: 웹서치로 상위글 + 공지를 한 번에. 실패·0건이면 범위를 줄여 한 번 더.
+    const tries = [
+      { kws: keywords.slice(0, 4), searches: 6, timeout: 240_000 },
+      { kws: keywords.slice(0, 2), searches: 4, timeout: 180_000 },
+    ]
+    for (const [i, t] of tries.entries()) {
+      if (timeLeft() < 60_000) {
+        notes.push('수집 시간 부족 — 재시도 생략')
+        break
+      }
+      try {
+        const collected = await webSearchCollect({
+          apiKey,
+          keywords: t.kws,
+          includePosts: true,
+          todayKst,
+          maxSearches: t.searches,
+          timeoutMs: Math.min(t.timeout, timeLeft()),
+          onUsage,
+        })
+        if (collected.notices.length > 0) notices = collected.notices
+        rawPosts = collected.posts
+        if (rawPosts.length > 0) {
+          if (i > 0) notes.push('웹서치 1차 실패 → 범위 줄여 재시도 성공')
+          break
+        }
+        notes.push(`웹서치 ${i + 1}차: 상위글 0건`)
+      } catch (err) {
+        notes.push(`웹서치 ${i + 1}차 실패: ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
+  }
+
+  // ③ 이번 주 상위글을 하나도 못 모았으면 지난주 상위글을 다시 측정한다.
+  if (rawPosts.length === 0 && fallbackPosts?.length) {
+    rawPosts = fallbackPosts
+    notes.push(`이번 주 수집 실패 → 지난주 상위글 ${fallbackPosts.length}개 재측정`)
   }
 
   // 중복 URL 제거 후 최대 30개 실측.
@@ -401,22 +459,27 @@ export async function collectBlogBrainData(params: {
     return true
   }).slice(0, 30)
 
-  const posts = await mapPool(unique, 4, async (p): Promise<TopPostData> => {
-    const m = await measureNaverPost(p.url).catch(() => null)
-    return {
-      keyword: p.keyword,
-      rank: p.rank,
-      title: m?.title || p.title,
-      url: p.url,
-      chars: m?.chars ?? null,
-      photos: m?.photos ?? null,
-      headingCount: m?.headingCount ?? null,
-      headings: m?.headings ?? [],
-      intro: m?.intro ?? [],
-      hasFaq: m?.hasFaq ?? null,
-      ctaSentence: m?.ctaSentence ?? '',
-    }
+  const toPost = (p: RawPost, m: Awaited<ReturnType<typeof measureNaverPost>>): TopPostData => ({
+    keyword: p.keyword,
+    rank: p.rank,
+    title: m?.title || p.title,
+    url: p.url,
+    chars: m?.chars ?? null,
+    photos: m?.photos ?? null,
+    headingCount: m?.headingCount ?? null,
+    headings: m?.headings ?? [],
+    intro: m?.intro ?? [],
+    hasFaq: m?.hasFaq ?? null,
+    ctaSentence: m?.ctaSentence ?? '',
   })
+  // 측정은 deadline까지만 — 넘으면 남은 글은 "측정 실패"로 두고 분석은 계속(제목·순위는 있음).
+  const posts = await mapPool(
+    unique,
+    4,
+    async (p) => toPost(p, await measureNaverPost(p.url).catch(() => null)),
+    (p) => toPost(p, null),
+    deadline,
+  )
   const measuredCount = posts.filter((p) => p.chars !== null).length
   notes.unshift(`모드 ${mode} · 상위글 ${posts.length}개(본문 측정 성공 ${measuredCount}) · 공지 ${notices.length}건`)
   return { mode, posts, notices, note: notes.join(' / ') }

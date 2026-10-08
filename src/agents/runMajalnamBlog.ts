@@ -198,24 +198,35 @@ export async function analyzeBlogBrain(params: {
   posts: TopPostData[]
   lastWeekResult?: string
   onUsage?: UsageCallback
+  // 이 시각(ms)까지 끝내야 한다(크론 시간 한도). 남은 시간이 1분 미만이면 다음 시도를 안 한다.
+  deadline?: number
 }): Promise<BlogBrainResult | undefined> {
-  const { apiKey, notices, posts, lastWeekResult, onUsage } = params
-  const user = buildBlogBrainUser({ notices, posts, lastWeekResult })
-  for (const strict of [false, true]) {
+  const { apiKey, notices, posts, lastWeekResult, onUsage, deadline = Date.now() + 540_000 } = params
+  const strict = '\n\n[매우 중요] 지정된 스키마의 JSON 객체 하나만 출력하라. 설명·코드블록 금지.'
+  // 1차 일반 → 2차 "JSON만" 강한 지시 → 3차 입력을 줄여(상위글 12개, 지난주 리포트 제외) 한 번 더.
+  // 입력이 커서 응답이 잘리거나 시간이 걸린 경우에도 3차에서 끝까지 가도록.
+  const attempts = [
+    buildBlogBrainUser({ notices, posts, lastWeekResult }),
+    buildBlogBrainUser({ notices, posts, lastWeekResult }) + strict,
+    buildBlogBrainUser({ notices, posts: posts.slice(0, 12) }) + strict,
+  ]
+  for (const user of attempts) {
+    const left = deadline - Date.now()
+    if (left < 60_000) break
     try {
       const raw = await callClaudeJson({
         apiKey,
         system: BLOG_BRAIN_SYSTEM,
-        user: strict ? `${user}\n\n[매우 중요] 지정된 스키마의 JSON 객체 하나만 출력하라. 설명·코드블록 금지.` : user,
+        user,
         maxTokens: 4096,
-        timeoutMs: 180_000,
+        timeoutMs: Math.min(150_000, left - 10_000),
         // 상위글 패턴 분석은 "보통" 깊이(비용 절감 A).
         effort: 'medium',
         onUsage: track(onUsage),
       })
       return parseBlogBrain(raw)
     } catch {
-      // 다음 시도 → 그래도 실패하면 undefined.
+      // 다음 시도 → 전부 실패하면 undefined(호출부가 지난주 유지 + 다음 날 재시도).
     }
   }
   return undefined

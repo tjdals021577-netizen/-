@@ -9,6 +9,8 @@ import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, haltIfPaused, sendText, sendJson } from '../_lib/cronHandler.js'
 import { collectBlogBrainData } from '../_lib/naverBlogData.js'
 import {
+  blogBrainWeekStatus,
+  contentBrainWeekStatus,
   getLatestBlogBrain,
   getRecentMainKeywords,
   insertBrainReport,
@@ -17,17 +19,27 @@ import {
 } from '../_lib/blogStore.js'
 
 // 웹서치를 포함한 리서치는 오래 걸린다 — 스트리밍 호출 + Fluid compute 최대치 800초.
-// blog-brain·content-brain을 병렬로 돌리므로 벽시계는 더 긴 쪽 하나(content-brain
-// 웹서치 최대 560초 + 폴백 / blog-brain 수집 300초 + 측정 + 분석 180초)라 800초 안에 끝난다.
+// blog-brain은 DEADLINE_MS(760초) 안에서 남은 시간을 보며 재시도한다(수집 → 측정 → 분석).
+// content-brain은 웹서치 최대 560초 + 폴백 60초. 둘은 병렬이라 800초 안에 끝난다.
 export const maxDuration = 800
+const DEADLINE_MS = 760_000
 
 // 재설계 지시서(2026-10): 브레인을 2개로 분리하되, Vercel Hobby 함수 12개 한도 때문에
 // 새 함수를 만들지 않고 이 크론 하나에서 둘 다 돌린다(대표님 결정: "1번 OK, 문제없게만").
 //   · blog-brain   — 네이버 블로그 상위노출 분석 전용. 마잘남만(대표님 결정).
 //   · content-brain — 유튜브·스레드 소재 전용(블로그 로직 조사 제거). 마잘남만 — 업메리는
 //                     블로그만 운영해 유튜브·스레드 소재가 필요 없다.
-// 매주 월요일 09:00 KST(월 00:00 UTC) — vercel.json.
+//
+// ★ 실패해도 그 주 안에 끝나게(대표님: "실패하지 말라고 해야지") — 이 크론은 "매일" 09:00 KST
+// (00:00 UTC)에 깨어나서, 이번 주 분석이 아직 없을 때만 일한다. 월요일에 실패하면 화요일,
+// 화요일도 실패하면 수요일… 성공할 때까지 매일 다시 시도하고, 이미 있으면 확인만 하고
+// 끝낸다(Claude 호출 0 = 비용 0). 테이블이 아직 없어(SQL 실행 전) 확인이 안 되면 월요일에만
+// 돈다(확인 없이 매일 돌면 비용만 7배).
 const BLOG_BRAIN_BRANDS: Brand[] = ['마잘남']
+
+function isKstMonday(): boolean {
+  return kstNow().getUTCDay() === 1
+}
 // content-brain은 유튜브 소재 전용이라 유튜브 일시정지(YOUTUBE_ACTIVE=false) 동안은 돌지 않는다.
 const CONTENT_BRAIN_BRANDS: Brand[] = YOUTUBE_ACTIVE ? ['마잘남'] : []
 
@@ -61,43 +73,54 @@ async function logBrain(row: {
 }
 
 // ── blog-brain: 수집 코드 → 3번 분석 → research_block 저장 ──
-async function runBlogBrain(apiKey: string, brand: Brand): Promise<string> {
+async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Promise<string> {
   let costUsd = 0
   const onUsage = (usage: { input_tokens: number; output_tokens: number }) => {
     costUsd += estimateCostUsd(usage)
   }
   const week = kstIsoWeekKey()
+  const deadline = startedAt + DEADLINE_MS
   try {
+    // 이번 주 것이 이미 있으면 확인만 하고 끝(비용 0). 확인 불가(테이블 없음)면 월요일에만.
+    const status = await blogBrainWeekStatus(brand, week)
+    if (status === 'done') return `${brand} blog-brain: ${week} 이미 완료 — 건너뜀`
+    if (status === 'unknown' && !isKstMonday()) return `${brand} blog-brain: 저장 테이블 확인 불가 — 월요일에만 실행`
+    const retryNote = isKstMonday() ? '' : ' · 월요일 미완료분 자동 재시도'
+
     // 타깃 키워드 = 최근 4주 메인 키워드 + 고정 핵심 키워드(중복 제거, 최근 것 우선).
-    const recent = await getRecentMainKeywords(brand)
+    const [recent, lastWeek] = await Promise.all([getRecentMainKeywords(brand), getLatestBlogBrain(brand, week)])
     const keywords = [...new Set([...recent, ...MAJALNAM_CORE_KEYWORDS])]
     const collected = await collectBlogBrainData({
       apiKey,
       keywords,
       todayKst: kstDateKey(kstNow()),
       onUsage,
+      // 분석에 최소 3분을 남기고 수집·측정을 끝낸다.
+      deadline: deadline - 180_000,
+      fallbackPosts: lastWeek?.raw_metrics?.posts?.map((p) => ({ keyword: p.keyword, rank: p.rank, title: p.title, url: p.url })),
     })
 
-    // 수집 실패(상위글·공지 둘 다 없음) → 분석하지 않고 지난주 research_block 유지(지시서 7번).
+    // 수집 실패(상위글·공지 둘 다 없음) → 분석하지 않고 지난주 research_block 유지(지시서 7번),
+    // 저장을 안 했으니 내일 09:00에 자동으로 다시 시도한다.
     if (collected.posts.length === 0 && collected.notices.length === 0) {
       await logBrain({
         brand,
         kind: 'blog-brain 주간 분석(자동)',
         ok: false,
         costUsd,
-        note: `수집 실패 — 지난주 리서치 유지 · ${collected.note}`,
+        note: `수집 실패 — 지난주 리서치 유지, 내일 자동 재시도 · ${collected.note}${retryNote}`,
         detailHtml: collected.note,
       })
-      return `${brand} blog-brain: 수집 실패(지난주 유지)`
+      return `${brand} blog-brain: 수집 실패(지난주 유지, 내일 재시도)`
     }
 
-    const lastWeek = await getLatestBlogBrain(brand, week)
     const result = await analyzeBlogBrain({
       apiKey,
       notices: collected.notices,
       posts: collected.posts,
       lastWeekResult: lastWeek?.result ? JSON.stringify(lastWeek.result) : undefined,
       onUsage,
+      deadline,
     })
     if (!result) {
       await logBrain({
@@ -105,10 +128,10 @@ async function runBlogBrain(apiKey: string, brand: Brand): Promise<string> {
         kind: 'blog-brain 주간 분석(자동)',
         ok: false,
         costUsd,
-        note: `분석 실패 — 지난주 리서치 유지 · ${collected.note}`,
+        note: `분석 실패 — 지난주 리서치 유지, 내일 자동 재시도 · ${collected.note}${retryNote}`,
         detailHtml: collected.note,
       })
-      return `${brand} blog-brain: 분석 실패(지난주 유지)`
+      return `${brand} blog-brain: 분석 실패(지난주 유지, 내일 재시도)`
     }
 
     const saved = await saveBlogBrainReport({
@@ -143,6 +166,10 @@ async function runBlogBrain(apiKey: string, brand: Brand): Promise<string> {
 // ── content-brain: 유튜브·스레드 소재(작업 각도·반박·레퍼런스) ──
 async function runContentBrain(apiKey: string, brand: Brand): Promise<string> {
   const topic = `이번 주 ${brand} 유튜브·스레드 소재(작업물 공개형)`
+  // 주 1회만 — 이번 주(월요일 이후) 자동 리서치가 이미 있으면 건너뛴다(매일 깨어나도 비용 0).
+  const status = await contentBrainWeekStatus(brand)
+  if (status === 'done') return `${brand} content-brain: 이번 주 이미 완료 — 건너뜀`
+  if (status === 'unknown' && !isKstMonday()) return `${brand} content-brain: 확인 불가 — 월요일에만 실행`
   try {
     let costUsd = 0
     // researchMarketResilient는 예외를 던지지 않는다(웹서치 실패 → 지식 기반 → 빈 리포트).
@@ -212,8 +239,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
   // 둘은 서로 의존이 없어 병렬(순차면 크론 시간 한도를 넘긴다).
+  const startedAt = Date.now()
   const results = await Promise.all([
-    ...BLOG_BRAIN_BRANDS.map((b) => runBlogBrain(apiKey, b)),
+    ...BLOG_BRAIN_BRANDS.map((b) => runBlogBrain(apiKey, b, startedAt)),
     ...CONTENT_BRAIN_BRANDS.map((b) => runContentBrain(apiKey, b)),
   ])
   sendJson(res, 200, { ok: true, results })
