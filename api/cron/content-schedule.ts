@@ -23,7 +23,7 @@ import { makeDefaultChecklist } from '../../src/types/calendar.js'
 import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
 // 브레인 리포트 조회·포맷은 공용 헬퍼로(extras 컬럼 유무 방어 + 유튜브 작업물 소재 포함).
-import { fetchLatestBrainReport, formatBrainFindings } from '../_lib/blogStore.js'
+import { fetchLatestBrainReport, formatBrainFindings, type BrainReportRow } from '../_lib/blogStore.js'
 import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from '../_lib/majalnamBlogPipeline.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
@@ -70,6 +70,34 @@ const UPMERY_BLOG_TOPICS = [
   '타로는 잘 보는데 돈은 못 버는 사람들의 공통점 (문제 정의)',
 ]
 
+// 마잘남 유튜브(월·수·금) 유형 로테이션 — 재설계 지시서 8번 비율(작업 과정 공개 60 /
+// 비포·애프터 20 / 반박형 20)을 정확히 맞추려고 5편 주기로 돈다(5편 중 작업 3·비포애프터 1·반박 1).
+// 주제는 content-brain이 매주 모은 소재(작업 각도·반박 소재)에서 그 유형에 맞는 걸 꺼내 쓴다.
+const MAJALNAM_YT_CYCLE = ['작업 과정 공개', '작업 과정 공개', '비포·애프터', '작업 과정 공개', '반박형'] as const
+
+function pickMajalnamYoutubeTopic(report: BrainReportRow | undefined): string {
+  const now = kstNow()
+  // 월=0·수=1·금=2(수동 실행 등 그 외 요일은 0). 1970-01-01은 목요일 → +3으로 월요일 기준 주차.
+  const weekIdx = Math.floor((Math.floor(now.getTime() / 86_400_000) + 3) / 7)
+  const slotInWeek = ({ 1: 0, 3: 1, 5: 2 } as Record<number, number>)[now.getUTCDay()] ?? 0
+  const slot = weekIdx * 3 + slotInWeek
+  const type = MAJALNAM_YT_CYCLE[slot % MAJALNAM_YT_CYCLE.length]
+  const ex = report?.extras ?? {}
+  if (type === '작업 과정 공개' && ex.workAngles?.length) {
+    const w = ex.workAngles[slot % ex.workAngles.length]
+    return `[이번 영상 유형: ${type}] ${w.problem} — 영상에서 보여줄 수정 포인트: ${w.showInVideo}`
+  }
+  if (type === '반박형' && ex.rebuttals?.length) {
+    const r = ex.rebuttals[slot % ex.rebuttals.length]
+    return `[이번 영상 유형: ${type}] "${r.myth}" — 반박 방향: ${r.counterDirection}`
+  }
+  if (type === '비포·애프터') {
+    return `[이번 영상 유형: ${type}] 대행 전후 계정·글 비교 — 팔로워가 아니라 문의 수·매출 변화로 보여주기`
+  }
+  // 브레인 소재가 아직 없을 때 — 유형만 정해주고 주제는 기획자가 고르게 한다.
+  return `[이번 영상 유형: ${type}] 사장님들이 스레드에서 요즘 가장 많이 막히는 문제 하나`
+}
+
 // 최근 14일간 같은 브랜드·채널에 이미 쓴 제목과 안 겹치는 추천 주제를 브레인
 // 리포트에서 하나 골라온다 — 브레인 리포트가 없으면 브랜드 톤 기반 기본 주제로.
 async function pickTopic(
@@ -94,6 +122,9 @@ async function pickTopic(
   }
   if (channel === 'blog' && brand === '업메리') {
     return { topic: UPMERY_BLOG_TOPICS[dayIdx % UPMERY_BLOG_TOPICS.length], brainFindings }
+  }
+  if (channel === 'youtube' && brand === '마잘남') {
+    return { topic: pickMajalnamYoutubeTopic(latestReport), brainFindings }
   }
   const usedTitles = new Set(recentEntries.map((e) => e.title))
   const recommendations = reports[0]?.recommendations ?? []
