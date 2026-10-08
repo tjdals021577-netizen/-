@@ -82,8 +82,10 @@ npm run lint                             # 4) oxlint
 - **`src/lib/`** — 상태 저장(localStorage 기반) + `claude.ts`(프록시 호출·프롬프트 캐싱
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
-- **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `agency` 07:30, `thread-daily` 07:40,
+- **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `agency` 07:30,
   `radar` 07:50, `morning` 08:00, `brain`(월) 09:00, `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
+  - `thread-daily`(07:40, 스레드 5포맷 자동)는 **스케줄에서 뺐다**(2026-10 대표님: 비용 절감). 파일은 그대로 —
+    다시 켜려면 vercel.json에 `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }` 한 줄 추가.
   - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일 / 마잘남 유튜브 월·수·금. 업메리 블로그 자동 OFF.
   - `brain`(월) = 한 함수에서 **blog-brain + content-brain** 병렬(함수 한도 때문에 분리 안 함), 둘 다 마잘남만.
 - **데이터 흐름**: 크론이 **Supabase**에 쓰고, 브라우저는 **localStorage**를 읽는다 →
