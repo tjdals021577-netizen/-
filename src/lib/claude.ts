@@ -227,12 +227,23 @@ function lastTextBlock(response: {
   throw new ClaudeCallError(`모델 응답에 텍스트가 없습니다.${hint}`)
 }
 
-function parseJsonResponse(text: string): unknown {
-  const jsonText = extractJson(text)
+// 길이 한도(max_tokens)에 걸려 JSON이 중간에 잘린 경우 — 일반 "JSON 못 찾음"과 구분해야
+// 호출부가 "한도를 늘리거나 생각을 줄여" 다시 시도할 수 있다(생각 토큰도 한도에 포함됨).
+export class ClaudeTruncatedError extends ClaudeCallError {}
+
+function parseJsonResponse(text: string, stopReason?: string | null): unknown {
+  const truncated = () =>
+    new ClaudeTruncatedError('응답이 최대 길이에 도달해 JSON이 중간에 잘렸습니다.')
+  let jsonText: string
+  try {
+    jsonText = extractJson(text)
+  } catch (err) {
+    throw stopReason === 'max_tokens' ? truncated() : err
+  }
   try {
     return JSON.parse(jsonText)
   } catch {
-    throw new ClaudeCallError('모델 응답 JSON 파싱에 실패했습니다.')
+    throw stopReason === 'max_tokens' ? truncated() : new ClaudeCallError('모델 응답 JSON 파싱에 실패했습니다.')
   }
 }
 
@@ -291,7 +302,7 @@ export async function callClaudeJson(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  return parseJsonResponse(lastTextBlock(response))
+  return parseJsonResponse(lastTextBlock(response), response.stop_reason)
 }
 
 // 브레인처럼 최신 정보를 리서치해야 하는 에이전트용 — Claude의 서버사이드
@@ -349,7 +360,7 @@ export async function callClaudeJsonWithWebSearch(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  return parseJsonResponse(lastTextBlock(response))
+  return parseJsonResponse(lastTextBlock(response), response.stop_reason)
 }
 
 export interface VisionImageInput {
@@ -437,5 +448,5 @@ export async function callClaudeVisionJson(params: {
     output_tokens: response.usage.output_tokens,
   })
 
-  return parseJsonResponse(lastTextBlock(response))
+  return parseJsonResponse(lastTextBlock(response), response.stop_reason)
 }

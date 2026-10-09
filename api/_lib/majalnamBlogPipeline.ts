@@ -38,6 +38,8 @@ export async function runMajalnamBlogPipeline(params: {
 }): Promise<MajalnamBlogResult> {
   const { apiKey, topic, date, keyContent, photos, previousDraft, feedback } = params
   const isRevision = !!(previousDraft && feedback)
+  // 함수 한도 300초 — 글쓰기는 시작 후 240초까지만 쓰고, 나머지는 채점·저장 몫으로 남긴다.
+  const writerDeadline = Date.now() + 240_000
 
   const [recentKeywords, stageCounts, keywordVolumes, brain] = await Promise.all([
     // 재수정은 "같은 글"을 고치는 거라 최근 키워드 제외 규칙을 적용하지 않는다
@@ -74,6 +76,7 @@ export async function runMajalnamBlogPipeline(params: {
       previousDraft,
       feedback,
     }),
+    deadline: writerDeadline,
   })
 
   // 발행 전 채점(대표님 결정 B: 유지) — 1번의 15항목과 같은 채점표.
