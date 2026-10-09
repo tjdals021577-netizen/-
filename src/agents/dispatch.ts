@@ -17,6 +17,7 @@ import { formatRecentFeedbackForPrompt } from '../lib/contentFeedbackStore.js'
 import { ClaudeCancelledError } from '../lib/claude.js'
 import { getReferenceHooks } from '../lib/hookStore.js'
 import { formatHookReference } from './hookReference.js'
+import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from './blogRuleCheck.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -79,7 +80,7 @@ export async function dispatchJob(params: {
       const reviewed = reviews.length > 0
       const avg = scoreOf(reviews)
       const passed = reviewed && avg >= PASS_THRESHOLD
-      const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
+      const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : REVIEW_FAILED_NOTE
       finishWorkLog(logId, {
         status: passed ? 'done' : 'attention',
         statusLabel: passed ? '완료' : '보류',
@@ -87,7 +88,7 @@ export async function dispatchJob(params: {
         note: scoreNote,
         detailHtml: `<b>${draft.title}</b><br/>블로그 탭에서 전체 내용을 확인하세요.`,
       })
-      const contentHtml = `${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`
+      const contentHtml = `${buildBlogCheckHtml({ reviewed, draft })}${draft.body.replace(/\n/g, '<br/>')}${draft.photoPlacements.length > 0 ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}` : ''}`
       // 방금 만든 글을 기억해둔다 — 다음에 "이렇게 고쳐줘" 하면 이걸 수정보완한다.
       setLastOutput({ agent: 'writer', brand, title: draft.title, content: draft.body })
       submitForApproval({
@@ -96,7 +97,7 @@ export async function dispatchJob(params: {
         title: draft.title,
         contentHtml,
         passed,
-        scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
+        scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : REVIEW_FAILED_LABEL,
         sourceWorkLogId: logId,
       })
       createEntry({

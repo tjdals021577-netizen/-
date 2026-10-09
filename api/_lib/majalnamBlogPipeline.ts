@@ -12,6 +12,7 @@ import {
 } from '../../src/agents/majalnamBlogPrompts.js'
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
+import { buildBlogCheckHtml } from '../../src/agents/blogRuleCheck.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../../src/types/blog.js'
 import type { BlogKeywordResult } from '../../src/types/blogBrain.js'
 
@@ -112,5 +113,7 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}`
     : ''
   const reviewHtml = reviews.map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`).join('<br/>')
-  return `${kwLine}<br/><br/><b>${draft.title}</b><br/>${highlight(draft.body).replace(/\n/g, '<br/>')}${photoHtml}<br/><br/>${reviewHtml}`
+  // 맨 위: 채점 실패 안내 + 규칙 자동 점검(효과 단정·연락처·제목 길이) — 코드로, 비용 0.
+  const checkHtml = buildBlogCheckHtml({ reviewed: reviews.length > 0, draft })
+  return `${checkHtml}${kwLine}<br/><br/><b>${draft.title}</b><br/>${highlight(draft.body).replace(/\n/g, '<br/>')}${photoHtml}<br/><br/>${reviewHtml}`
 }

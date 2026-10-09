@@ -25,6 +25,7 @@ import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronH
 // 브레인 리포트 조회·포맷은 공용 헬퍼로(extras 컬럼 유무 방어 + 유튜브 작업물 소재 포함).
 import { fetchLatestBrainReport, formatBrainFindings, type BrainReportRow } from '../_lib/blogStore.js'
 import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from '../_lib/majalnamBlogPipeline.js'
+import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from '../../src/agents/blogRuleCheck.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
@@ -45,7 +46,8 @@ function buildBlogHtml(draft: BlogDraft, reviews: BlogReview[]): string {
   const reviewHtml = reviews
     .map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`)
     .join('<br/>')
-  return `<b>${draft.title}</b><br/>${draft.body.replace(/\n/g, '<br/>')}<br/><br/>${reviewHtml}`
+  const checkHtml = buildBlogCheckHtml({ reviewed: reviews.length > 0, draft })
+  return `${checkHtml}<b>${draft.title}</b><br/>${draft.body.replace(/\n/g, '<br/>')}<br/><br/>${reviewHtml}`
 }
 
 // 마잘남 블로그 "문의 전환용" 7주제 — 대표님 지정. 매일 하나씩 돌아가며 쓴다
@@ -203,7 +205,7 @@ async function generateMajalnamBlog(apiKey: string, date: string): Promise<strin
   const reviewed = reviews.length > 0
   const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
   const passed = reviewed && avg >= PASS_THRESHOLD
-  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
+  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : REVIEW_FAILED_NOTE
   const html = buildMajalnamBlogHtml(result)
   const kwNote = `키워드 "${keyword.mainKeyword}" ${keyword.readerStage}`
   const nowIso = new Date().toISOString()
@@ -228,7 +230,7 @@ async function generateMajalnamBlog(apiKey: string, date: string): Promise<strin
     title: draft.title,
     content_html: html,
     passed,
-    score_label: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
+    score_label: reviewed ? `${avg.toFixed(1)}/100` : REVIEW_FAILED_LABEL,
     created_at: nowIso,
     status: 'pending',
     source_work_log_id: logId,
@@ -281,7 +283,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
   const reviewed = reviews.length > 0
   const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
   const passed = reviewed && avg >= PASS_THRESHOLD
-  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
+  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : REVIEW_FAILED_NOTE
   const nowIso = new Date().toISOString()
   const logId = makeId()
 
@@ -304,7 +306,7 @@ async function generateBlogForBrand(apiKey: string, brand: Brand, date: string):
     title: draft.title,
     content_html: buildBlogHtml(draft, reviews),
     passed,
-    score_label: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
+    score_label: reviewed ? `${avg.toFixed(1)}/100` : REVIEW_FAILED_LABEL,
     created_at: nowIso,
     status: 'pending',
     source_work_log_id: logId,

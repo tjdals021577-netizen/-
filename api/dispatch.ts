@@ -28,6 +28,7 @@ import { supabaseSelect, supabaseInsert } from './_lib/supabaseAdmin.js'
 import { sendJson, sendText } from './_lib/cronHandler.js'
 import { fetchLatestBrainReport, formatBrainFindings, insertBrainReport } from './_lib/blogStore.js'
 import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from './_lib/majalnamBlogPipeline.js'
+import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from '../src/agents/blogRuleCheck.js'
 
 // 웹서치·긴 채점까지 안전하게 끝내기 위해 Vercel 상한(300초)으로 명시한다.
 export const maxDuration = 300
@@ -227,7 +228,7 @@ async function runMajalnamWriter(body: DispatchBody, apiKey: string, startedAt: 
   const reviewed = reviews.length > 0
   const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
   const passed = reviewed && avg >= PASS_THRESHOLD
-  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
+  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : REVIEW_FAILED_NOTE
   await finishContentJob({
     logId: body.logId,
     agent: 'writer',
@@ -237,7 +238,7 @@ async function runMajalnamWriter(body: DispatchBody, apiKey: string, startedAt: 
     title: draft.title,
     contentHtml: buildMajalnamBlogHtml(result),
     passed,
-    scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
+    scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : REVIEW_FAILED_LABEL,
     note: `${scoreNote} · 키워드 "${keyword.mainKeyword}" ${keyword.readerStage}`,
     startedAt,
     date,
@@ -270,8 +271,8 @@ async function runWriter(apiKey: string, body: DispatchBody, startedAt: string, 
   const reviewed = reviews.length > 0
   const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
   const passed = reviewed && avg >= PASS_THRESHOLD
-  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 내용은 저장됨'
-  const contentHtml = `${draft.body.replace(/\n/g, '<br/>')}${
+  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : REVIEW_FAILED_NOTE
+  const contentHtml = `${buildBlogCheckHtml({ reviewed, draft })}${draft.body.replace(/\n/g, '<br/>')}${
     draft.photoPlacements.length > 0
       ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}`
       : ''
@@ -285,7 +286,7 @@ async function runWriter(apiKey: string, body: DispatchBody, startedAt: string, 
     title: draft.title,
     contentHtml,
     passed,
-    scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : '채점 실패',
+    scoreLabel: reviewed ? `${avg.toFixed(1)}/100` : REVIEW_FAILED_LABEL,
     note: scoreNote,
     startedAt,
     date,
