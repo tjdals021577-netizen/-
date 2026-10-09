@@ -2,7 +2,6 @@
   "crons": [
     { "path": "/api/cron/hooks", "schedule": "0 20 * * *" },
     { "path": "/api/cron/content-schedule", "schedule": "0 21 * * *" },
-    { "path": "/api/cron/agency", "schedule": "30 22 * * *" },
     { "path": "/api/cron/radar", "schedule": "50 22 * * *" },
     { "path": "/api/cron/brain", "schedule": "0 0 * * *" },
     { "path": "/api/cron/cleanup", "schedule": "0 18 * * 0" }
