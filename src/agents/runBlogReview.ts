@@ -203,6 +203,8 @@ export async function runBlogAgentReview(params: {
     effort: 'low',
     system: buildReviewSystemPrompt(role),
     user: buildReviewUserPrompt(draft),
+    // Haiku 5.5는 생각 토큰도 한도에 포함 — 기본 4096이면 잘릴 수 있어 넉넉히.
+    maxTokens: 8192,
     // 채점은 검색 없는 단순 호출이라 보통 1분 안에 끝난다 — 기본값(260초)을
     // 그대로 두면 채점 하나가 걸렸을 때 260초를 통째로 기다리다가 크론
     // 함수 제한(300초)까지 같이 넘겨버리는 문제가 실제로 있었다("260초 안에
@@ -225,32 +227,45 @@ export async function runBlogReviewsResilient(params: {
   // 브랜드 전용 채점표를 쓸 때(마잘남 재설계: majalnamBlogPrompts.buildMajalnamReviewSystem).
   // 항목 id는 BLOG_RUBRICS와 같아야 한다(parseBlogReview가 그 id로 검증).
   system?: SystemPrompt
+  // 이 시각(ms)까지 끝내야 한다(함수 300초 한도 — 앞의 글쓰기가 오래 걸린 경우 대비).
+  deadline?: number
 }): Promise<BlogReview[]> {
-  const { apiKey, draft, system } = params
-  try {
-    const raw = await callClaudeJson({
-      apiKey,
-      model: CLAUDE_MODEL_CHEAP,
-      effort: 'low',
-      system: system ?? buildCombinedReviewSystemPrompt(),
-      user: buildReviewUserPrompt(draft),
-      maxTokens: 4096,
-      timeoutMs: 120_000,
-      onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
-    })
-    const rec = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
-    const reviewsRaw = Array.isArray(rec.reviews) ? rec.reviews : []
-    const out: BlogReview[] = []
-    for (const item of reviewsRaw) {
-      if (typeof item !== 'object' || item === null) continue
-      const r = item as Record<string, unknown>
-      const role = r.role
-      if (role !== 'seo' && role !== 'copywriting' && role !== 'experience') continue
-      out.push(parseBlogReview(role, r))
+  const { apiKey, draft, system, deadline = Date.now() + 200_000 } = params
+  // 15항목 근거 + 역할별 플래그를 한국어로 쓰면 응답이 길고, Haiku 5.5는 생각 토큰도
+  // max_tokens에 포함된다(새 토크나이저라 같은 글도 토큰이 ~30% 더 나옴). 4096 한도에서
+  // JSON이 잘려 조용히 "채점 실패"가 됐다(2026-10 실사용) → 한도를 넉넉히(Haiku라 비용 미미)
+  // + 1회 재시도("JSON만" 강한 지시). 실패 사유는 서버 로그에 남긴다.
+  const strict = '\n\n[매우 중요] 지정된 스키마의 JSON 객체 하나만 출력하라. 설명·코드블록 금지. comment·reason은 짧게.'
+  for (const isRetry of [false, true]) {
+    const left = deadline - Date.now()
+    if (left < 25_000) break
+    try {
+      const raw = await callClaudeJson({
+        apiKey,
+        model: CLAUDE_MODEL_CHEAP,
+        effort: 'low',
+        system: system ?? buildCombinedReviewSystemPrompt(),
+        user: isRetry ? buildReviewUserPrompt(draft) + strict : buildReviewUserPrompt(draft),
+        maxTokens: 12_000,
+        timeoutMs: Math.min(120_000, left - 5_000),
+        onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
+      })
+      const rec = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
+      const reviewsRaw = Array.isArray(rec.reviews) ? rec.reviews : []
+      const out: BlogReview[] = []
+      for (const item of reviewsRaw) {
+        if (typeof item !== 'object' || item === null) continue
+        const r = item as Record<string, unknown>
+        const role = r.role
+        if (role !== 'seo' && role !== 'copywriting' && role !== 'experience') continue
+        out.push(parseBlogReview(role, r))
+      }
+      if (out.length > 0) return out
+      console.warn('[blog-review] 채점 응답에 reviews가 비어 있음 — 재시도')
+    } catch (err) {
+      console.warn('[blog-review] 채점 호출 실패:', err instanceof Error ? err.message : String(err))
     }
-    return out
-  } catch {
-    // 채점 호출 전체 실패 시 빈 배열 — 초안은 살리고 "채점 실패"로 처리된다.
-    return []
   }
+  // 전부 실패 시 빈 배열 — 초안은 살리고 "채점 실패"로 처리된다.
+  return []
 }

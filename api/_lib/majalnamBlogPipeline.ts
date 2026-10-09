@@ -85,6 +85,8 @@ export async function runMajalnamBlogPipeline(params: {
     roles: BLOG_ROLES,
     draft,
     system: buildMajalnamReviewSystem(researchBlock),
+    // 함수 한도 300초 안에서 저장까지 끝나도록(시작 후 285초까지).
+    deadline: writerDeadline + 45_000,
   })
 
   return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week }

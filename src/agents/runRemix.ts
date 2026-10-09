@@ -75,8 +75,8 @@ export async function reviewRemixPlan(params: {
     system: buildRemixReviewSystemPrompt(),
     user: buildRemixReviewUserPrompt(plan),
     // 6개 항목 코멘트 + flags + summary가 한국어로 길어져 2048에서 JSON이
-    // 잘려 파싱 실패하던 문제 → 넉넉히 늘린다.
-    maxTokens: 4096,
+    // 잘려 파싱 실패하던 문제 → 넉넉히 늘린다(Haiku 5.5는 생각 토큰도 한도에 포함).
+    maxTokens: 8192,
     timeoutMs: 120_000,
     onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
   })
