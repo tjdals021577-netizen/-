@@ -50,6 +50,13 @@ npm run lint                             # 4) oxlint
 - **생각 깊이(effort, 2026-10 비용 절감)**: Sonnet 5는 미설정 시 high로 깊게 생각하고 그 토큰도 출력 과금.
   블로그 글쓰기만 기본(high) 유지 / 모닝·팀채팅 판단·브레인 자료수집 `low` / 유튜브 기획·대행·blog-brain 분석 `medium`.
   `callClaudeJson`·`callClaudeVisionJson`·`callClaudeJsonWithWebSearch`의 `effort` 옵션(→ `output_config.effort`).
+- **응답 길이 한도(2026-10, 실사용 실패 2건 후)**: 현재 모델은 생각 토큰도 max_tokens에 포함 → 낮은 한도는
+  JSON 잘림("JSON을 찾지 못했습니다")의 주원인. `claude.ts`의 `safeMaxTokens`가 모든 호출에 최소치 보장
+  (깊은 생성 16k / 그 외 8k, 상한 20k). 잘린 응답은 `ClaudeTruncatedError`로 구분된다.
+- **"대표님이 다시 확인하지 않게" 원칙**: 채점이 실패해도 글·시안은 버리지 않고 결재함에 올리며 "채점 없음 · 글 정상"
+  으로 표시. 마잘남 블로그는 발행 전 자동 수정(`blogRuleCheck.autoFixDraft` — 제목 단정 표현 삭제·연락처 가림,
+  제목 25~35자 벗어나면 `fixBlogTitle`로 싼 모델 교정) 후 결재함 상자에 "자동으로 고친 것 / 못 고친 것"을 표시.
+  대행 크론은 생성 2회 시도 + 채점 실패 시 시안 보존 + 최종 실패는 근무기록(팀채팅)에 남김.
 - 예산 가드: `src/lib/budgetGuard.ts`(일일 상한), 프록시에도 `DAILY_BUDGET_USD` 상한.
 - `PASS_THRESHOLD = 85`(통과) — `src/types/domain.ts`. 블로그는 미달이어도 재작성 안 함(비용 절감).
 - **Vercel Hobby = 서버리스 함수 12개 한도(현재 12개 꽉 참).** `api/` 아래 `_`로 시작하지 않는

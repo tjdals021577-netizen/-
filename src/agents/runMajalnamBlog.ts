@@ -155,6 +155,58 @@ export async function generateMajalnamBlogDraft(params: {
   throw lastErr
 }
 
+// ───────────────────────── 제목 길이 자동 교정 ─────────────────────────
+
+// 규칙 1(제목 25~35자, 메인 키워드 앞쪽, 효과 단정 금지)을 어긴 제목만 싼 모델로 다시 쓴다.
+// 제목 하나라 비용은 1회 약 $0.001. 결과는 코드로 다시 검증하고(길이·키워드·금지 표현),
+// 2번 다 통과 못 하면 원래 제목을 그대로 둔다(→ 결재함 상자에 "못 고친 것"으로 표시).
+export async function fixBlogTitle(params: {
+  apiKey: string
+  title: string
+  mainKeyword: string
+  subKeywords: string[]
+  isValid: (title: string) => boolean
+  onUsage?: UsageCallback
+  // 이 시각(ms)을 넘기면 더 시도하지 않는다(뒤의 채점·저장 몫 보호).
+  deadline?: number
+}): Promise<string | undefined> {
+  const { apiKey, title, mainKeyword, subKeywords, isValid, onUsage, deadline = Date.now() + 60_000 } = params
+  const user = `[현재 제목] ${title} (${title.trim().length}자)
+[메인 키워드] ${mainKeyword}
+[서브 키워드] ${subKeywords.join(', ') || '없음'}
+
+위 네이버 블로그 제목을 아래 규칙에 맞게 고쳐라. 의미와 핵심 내용은 유지한다.
+- 공백 포함 25~35자(반드시 이 범위)
+- 메인 키워드를 앞쪽에 그대로 포함, 서브 키워드가 있으면 1개 포함
+- "100%", "무조건", "보장" 같은 효과 단정 표현 금지
+JSON만 출력: {"title": string}`
+  for (let i = 0; i < 2; i++) {
+    const left = deadline - Date.now()
+    if (left < 10_000) break
+    try {
+      const raw = rec(
+        await callClaudeJson({
+          apiKey,
+          model: CLAUDE_MODEL_CHEAP,
+          effort: 'low',
+          system: '당신은 네이버 블로그 제목 교정가다. 지정된 JSON만 출력한다.',
+          user,
+          maxTokens: 2048,
+          timeoutMs: Math.min(30_000, left),
+          onUsage: track(onUsage),
+        }),
+      )
+      const fixed = str(raw.title).trim()
+      if (fixed && isValid(fixed) && (!mainKeyword || fixed.includes(mainKeyword) || !title.includes(mainKeyword))) {
+        return fixed
+      }
+    } catch {
+      // 다음 시도 → 실패하면 원래 제목 유지.
+    }
+  }
+  return undefined
+}
+
 // ───────────────────────── 3번: blog-brain 분석 ─────────────────────────
 
 const BASIS3 = ['확정', '관찰', '참고'] as const

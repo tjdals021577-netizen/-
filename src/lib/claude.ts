@@ -14,6 +14,16 @@ export const CLAUDE_MODEL_CHEAP = 'claude-haiku-5-5'
 // 기본값(high)을 유지하고, 단순 작업은 'low', 기획·분석은 'medium'으로 낮춘다.
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+// 응답 길이 한도 최소치 보장 — 현재 모델은 "생각" 토큰도 max_tokens에 포함된다. 호출부가
+// 예전 기준(생각 없던 시절)으로 낮게 잡은 한도 때문에 JSON이 중간에 잘려 실패한 일이
+// 2026-10 실사용에서 두 번 났다(블로그 글쓰기 8192, 채점 4096). 한도는 "상한"일 뿐 안 쓰면
+// 과금되지 않으므로, 모든 호출에 여유를 보장한다. 깊게 생각하는(기본 high 이상) 생성 호출은
+// 16k, 그 외(싼 모델·low/medium)는 8k. SDK 비스트리밍 상한(≈21k) 안쪽인 20k로 상한.
+function safeMaxTokens(requested: number, model: string, effort?: Effort): number {
+  const deep = model !== CLAUDE_MODEL_CHEAP && (!effort || effort === 'high' || effort === 'xhigh' || effort === 'max')
+  return Math.min(20_000, Math.max(requested, deep ? 16_000 : 8192))
+}
+
 // 호출 1건이 걸려서 무한정 응답을 기다리는 상황을 막기 위한 기본 타임아웃.
 // 원래 120초 → 200초로 늘렸는데도 웹서치 검색을 많이 도는 경우 200초를
 // 넘기는 사례가 실제로 있었다(content-schedule 크론에서 반복 확인) — 크론
@@ -289,7 +299,7 @@ export async function callClaudeJson(params: {
     apiKey,
     {
       model,
-      max_tokens: maxTokens,
+      max_tokens: safeMaxTokens(maxTokens, model, effort),
       system,
       messages,
       ...(effort ? { output_config: { effort } } : {}),
@@ -330,7 +340,7 @@ export async function callClaudeJsonWithWebSearch(params: {
 
   const body: MessageCreateParamsNonStreaming = {
     model: CLAUDE_MODEL,
-    max_tokens: maxTokens,
+    max_tokens: safeMaxTokens(maxTokens, CLAUDE_MODEL, effort),
     system,
     messages: [{ role: 'user', content: user }],
     ...(effort ? { output_config: { effort } } : {}),
@@ -435,7 +445,7 @@ export async function callClaudeVisionJson(params: {
     apiKey,
     {
       model: CLAUDE_MODEL,
-      max_tokens: maxTokens,
+      max_tokens: safeMaxTokens(maxTokens, CLAUDE_MODEL, effort),
       system,
       messages,
       ...(effort ? { output_config: { effort } } : {}),

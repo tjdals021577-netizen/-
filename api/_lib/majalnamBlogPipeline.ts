@@ -2,7 +2,7 @@
 //   키워드 생성(2번) → 블로그 라이터(1번, blog-brain researchBlock 주입) → 발행 전 채점
 // 업메리 블로그는 이 경로를 타지 않는다(기존 라이터 그대로).
 import { runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
-import { generateBlogKeywords, generateMajalnamBlogDraft } from '../../src/agents/runMajalnamBlog.js'
+import { fixBlogTitle, generateBlogKeywords, generateMajalnamBlogDraft } from '../../src/agents/runMajalnamBlog.js'
 import {
   buildMajalnamWriterSystem,
   buildMajalnamWriterUser,
@@ -12,7 +12,7 @@ import {
 } from '../../src/agents/majalnamBlogPrompts.js'
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
-import { buildBlogCheckHtml } from '../../src/agents/blogRuleCheck.js'
+import { autoFixDraft, buildBlogCheckHtml, checkBlogRules, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../../src/types/blog.js'
 import type { BlogKeywordResult } from '../../src/types/blogBrain.js'
 
@@ -25,6 +25,8 @@ export interface MajalnamBlogResult {
   keyword: BlogKeywordResult
   keywordFallback: boolean
   researchWeek?: string
+  // 발행 전 자동 수정 내역(제목 단정 표현 삭제·제목 길이 교정·연락처 가림) — 결재함 상자에 표시.
+  autoFixes: string[]
 }
 
 export async function runMajalnamBlogPipeline(params: {
@@ -64,7 +66,7 @@ export async function runMajalnamBlogPipeline(params: {
 
   // 1번 글쓰기 — researchBlock은 blog-brain 최신 리포트(수집 실패 주엔 지난주 것이 그대로 최신).
   const researchBlock = brain?.research_block ?? ''
-  const draft = await generateMajalnamBlogDraft({
+  const rawDraft = await generateMajalnamBlogDraft({
     apiKey,
     system: buildMajalnamWriterSystem({ researchBlock, ctaLink: process.env.BLOG_CTA_LINK }),
     user: buildMajalnamWriterUser({
@@ -80,6 +82,28 @@ export async function runMajalnamBlogPipeline(params: {
     deadline: writerDeadline,
   })
 
+  // 발행 전 자동 수정 — 대표님이 매번 확인·수정하지 않게. ① 코드로(제목 단정 수식어 삭제,
+  // 연락처 가림) ② 제목 길이(25~35자)가 어긋나면 싼 모델로 제목만 다시 쓴다(검증 후 반영).
+  const { draft: fixedDraft, fixes: autoFixes } = autoFixDraft(rawDraft)
+  let draft = fixedDraft
+  if (!titleLengthOk(draft.title)) {
+    const before = draft.title
+    const fixedTitle = await fixBlogTitle({
+      apiKey,
+      title: before,
+      mainKeyword: keyword.mainKeyword,
+      subKeywords: keyword.subKeywords,
+      // 길이 + 금지 표현(제목 쪽)까지 코드로 다시 확인한 것만 반영.
+      isValid: (t) => titleLengthOk(t) && checkBlogRules({ title: t, body: '' }).issues.length === 0,
+      // 채점(최소 25초)·저장 몫을 남기고 그 안에서만.
+      deadline: writerDeadline + 15_000,
+    })
+    if (fixedTitle) {
+      draft = { ...draft, title: fixedTitle }
+      autoFixes.push(`제목 길이 교정(${before.trim().length}자 → ${fixedTitle.length}자): "${before}" → "${fixedTitle}"`)
+    }
+  }
+
   // 발행 전 채점(대표님 결정 B: 유지) — 1번의 15항목과 같은 채점표.
   const reviews = await runBlogReviewsResilient({
     apiKey,
@@ -90,13 +114,13 @@ export async function runMajalnamBlogPipeline(params: {
     deadline: writerDeadline + 45_000,
   })
 
-  return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week }
+  return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week, autoFixes }
 }
 
 // 결재함·캘린더용 HTML — 키워드 정보를 맨 위에, 대표님이 발행 전 채울 자리표시자
 // ([경험 삽입 …], 진단 폼 링크)는 노란 형광펜으로 표시해 놓치지 않게 한다.
 export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
-  const { draft, reviews, keyword, keywordFallback, researchWeek } = result
+  const { draft, reviews, keyword, keywordFallback, researchWeek, autoFixes } = result
   const highlight = (text: string) =>
     text
       .replace(/\[경험 삽입:[^\]]*\]/g, (m) => `<mark>${m}</mark>`)
@@ -114,6 +138,6 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     : ''
   const reviewHtml = reviews.map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`).join('<br/>')
   // 맨 위: 채점 실패 안내 + 규칙 자동 점검(효과 단정·연락처·제목 길이) — 코드로, 비용 0.
-  const checkHtml = buildBlogCheckHtml({ reviewed: reviews.length > 0, draft })
+  const checkHtml = buildBlogCheckHtml({ reviewed: reviews.length > 0, draft, autoFixes })
   return `${checkHtml}${kwLine}<br/><br/><b>${draft.title}</b><br/>${highlight(draft.body).replace(/\n/g, '<br/>')}${photoHtml}<br/><br/>${reviewHtml}`
 }

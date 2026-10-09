@@ -62,13 +62,48 @@ export function checkBlogRules(draft: { title: string; body: string }): {
   return { issues, suggestedTitle }
 }
 
+// 대표님이 매번 확인·수정하지 않도록, 의미가 안 바뀌는 것은 코드가 먼저 고친다(비용 0).
+// · 제목의 효과 단정 수식어(100%·무조건) 삭제  · 본문의 연락처(전화번호·이메일) 가림
+// 본문의 단정 표현은 문장을 고쳐 써야 해서 자동 수정하지 않고 상자에 표시만 한다.
+// 제목 길이(25~35자)는 호출부가 싼 모델로 다시 쓴다(runMajalnamBlog.fixBlogTitle).
+export function autoFixDraft<T extends { title: string; body: string }>(draft: T): { draft: T; fixes: string[] } {
+  const fixes: string[] = []
+  let { title, body } = draft
+  const { suggestedTitle } = checkBlogRules(draft)
+  if (suggestedTitle) {
+    fixes.push(`제목의 효과 단정 표현 삭제: "${title}" → "${suggestedTitle}"`)
+    title = suggestedTitle
+  }
+  const contactRes = PATTERNS.filter((p) => p.reason.startsWith('연락처')).map((p) => new RegExp(p.re.source, 'g'))
+  for (const re of contactRes) {
+    if (re.test(body)) {
+      body = body.replace(re, '[연락처 삭제]')
+      fixes.push('본문의 연락처를 [연락처 삭제]로 가림')
+    }
+  }
+  return { draft: { ...draft, title, body }, fixes }
+}
+
+export function titleLengthOk(title: string): boolean {
+  const len = title.trim().length
+  return len >= 25 && len <= 35
+}
+
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 // 결재함·캘린더 글 맨 위에 붙이는 안내 상자. 채점 성공 + 걸린 표현 없음이면 빈 문자열.
-export function buildBlogCheckHtml(params: { reviewed: boolean; draft: { title: string; body: string } }): string {
-  const { reviewed, draft } = params
+export function buildBlogCheckHtml(params: {
+  reviewed: boolean
+  draft: { title: string; body: string }
+  // 코드·AI가 이미 자동으로 고친 내역 — 투명하게 보여준다(대표님이 따로 고칠 필요 없음).
+  autoFixes?: string[]
+}): string {
+  const { reviewed, draft, autoFixes = [] } = params
   const { issues, suggestedTitle } = checkBlogRules(draft)
   const parts: string[] = []
+  if (autoFixes.length > 0) {
+    parts.push(`<b>✅ 자동으로 고쳐 두었어요</b><br/>${autoFixes.map((f) => `· ${esc(f)}`).join('<br/>')}`)
+  }
   if (!reviewed) {
     parts.push(
       '<b>⚠️ 채점만 실패했어요 — 글 자체는 정상입니다.</b><br/>읽어 보시고 괜찮으면 승인하시면 돼요. (아래 자동 점검은 채점과 별개로 코드가 확인한 것)',
@@ -77,7 +112,7 @@ export function buildBlogCheckHtml(params: { reviewed: boolean; draft: { title: 
   if (issues.length > 0) {
     const list = issues.map((i) => `· ${i.where}: "${esc(i.quote)}" — ${esc(i.reason)}`).join('<br/>')
     parts.push(
-      `<b>🔎 발행 전 확인 (규칙 자동 점검)</b><br/>${list}` +
+      `<b>🔎 발행 전 확인 (자동으로 못 고친 것 — 이것만 봐주세요)</b><br/>${list}` +
         (suggestedTitle ? `<br/><b>제목 수정 제안:</b> ${esc(suggestedTitle)}` : ''),
     )
   } else if (!reviewed) {

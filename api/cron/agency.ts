@@ -4,12 +4,16 @@ import { runThreadReviewBatch } from '../../src/agents/runThreadReview.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import type { VisionImageInput } from '../../src/lib/claude.js'
 import type { DraftAttempt } from '../../src/types/agency.js'
+import type { ThreadDraft, ThreadReview } from '../../src/types/thread.js'
+import { REVIEW_FAILED_NOTE } from '../../src/agents/blogRuleCheck.js'
 import { supabaseSelect, supabaseInsert, supabaseUpdate } from '../_lib/supabaseAdmin.js'
 import { fetchHookReferenceBlock } from '../_lib/sheetHooks.js'
 import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 
 const DRAFT_COUNT = 3
+// 함수 한도 300초 — 생성 재시도·채점·저장까지 이 안에서 끝낸다.
+const CRON_BUDGET_MS = 280_000
 const MAX_RECENT_DRAFTS = 30
 
 interface AgencyClientRow {
@@ -35,10 +39,16 @@ function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function buildDraftsHtml(attempts: DraftAttempt[]): string {
-  return attempts
-    .map((a, i) => `<b>${i + 1}. ${a.review.totalScore}점</b><br/>${a.draft.text.replace(/\n/g, '<br/>')}`)
-    .join('<br/><br/>')
+function buildDraftsHtml(attempts: DraftAttempt[], reviewed: boolean): string {
+  const head = reviewed
+    ? ''
+    : '<b>⚠️ 채점만 실패했어요 — 시안 자체는 정상입니다. 읽어 보시고 괜찮으면 승인하시면 돼요.</b><br/><br/>'
+  return (
+    head +
+    attempts
+      .map((a, i) => `<b>${i + 1}. ${reviewed ? `${a.review.totalScore}점` : '채점 없음'}</b><br/>${a.draft.text.replace(/\n/g, '<br/>')}`)
+      .join('<br/><br/>')
+  )
 }
 
 async function fetchReferenceImages(ids: string[]): Promise<VisionImageInput[]> {
@@ -75,6 +85,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // 대표님 요청: 대행은 후킹을 넉넉히 참고(50개 로테이션 — 며칠이면 전체 풀 활용).
   const hookReference = await fetchHookReferenceBlock(50)
   const results: string[] = []
+  const cronDeadline = Date.now() + CRON_BUDGET_MS
   for (const client of clients) {
     try {
       // 클라이언트당 하루 1번만 생성한다(멱등). content-schedule과 같은 방식으로
@@ -114,21 +125,48 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
       // 초안 N개를 한 번에 생성 + 채점도 한 번에(비용 절감). 프롬프트는 대행 전용
       // ("마잘남 – 글쓰기")으로 화면(AgencyScreen)과 동일. 이미지 대신 스타일 요약 참고.
-      const drafts = await generateAgencyDraftBatch({
-        apiKey,
-        topic: `${client.business} 관련 스레드 게시물`,
-        business: client.business,
-        persona: client.persona,
-        count: DRAFT_COUNT,
-        recentPosts,
-        styleDigest,
-        guidance: client.guidance ?? undefined,
-        hookReference,
-      })
-      const reviews = await runThreadReviewBatch({ apiKey, drafts })
+      // 생성은 최대 2번(2차는 "JSON만" 강한 지시) — 1번 실패로 그날 시안이 통째로
+      // 빠지지 않게. 뒤의 채점·저장 몫(40초)은 남긴다.
+      let drafts: ThreadDraft[] | undefined
+      let genErr: unknown = new Error('시안을 만들 시간이 부족했습니다.')
+      for (const strict of [false, true]) {
+        const left = cronDeadline - Date.now() - 40_000
+        if (left < 45_000) break
+        try {
+          drafts = await generateAgencyDraftBatch({
+            apiKey,
+            topic: `${client.business} 관련 스레드 게시물`,
+            business: client.business,
+            persona: client.persona,
+            count: DRAFT_COUNT,
+            recentPosts,
+            styleDigest,
+            guidance: client.guidance ?? undefined,
+            hookReference,
+            timeoutMs: Math.min(200_000, left),
+            strict,
+          })
+          break
+        } catch (err) {
+          genErr = err
+        }
+      }
+      if (!drafts) throw genErr
+      // 채점이 실패해도 시안은 버리지 않는다 — 예전엔 채점 오류가 클라이언트 전체를
+      // 실패로 만들어, 다 만든 시안이 결재함에 안 올라갔다. 채점 없이 올리고 표시만.
+      let reviewed = true
+      let reviews: ThreadReview[]
+      try {
+        reviews = await runThreadReviewBatch({ apiKey, drafts })
+      } catch (err) {
+        console.warn('[agency] 채점 실패 — 시안은 저장:', err instanceof Error ? err.message : String(err))
+        reviewed = false
+        reviews = drafts.map(() => ({ totalScore: 0, summary: REVIEW_FAILED_NOTE, criteriaScores: [], flags: [] }))
+      }
       const attempts: DraftAttempt[] = drafts.map((draft, i) => ({ draft, review: reviews[i] }))
 
       const passCount = attempts.filter((a) => a.review.totalScore >= PASS_THRESHOLD).length
+      const scoreSummary = reviewed ? `${passCount}/${DRAFT_COUNT}건 통과` : `채점 없음 · 시안 ${attempts.length}건 정상`
       const nowIso = new Date().toISOString()
       const today = nowIso.slice(0, 10)
       const logId = makeId()
@@ -146,14 +184,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         status_label: '완료',
         started_at: nowIso,
         ended_at: nowIso,
-        note: `${passCount}/${DRAFT_COUNT}건 통과 (자동 생성)`,
+        note: `${scoreSummary} (자동 생성)`,
         detail_html: `<b>${client.name} 오늘 초안 ${DRAFT_COUNT}건 (자동)</b><br/>${attempts
-          .map((a, i) => `${i + 1}. ${a.review.totalScore}점`)
+          .map((a, i) => `${i + 1}. ${reviewed ? `${a.review.totalScore}점` : '채점 없음'}`)
           .join(' · ')}`,
       })
 
       const title = `${client.name} — 오늘 초안 ${DRAFT_COUNT}건 (자동)`
-      const contentHtml = buildDraftsHtml(attempts)
+      const contentHtml = buildDraftsHtml(attempts, reviewed)
       await supabaseInsert('approval_queue', {
         id: makeId(),
         agent: 'buzz',
@@ -161,7 +199,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         title,
         content_html: contentHtml,
         passed: passCount > 0,
-        score_label: `${passCount}/${DRAFT_COUNT}건 통과`,
+        score_label: scoreSummary,
         created_at: nowIso,
         status: 'pending',
         source_work_log_id: logId,
@@ -174,7 +212,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         channel: 'agency',
         title,
         status: passCount > 0 ? 'planned' : 'open',
-        note: `${passCount}/${DRAFT_COUNT}건 통과 (자동 생성)`,
+        note: `${scoreSummary} (자동 생성)`,
         content_html: contentHtml,
         created_at: nowIso,
         source_work_log_id: logId,
@@ -191,9 +229,28 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         ),
       })
 
-      results.push(`${client.name}: ${passCount}/${DRAFT_COUNT}건 통과`)
+      results.push(`${client.name}: ${scoreSummary}`)
     } catch (err) {
-      results.push(`${client.name}: 실패 (${err instanceof Error ? err.message : String(err)})`)
+      const msg = err instanceof Error ? err.message : String(err)
+      results.push(`${client.name}: 실패 (${msg})`)
+      // 예전엔 실패가 크론 응답에만 남아 대표님이 알 수 없었다 — 팀채팅에 보이게 기록.
+      try {
+        const nowIso = new Date().toISOString()
+        await supabaseInsert('work_log', {
+          id: makeId(),
+          agent: 'buzz',
+          brand: '마잘남',
+          kind: `대행 — ${client.name} (자동)`,
+          status: 'error',
+          status_label: '오류',
+          started_at: nowIso,
+          ended_at: nowIso,
+          note: '대행 자동 시안 실패',
+          detail_html: `${client.name} 자동 시안을 2번 시도했지만 실패했어요: ${msg}<br/>대행 탭에서 "오늘 초안 생성"을 누르면 다시 만들 수 있어요.`,
+        })
+      } catch {
+        // 기록 실패는 무시.
+      }
     }
   }
 

@@ -120,10 +120,17 @@ export async function generateAgencyDraftBatch(params: {
   hookReference?: string
   styleDigest?: string
   guidance?: string
+  // 크론이 재시도 몫을 남기도록 호출 1건의 대기 한도를 줄일 때(기본은 공통 기본값).
+  timeoutMs?: number
+  // 재시도일 때 "JSON만" 강한 지시를 덧붙인다.
+  strict?: boolean
 }): Promise<ThreadDraft[]> {
-  const { apiKey, topic, business, persona, count, recentPosts, referenceImages, hookReference, styleDigest, guidance } = params
+  const { apiKey, topic, business, persona, count, recentPosts, referenceImages, hookReference, styleDigest, guidance, timeoutMs, strict } = params
   const system = buildAgencyReferenceSystemPrompt({ business, persona, variantCount: count, recentPosts, hookReference, styleDigest, guidance })
-  const user = buildAgencyReferenceUserPrompt({ topic, variantCount: count })
+  const baseUser = buildAgencyReferenceUserPrompt({ topic, variantCount: count })
+  const user = strict
+    ? `${baseUser}\n\n[매우 중요] 지정된 스키마의 JSON 객체 하나만 출력하라. 설명·코드블록 금지. 첫 글자는 {, 마지막 글자는 }.`
+    : baseUser
 
   const raw =
     referenceImages && referenceImages.length > 0
@@ -134,6 +141,7 @@ export async function generateAgencyDraftBatch(params: {
           images: referenceImages,
           maxTokens: 8192,
           effort: 'medium', // 대행 시안은 "보통" 깊이(비용 절감 A)
+          timeoutMs,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
       : await callClaudeJson({
@@ -142,13 +150,14 @@ export async function generateAgencyDraftBatch(params: {
           user,
           maxTokens: 8192,
           effort: 'medium', // 대행 시안은 "보통" 깊이(비용 절감 A)
+          timeoutMs,
           onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),
         })
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
   }
   const rec = raw as Record<string, unknown>
-  if (!Array.isArray(rec.drafts)) {
+  if (!Array.isArray(rec.drafts) || rec.drafts.length === 0) {
     throw new Error('스레드 시안 응답 형식이 올바르지 않습니다.')
   }
   return rec.drafts.map((d) => parseDraft(d))
