@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
 import { getApprovalQueue, reviewItem, clearFailedPending, syncApprovalsFromSupabase } from '../../lib/approvalStore'
 import type { ApprovalAgent, ApprovalItem, ApprovalStatus } from '../../types/approval'
@@ -36,7 +36,48 @@ function stripHtml(html: string): string {
     .trim()
 }
 
+// 마잘남 블로그 결재 HTML에서 "발행할 제목·본문"만 꺼낸다(data-naver-title / data-naver-post).
+// 키워드 줄·점검 상자·채점은 빼고, 본문은 적당한 꾸밈이 들어간 HTML 그대로 복사한다 —
+// 스마트에디터에 붙여넣으면 굵게·소제목·요약 박스가 최대한 유지되게(서식 + 순수 텍스트 둘 다 담음).
+function extractNaverParts(contentHtml: string): { title: string; html: string; text: string } | null {
+  if (typeof DOMParser === 'undefined' || !contentHtml.includes('data-naver-post')) return null
+  const doc = new DOMParser().parseFromString(contentHtml, 'text/html')
+  const post = doc.querySelector('[data-naver-post]')
+  if (!post) return null
+  const html = post.innerHTML
+  const text = stripHtml(html.replace(/<\/(p|div)>/gi, '\n').replace(/&nbsp;/g, '')).replace(/\n{3,}/g, '\n\n')
+  return { title: doc.querySelector('[data-naver-title]')?.textContent?.trim() ?? '', html, text }
+}
+
+async function copyRich(html: string, text: string): Promise<void> {
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+      }),
+    ])
+  } catch {
+    // 서식 복사를 지원하지 않는 브라우저 — 글자만이라도 복사.
+    await navigator.clipboard.writeText(text)
+  }
+}
+
 function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => void }) {
+  const naver = useMemo(() => extractNaverParts(item.contentHtml), [item.contentHtml])
+  const [naverCopied, setNaverCopied] = useState<'title' | 'body' | null>(null)
+
+  async function handleNaverCopy(kind: 'title' | 'body') {
+    if (!naver) return
+    try {
+      if (kind === 'title') await navigator.clipboard.writeText(naver.title || item.title)
+      else await copyRich(naver.html, naver.text)
+      setNaverCopied(kind)
+      setTimeout(() => setNaverCopied(null), 2000)
+    } catch {
+      // 클립보드 권한이 없는 환경 — 조용히 무시
+    }
+  }
   const [open, setOpen] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
@@ -155,13 +196,39 @@ function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => v
 
       {open && (
         <div className="mt-3 border-t border-[var(--border)] pt-3">
-          <button
-            type="button"
-            onClick={() => void handleCopy()}
-            className="mb-2 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11.5px] font-bold text-[var(--text-dim)] transition hover:opacity-90"
-          >
-            {copied ? '복사됨 ✓' : '전체 내용 복사 (붙여넣기용)'}
-          </button>
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {naver && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleNaverCopy('title')}
+                  className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[11.5px] font-bold text-white transition hover:opacity-90"
+                >
+                  {naverCopied === 'title' ? '제목 복사됨 ✓' : '① 네이버 제목 복사'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleNaverCopy('body')}
+                  className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[11.5px] font-bold text-white transition hover:opacity-90"
+                >
+                  {naverCopied === 'body' ? '본문 복사됨 ✓' : '② 네이버 본문 복사 (꾸밈 포함)'}
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className="rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[11.5px] font-bold text-[var(--text-dim)] transition hover:opacity-90"
+            >
+              {copied ? '복사됨 ✓' : '전체 내용 복사 (붙여넣기용)'}
+            </button>
+          </div>
+          {naver && (
+            <p className="mb-2 text-[11px] leading-relaxed text-[var(--text-faint)]">
+              네이버 글쓰기에서 제목 칸에 ①, 본문에 ②를 붙여넣고 회색 [📸 사진 추천] 자리에 사진을 넣은 뒤 그 줄을 지우면 돼요.
+              노란 칸([경험 삽입]·진단 폼 링크)은 직접 채워주세요.
+            </p>
+          )}
           <div
             className="text-[13px] leading-relaxed text-[var(--text-dim)]"
             dangerouslySetInnerHTML={{ __html: item.contentHtml }}

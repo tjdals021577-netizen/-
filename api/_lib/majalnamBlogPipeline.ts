@@ -14,6 +14,7 @@ import {
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
 import { autoFixDraft, buildBlogCheckHtml, checkBlogRules, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
+import { NAVER_POST_ATTR, NAVER_TITLE_ATTR, renderNaverBody } from '../../src/agents/naverFormat.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../../src/types/blog.js'
 import type { BlogKeywordResult } from '../../src/types/blogBrain.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
@@ -220,11 +221,9 @@ ${lines.slice(0, 20).join('\n')}`
 // ([경험 삽입 …], 진단 폼 링크)는 노란 형광펜으로 표시해 놓치지 않게 한다.
 export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
   const { draft, reviews, keyword, keywordFallback, researchWeek, autoFixes, writerEffort } = result
-  const highlight = (text: string) =>
-    text
-      .replace(/\[경험 삽입:[^\]]*\]/g, (m) => `<mark>${m}</mark>`)
-      .split(CTA_LINK_PLACEHOLDER)
-      .join(`<mark>${CTA_LINK_PLACEHOLDER}</mark>`)
+  // 진단 폼 링크 자리표시자는 노란 형광펜(대표님이 발행 전 채울 자리). [경험 삽입]은 renderNaverBody가 처리.
+  const markCta = (html: string) =>
+    html.split(CTA_LINK_PLACEHOLDER).join(`<span style="background:#fff3a3">${CTA_LINK_PLACEHOLDER}</span>`)
   const kwLine =
     `<b>🔑 메인 키워드</b> ${keyword.mainKeyword}` +
     (keyword.subKeywords.length ? ` · 서브 ${keyword.subKeywords.join(', ')}` : '') +
@@ -239,5 +238,11 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
   const reviewHtml = reviews.map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`).join('<br/>')
   // 맨 위: 채점 실패 안내 + 규칙 자동 점검(효과 단정·연락처·제목 길이) — 코드로, 비용 0.
   const checkHtml = buildBlogCheckHtml({ reviewed: reviews.length > 0, draft, autoFixes })
-  return `${checkHtml}${kwLine}<br/><br/><b>${draft.title}</b><br/>${highlight(draft.body).replace(/\n/g, '<br/>')}${photoHtml}<br/><br/>${reviewHtml}`
+  // 제목·본문은 "네이버용 복사" 버튼이 찾을 수 있게 표시(data-*)로 감싼다 — 본문은 적당한 꾸밈이
+  // 들어간 붙여넣기용 HTML(naverFormat). 키워드 줄·점검 상자·채점은 복사 대상이 아니다.
+  const titleEsc = draft.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const postHtml =
+    `<div ${NAVER_TITLE_ATTR} style="font-size:17px;font-weight:700;margin:6px 0 10px">${titleEsc}</div>` +
+    `<div ${NAVER_POST_ATTR} style="border:1px solid #e5e5e5;border-radius:10px;padding:18px 12px;background:#fff">${renderNaverBody(draft.body, markCta)}</div>`
+  return `${checkHtml}${kwLine}<br/><br/>${postHtml}${photoHtml}<br/><br/>${reviewHtml}`
 }

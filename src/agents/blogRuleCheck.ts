@@ -1,3 +1,5 @@
+import { plainNaverBody } from './naverFormat.js'
+
 // 발행 전 규칙 자동 점검 — AI 호출 없이 코드로(비용 0). 채점이 실패해도 대표님이
 // 놓치면 안 되는 표현(규칙 9: 효과 단정·양산 문장·민감정보, 규칙 1: 제목 길이)을
 // 결재함 글 맨 위에 "발행 전 확인" 상자로 띄우고, 고친 제목도 제안한다.
@@ -48,6 +50,15 @@ export function checkBlogRules(draft: { title: string; body: string }): {
       if (m) issues.push({ where, quote: around(text, m.index, m[0].length), reason: p.reason })
     }
   }
+  // 구조 수치(규칙 2·3) — AI가 스스로 세면 틀려서(소제목 6개 등) 코드로 잰다. 미달 자동 고쳐 쓰기에 그대로 전달된다.
+  const headingCount = draft.body.split('\n').filter((l) => /^\s*##/.test(l)).length
+  if (draft.body.trim() && (headingCount < 3 || headingCount > 5)) {
+    issues.push({ where: '본문', quote: `소제목 ${headingCount}개`, reason: '소제목 수 규칙(3~5개) 밖' })
+  }
+  const bodyChars = bodyCharCount(draft.body)
+  if (draft.body.trim() && (bodyChars < 1800 || bodyChars > 2500)) {
+    issues.push({ where: '본문', quote: `${bodyChars.toLocaleString('ko-KR')}자`, reason: '본문 분량 규칙(1,800~2,500자) 밖' })
+  }
   const len = draft.title.trim().length
   if (len > 0 && (len < 25 || len > 35)) {
     issues.push({ where: '제목', quote: `${len}자`, reason: '제목 길이 규칙(25~35자) 밖' })
@@ -74,6 +85,16 @@ export function autoFixDraft<T extends { title: string; body: string }>(draft: T
     fixes.push(`제목의 효과 단정 표현 삭제: "${title}" → "${suggestedTitle}"`)
     title = suggestedTitle
   }
+  const noEmojiTitle = stripEmoji(title).trim()
+  const noEmojiBody = body
+    .split('\n')
+    .map((l) => (/^\s*\[📸/.test(l) ? l : stripEmoji(l).replace(/^(\s*##)\s+/, '$1 ')))
+    .join('\n')
+  if (noEmojiTitle !== title.trim() || noEmojiBody !== body) {
+    fixes.push('이모지 삭제(사진 자리 표시는 유지)')
+    title = noEmojiTitle
+    body = noEmojiBody
+  }
   const contactRes = PATTERNS.filter((p) => p.reason.startsWith('연락처')).map((p) => new RegExp(p.re.source, 'g'))
   for (const re of contactRes) {
     if (re.test(body)) {
@@ -82,6 +103,21 @@ export function autoFixDraft<T extends { title: string; body: string }>(draft: T
     }
   }
   return { draft: { ...draft, title, body }, fixes }
+}
+
+// 본문 글자 수(공백 포함) — 꾸밈 표시(##·>·**)와 사진 자리 줄은 빼고 센다.
+export function bodyCharCount(body: string): number {
+  return plainNaverBody(body)
+    .split('\n')
+    .filter((l) => !/^\s*\[📸/.test(l))
+    .join('\n')
+    .trim().length
+}
+
+// 이모지(대표님 지시: 거의 쓰지 않음) — 사진 자리 표시 줄([📸 …])은 대표님용 안내라 남긴다.
+const EMOJI_RE = /\p{Extended_Pictographic}(?:\uFE0F|\u200D)*/gu
+function stripEmoji(line: string): string {
+  return line.replace(EMOJI_RE, '').replace(/ {2,}/g, ' ')
 }
 
 export function titleLengthOk(title: string): boolean {
