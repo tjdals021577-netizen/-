@@ -13,7 +13,7 @@ import {
 } from '../../src/agents/majalnamBlogPrompts.js'
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
-import { autoFixDraft, buildBlogCheckHtml, checkBlogRules, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
+import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkBlogRules, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
 import { NAVER_POST_ATTR, NAVER_TITLE_ATTR, renderNaverBody } from '../../src/agents/naverFormat.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../../src/types/blog.js'
 import type { BlogKeywordResult } from '../../src/types/blogBrain.js'
@@ -34,6 +34,8 @@ export interface MajalnamBlogResult {
   autoFixes: string[]
   // 글쓰기가 몇 번째 시도(생각 깊이)에서 성공했는지 — high가 아니면 품질 저하 가능.
   writerEffort?: string
+  // 첫 글쓰기 소요(초) — 고쳐 쓰기를 건너뛴 날 원인 파악용.
+  writerSeconds?: number
 }
 
 export async function runMajalnamBlogPipeline(params: {
@@ -78,6 +80,13 @@ export async function runMajalnamBlogPipeline(params: {
   const researchBlock = brain?.research_block ?? ''
   const writerSystem = buildMajalnamWriterSystem({ researchBlock, ctaLink: process.env.BLOG_CTA_LINK })
   const reviewSystem = buildMajalnamReviewSystem(researchBlock)
+  // AI는 소제목 수·글자 수를 스스로 정확히 못 센다(2026-10 실사용: 소제목 6개·1,615자). 지시 맨 끝에
+  // 정확한 목표치를 다시 못 박고, 코드로 검사한다는 걸 알려 둔다(대표님 원문 규칙의 범위 안쪽 값).
+  const STRUCTURE_TARGET =
+    '\n\n[분량·구조 목표 — 발행 전에 코드로 정확히 센다]\n' +
+    '· 소제목("## "로 시작하는 줄)은 정확히 4개\n' +
+    '· 본문은 공백 포함 2,000~2,300자(사진 추천 줄 제외). 1,800자 미만이면 반려된다 — 짧게 끝내지 말고 각 소제목 아래를 충분히 채운다\n' +
+    '· 사진 추천 6~8군데'
   const writerUser = (prev?: { title: string; body: string }, fb?: string) =>
     buildMajalnamWriterUser({
       topic,
@@ -88,7 +97,8 @@ export async function runMajalnamBlogPipeline(params: {
       photos,
       previousDraft: prev,
       feedback: fb,
-    })
+    }) + STRUCTURE_TARGET
+  const writeStartedAt = Date.now()
   const rawDraft = await generateMajalnamBlogDraft({
     apiKey,
     system: writerSystem,
@@ -120,6 +130,7 @@ export async function runMajalnamBlogPipeline(params: {
     return { draft: out, fixes }
   }
 
+  const writerSeconds = Math.round((Date.now() - writeStartedAt) / 1000)
   const { effort: writerEffort, ...writtenDraft } = rawDraft
   const first = await polish(writtenDraft, writerDeadline + 15_000)
   let draft = first.draft
@@ -142,14 +153,18 @@ export async function runMajalnamBlogPipeline(params: {
   if (reviews.length > 0 && firstAvg < PASS_THRESHOLD) {
     const rewriteDeadline = pipelineDeadline - REVIEW_RESERVE_MS
     const left = rewriteDeadline - Date.now()
+    // 고쳐 쓰기는 "지적된 곳만" 고치는 일이라 가볍게 해도 된다 — 시간이 짧아도 건너뛰지 않게
+    // 55초만 남아도 low로 한다(2026-10: 첫 글쓰기가 길어 고쳐 쓰기를 건너뛴 일 이후).
     const attempt: DraftAttempt | undefined =
       left >= 150_000
         ? { effort: 'high', maxTokens: 16_000, strict: true }
         : left >= 90_000
           ? { effort: 'medium', maxTokens: 12_000, strict: true }
-          : undefined
+          : left >= 55_000
+            ? { effort: 'low', maxTokens: 8192, strict: true }
+            : undefined
     if (!attempt) {
-      autoFixes.push(`미달(${firstAvg.toFixed(1)}점)이지만 시간이 부족해 자동 고쳐 쓰기를 건너뜀 — 원본 그대로`)
+      autoFixes.push(`미달(${firstAvg.toFixed(1)}점)이지만 시간이 부족해(남은 ${Math.round(left / 1000)}초) 자동 고쳐 쓰기를 건너뜀 — 원본 그대로`)
     } else {
       try {
         const rewritten = await generateMajalnamBlogDraft({
@@ -190,7 +205,7 @@ export async function runMajalnamBlogPipeline(params: {
     }
   }
 
-  return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week, autoFixes, writerEffort }
+  return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week, autoFixes, writerEffort, writerSeconds }
 }
 
 // 채점 지적 → 고쳐 쓰기 지시. 16점 미만 항목의 근거 + 확인 필요 플래그 + 코드 점검 결과를 모은다.
@@ -210,6 +225,15 @@ function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft): string {
     }
   }
   for (const i of checkBlogRules(draft).issues) lines.push(`- (자동 점검) ${i.where}: "${i.quote}" — ${i.reason}`)
+  // 코드로 잰 구조 수치는 "무엇을 어떻게"까지 구체적으로 — 앞에 둬서 가장 먼저 고치게 한다.
+  const headingCount = draft.body.split('\n').filter((l) => /^\s*##/.test(l)).length
+  const chars = bodyCharCount(draft.body)
+  const structural: string[] = []
+  if (headingCount > 5) structural.push(`- [필수] 소제목이 ${headingCount}개다 → 내용이 비슷한 소제목을 합쳐 정확히 4개로 만든다.`)
+  if (headingCount < 3) structural.push(`- [필수] 소제목이 ${headingCount}개다 → "## " 소제목을 정확히 4개로 나눈다.`)
+  if (chars < 1800) structural.push(`- [필수] 본문이 ${chars.toLocaleString('ko-KR')}자다 → 2,000~2,300자로 늘린다(각 소제목 아래에 이유·예시·독자 상황을 보탠다. 사실은 [검증된 사실]·[대표 에피소드]만).`)
+  if (chars > 2500) structural.push(`- [필수] 본문이 ${chars.toLocaleString('ko-KR')}자다 → 2,000~2,300자로 줄인다.`)
+  lines.unshift(...structural)
   if (lines.length === 0) for (const r of reviews) if (r.summary) lines.push(`- ${r.summary}`)
   return `발행 전 채점에서 통과선(85점)에 못 미쳤다. 아래 지적된 부분만 고치고, 잘 된 부분(주제·흐름·키워드)은 유지해 다시 써라.
 특히 [검증된 사실]에 없는 경험·기간·수치·사례 서술은 지우거나 "[경험 삽입: …]" 자리표시자로 바꾼다(전체 1~3개).
@@ -220,7 +244,7 @@ ${lines.slice(0, 20).join('\n')}`
 // 결재함·캘린더용 HTML — 키워드 정보를 맨 위에, 대표님이 발행 전 채울 자리표시자
 // ([경험 삽입 …], 진단 폼 링크)는 노란 형광펜으로 표시해 놓치지 않게 한다.
 export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
-  const { draft, reviews, keyword, keywordFallback, researchWeek, autoFixes, writerEffort } = result
+  const { draft, reviews, keyword, keywordFallback, researchWeek, autoFixes, writerEffort, writerSeconds } = result
   // 진단 폼 링크 자리표시자는 노란 형광펜(대표님이 발행 전 채울 자리). [경험 삽입]은 renderNaverBody가 처리.
   const markCta = (html: string) =>
     html.split(CTA_LINK_PLACEHOLDER).join(`<span style="background:#fff3a3">${CTA_LINK_PLACEHOLDER}</span>`)
@@ -231,7 +255,7 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     ` · 검색량 ${keyword.searchVolume === null ? '미확인' : keyword.searchVolume.toLocaleString('ko-KR')}` +
     (keywordFallback ? ' (⚠️키워드 단계 실패 — 기본값)' : '') +
     `<br/><small>선정 이유: ${keyword.reason || '-'} · 리서치: ${researchWeek ? `${researchWeek} blog-brain 반영` : '아직 없음'}` +
-    ` · 작성 깊이: ${writerEffort === 'high' ? '깊게(정상)' : writerEffort === 'medium' ? '보통(1차 실패 후 재시도)' : writerEffort === 'low' ? '가볍게(2회 실패 후 재시도 — 품질 확인 필요)' : '-'}</small>`
+    ` · 작성 깊이: ${writerEffort === 'high' ? '깊게(정상)' : writerEffort === 'medium' ? '보통(1차 실패 후 재시도)' : writerEffort === 'low' ? '가볍게(2회 실패 후 재시도 — 품질 확인 필요)' : '-'}${writerSeconds ? ` · 첫 글쓰기 ${writerSeconds}초` : ''}</small>`
   const photoHtml = draft.photoPlacements.length
     ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}`
     : ''
