@@ -27,6 +27,8 @@ export interface MajalnamBlogResult {
   researchWeek?: string
   // 발행 전 자동 수정 내역(제목 단정 표현 삭제·제목 길이 교정·연락처 가림) — 결재함 상자에 표시.
   autoFixes: string[]
+  // 글쓰기가 몇 번째 시도(생각 깊이)에서 성공했는지 — high가 아니면 품질 저하 가능.
+  writerEffort?: string
 }
 
 export async function runMajalnamBlogPipeline(params: {
@@ -84,7 +86,8 @@ export async function runMajalnamBlogPipeline(params: {
 
   // 발행 전 자동 수정 — 대표님이 매번 확인·수정하지 않게. ① 코드로(제목 단정 수식어 삭제,
   // 연락처 가림) ② 제목 길이(25~35자)가 어긋나면 싼 모델로 제목만 다시 쓴다(검증 후 반영).
-  const { draft: fixedDraft, fixes: autoFixes } = autoFixDraft(rawDraft)
+  const { effort: writerEffort, ...writtenDraft } = rawDraft
+  const { draft: fixedDraft, fixes: autoFixes } = autoFixDraft(writtenDraft)
   let draft = fixedDraft
   if (!titleLengthOk(draft.title)) {
     const before = draft.title
@@ -114,13 +117,13 @@ export async function runMajalnamBlogPipeline(params: {
     deadline: writerDeadline + 45_000,
   })
 
-  return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week, autoFixes }
+  return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week, autoFixes, writerEffort }
 }
 
 // 결재함·캘린더용 HTML — 키워드 정보를 맨 위에, 대표님이 발행 전 채울 자리표시자
 // ([경험 삽입 …], 진단 폼 링크)는 노란 형광펜으로 표시해 놓치지 않게 한다.
 export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
-  const { draft, reviews, keyword, keywordFallback, researchWeek, autoFixes } = result
+  const { draft, reviews, keyword, keywordFallback, researchWeek, autoFixes, writerEffort } = result
   const highlight = (text: string) =>
     text
       .replace(/\[경험 삽입:[^\]]*\]/g, (m) => `<mark>${m}</mark>`)
@@ -132,7 +135,8 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     ` · 독자 단계 ${keyword.readerStage}` +
     ` · 검색량 ${keyword.searchVolume === null ? '미확인' : keyword.searchVolume.toLocaleString('ko-KR')}` +
     (keywordFallback ? ' (⚠️키워드 단계 실패 — 기본값)' : '') +
-    `<br/><small>선정 이유: ${keyword.reason || '-'} · 리서치: ${researchWeek ? `${researchWeek} blog-brain 반영` : '아직 없음'}</small>`
+    `<br/><small>선정 이유: ${keyword.reason || '-'} · 리서치: ${researchWeek ? `${researchWeek} blog-brain 반영` : '아직 없음'}` +
+    ` · 작성 깊이: ${writerEffort === 'high' ? '깊게(정상)' : writerEffort === 'medium' ? '보통(1차 실패 후 재시도)' : writerEffort === 'low' ? '가볍게(2회 실패 후 재시도 — 품질 확인 필요)' : '-'}</small>`
   const photoHtml = draft.photoPlacements.length
     ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}`
     : ''

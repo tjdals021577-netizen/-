@@ -124,7 +124,7 @@ export async function generateMajalnamBlogDraft(params: {
   onUsage?: UsageCallback
   // 이 시각(ms)까지 끝내야 한다(크론·팀채팅 함수 300초 한도 — 앞의 키워드, 뒤의 채점 몫 제외).
   deadline?: number
-}): Promise<BlogDraft> {
+}): Promise<BlogDraft & { effort: Effort }> {
   const { apiKey, system, user, onUsage, deadline = Date.now() + 220_000 } = params
   // prefill은 모델 미지원이라 쓰지 않는다(claude.ts 참고) — 2·3차에 "JSON만" 강한 지시.
   const strictReminder =
@@ -147,7 +147,9 @@ export async function generateMajalnamBlogDraft(params: {
         timeoutMs: Math.max(30_000, i === DRAFT_ATTEMPTS.length - 1 ? left - 5_000 : left - 45_000),
         onUsage: track(onUsage),
       })
-      return parseDraft(raw)
+      // 어느 깊이로 써졌는지 남긴다 — 1차(깊게)가 실패해 가볍게 쓴 글은 품질이 떨어질 수 있어
+      // 결재함에 표시해 원인을 알 수 있게.
+      return { ...parseDraft(raw), effort: attempt.effort }
     } catch (err) {
       lastErr = err
     }
