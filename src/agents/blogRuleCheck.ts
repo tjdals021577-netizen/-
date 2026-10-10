@@ -95,6 +95,27 @@ export function autoFixDraft<T extends { title: string; body: string }>(draft: T
     title = noEmojiTitle
     body = noEmojiBody
   }
+  // AI 티 자동 정리(대표님: "AI 티 안 나게") — 의미가 안 바뀌는 것만: 줄표(—)를 쉼표로,
+  // 줄 맨 앞 "질문:/답:/Q./A./핵심 질문:" 라벨 삭제. 사진 자리 줄([📸 … — N장])은 대표님용 안내라 그대로.
+  const deAi = body
+    .split('\n')
+    .map((l) => {
+      if (/^\s*\[📸/.test(l)) return l
+      // [경험 삽입 …]·[계정 진단 신청 폼 링크 — …] 같은 자리표시자 안은 건드리지 않는다
+      // (진단 폼 링크 치환·노란 표시가 원문 그대로의 자리표시자를 찾기 때문).
+      return l
+        .split(/(\[[^\]]*\])/)
+        .map((part) => (part.startsWith('[') ? part : part.replace(/\s*—\s*/g, ', ').replace(/,\s*,/g, ',')))
+        .join('')
+        .replace(/^(\s*(?:>|::)?\s*)(?:핵심\s*질문|질문|답변|답|Q|A)\s*[.:：)]\s*/, '$1')
+    })
+    .join('\n')
+  const deAiTitle = title.replace(/\s*—\s*/g, ', ')
+  if (deAi !== body || deAiTitle !== title) {
+    fixes.push('AI 티 나는 표현 정리(줄표 → 쉼표, 질문:/답:/Q./A. 라벨 삭제)')
+    body = deAi
+    title = deAiTitle
+  }
   const contactRes = PATTERNS.filter((p) => p.reason.startsWith('연락처')).map((p) => new RegExp(p.re.source, 'g'))
   for (const re of contactRes) {
     if (re.test(body)) {
@@ -196,6 +217,30 @@ export function checkImpact(body: string, factsText: string): BlogRuleIssue[] {
       seen.add(key)
       issues.push({ where: '본문', quote: key, reason: '[검증된 사실]에 없는 숫자 — 지어낸 수치인지 확인' })
     }
+  }
+  return issues
+}
+
+// AI가 쓴 티가 나는 습관(대표님: "현실에서 사람들 블로그 쓰는 것처럼") — 자동으로 못 고치는 것만 표시하고
+// 미달 자동 고쳐 쓰기에 넘긴다. 자동 정리 가능한 줄표·라벨은 autoFixDraft가 이미 처리.
+const AI_PHRASES = ['결론적으로', '그렇다면', '지금 바로', '많은 분들이', '의 중요성', '핵심은', '알아보겠습니다', '안내해드리겠습니다', '여러분']
+
+export function checkAiTells(body: string): BlogRuleIssue[] {
+  const issues: BlogRuleIssue[] = []
+  const text = body
+    .split('\n')
+    .filter((l) => !/^\s*\[📸/.test(l))
+    .join('\n')
+  if (/첫째/.test(text) && /둘째/.test(text) && /셋째/.test(text)) {
+    issues.push({ where: '본문', quote: '첫째·둘째·셋째', reason: 'AI 티 — 딱 맞춘 3단 나열(말로 풀거나 개수·길이를 들쭉날쭉하게)' })
+  }
+  const contrast = (text.match(/아니라/g) ?? []).length
+  if (contrast > 2) {
+    issues.push({ where: '본문', quote: `"~가 아니라" ${contrast}번`, reason: 'AI 티 — "A가 아니라 B" 대비 반복(2번 이하로)' })
+  }
+  for (const w of AI_PHRASES) {
+    const i = text.indexOf(w)
+    if (i >= 0) issues.push({ where: '본문', quote: around(text, i, w.length), reason: `AI 티 — "${w}"` })
   }
   return issues
 }

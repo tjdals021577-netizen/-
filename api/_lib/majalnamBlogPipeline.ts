@@ -14,7 +14,7 @@ import {
 } from '../../src/agents/majalnamBlogPrompts.js'
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
-import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkBlogRules, checkImpact, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
+import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkAiTells, checkBlogRules, checkImpact, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
 import { NAVER_POST_ATTR, NAVER_TITLE_ATTR, renderNaverBody } from '../../src/agents/naverFormat.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../../src/types/blog.js'
 import type { BlogKeywordResult } from '../../src/types/blogBrain.js'
@@ -232,7 +232,11 @@ function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft): string {
       if (f.severity !== 'info' && f.reason) lines.push(`- "${f.quote}" → ${f.reason}`)
     }
   }
-  for (const i of [...checkBlogRules(draft).issues, ...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS)])
+  for (const i of [
+    ...checkBlogRules(draft).issues,
+    ...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS),
+    ...checkAiTells(draft.body),
+  ])
     lines.push(`- (자동 점검) ${i.where}: "${i.quote}" — ${i.reason}`)
   // 코드로 잰 구조 수치는 "무엇을 어떻게"까지 구체적으로 — 앞에 둬서 가장 먼저 고치게 한다.
   const headingCount = draft.body.split('\n').filter((l) => /^\s*##/.test(l)).length
@@ -274,7 +278,7 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     reviewed: reviews.length > 0,
     draft,
     autoFixes,
-    extraIssues: checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS),
+    extraIssues: [...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS), ...checkAiTells(draft.body)],
   })
   // 제목·본문은 "네이버용 복사" 버튼이 찾을 수 있게 표시(data-*)로 감싼다 — 본문은 적당한 꾸밈이
   // 들어간 붙여넣기용 HTML(naverFormat). 키워드 줄·점검 상자·채점은 복사 대상이 아니다.
