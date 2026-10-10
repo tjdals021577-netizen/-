@@ -58,7 +58,9 @@ npm run lint                             # 4) oxlint
   제목 25~35자 벗어나면 `fixBlogTitle`로 싼 모델 교정) 후 결재함 상자에 "자동으로 고친 것 / 못 고친 것"을 표시.
   대행 크론은 생성 2회 시도 + 채점 실패 시 시안 보존 + 최종 실패는 근무기록(팀채팅)에 남김.
 - 예산 가드: `src/lib/budgetGuard.ts`(일일 상한), 프록시에도 `DAILY_BUDGET_USD` 상한.
-- `PASS_THRESHOLD = 85`(통과) — `src/types/domain.ts`. 블로그는 미달이어도 재작성 안 함(비용 절감).
+- `PASS_THRESHOLD = 85`(통과) — `src/types/domain.ts`. **마잘남 블로그는 미달이면 채점 지적을 넘겨 1회 자동 고쳐 쓰기 +
+  재채점, 점수 오른 쪽 채택**(2026-10 대표님 결정, 300초 한도 안에서 시간 남을 때만 — `majalnamBlogPipeline.ts`).
+  업메리 블로그는 미달이어도 재작성 안 함.
 - **Vercel Hobby = 서버리스 함수 12개 한도(현재 12개 꽉 참).** `api/` 아래 `_`로 시작하지 않는
   새 .ts 파일을 만들면 배포가 전부 실패한다 → 새 기능은 기존 함수 안에 넣거나 `api/_lib/`에.
 - Claude 모델은 **assistant prefill 미지원** — `assistantPrefill`은 무시된다(JSON은 지시+extractJson).
