@@ -84,9 +84,10 @@ npm run lint                             # 4) oxlint
       **문구 그대로**. 발행 전 채점표도 1번의 15항목과 일치(`MAJALNAM_REVIEW_RUBRICS`).
     - `runMajalnamBlog.ts` — 키워드 생성(Haiku)·글쓰기(Sonnet)·blog-brain 분석(Sonnet) 호출+폴백.
     - **말투(2026-10 대표님 지시)**: `MAJALNAM_BLOG_PERSONA` — 대표 1인칭 "반존대"(해요체 + 짧은 반말 단문), 이모지 없음.
-      대표님 스레드 글 3개에서 추출. 1인칭 경험은 `[대표 에피소드]`, 수치는 `[검증된 사실]`(27세 제주·팔로워 1.1만·챌린지 14기·
-      대행 사례 3개)만. 꾸밈 표시는 `## `(소제목)·`> `(요약 박스)·`**강조**` 3가지 → `naverFormat.renderNaverBody`가
-      가운데 정렬 네이버용 HTML로 변환. 결재함 "① 네이버 제목 복사 / ② 본문 복사(꾸밈 포함)" 버튼(`ApprovalScreen`).
+      대표님 스레드 글 3개에서 추출. 1인칭 경험은 `[대표 에피소드]`, 수치는 `[검증된 사실]`(`MAJALNAM_VERIFIED_FACTS` — 단일 소스)만.
+      꾸밈 표시 6가지: `## `(01·02 번호 소제목)·`> `(요약)·`:: `(POINT 콜아웃)·`!! `(숫자 카드)·`[전]/[후]`(비포·애프터)·`**강조**`
+      → `naverFormat.renderNaverBody`가 가운데 정렬 네이버용 HTML로 변환(주황 포인트 색). `blogRuleCheck.checkImpact`가
+      꾸밈 요소 누락·숫자 부족·검증 안 된 숫자(돈·사람·% 단위)를 코드로 잡아 결재함 상자와 자동 고쳐 쓰기에 전달. 결재함 "① 네이버 제목 복사 / ② 본문 복사(꾸밈 포함)" 버튼(`ApprovalScreen`).
       네이버 블로그 자동 발행은 하지 않는다(공식 글쓰기 API 불확실 + 자동 발행 감지 시 저품질·제재 위험).
     - `api/_lib/majalnamBlogPipeline.ts` — 06:00 크론·팀채팅 공용: 키워드 → 라이터(researchBlock 주입) → 채점.
     - `api/_lib/naverBlogData.ts` — blog-brain 수집. env에 네이버 키 있으면 A(검색API·검색광고API),

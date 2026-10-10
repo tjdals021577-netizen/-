@@ -10,10 +10,11 @@ import {
   CTA_LINK_PLACEHOLDER,
   MAJALNAM_CORE_KEYWORDS,
   MAJALNAM_REVIEW_RUBRICS,
+  MAJALNAM_VERIFIED_FACTS,
 } from '../../src/agents/majalnamBlogPrompts.js'
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
-import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkBlogRules, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
+import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkBlogRules, checkImpact, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
 import { NAVER_POST_ATTR, NAVER_TITLE_ATTR, renderNaverBody } from '../../src/agents/naverFormat.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../../src/types/blog.js'
 import type { BlogKeywordResult } from '../../src/types/blogBrain.js'
@@ -86,7 +87,14 @@ export async function runMajalnamBlogPipeline(params: {
     '\n\n[분량·구조 목표 — 발행 전에 코드로 정확히 센다]\n' +
     '· 소제목("## "로 시작하는 줄)은 정확히 4개\n' +
     '· 본문은 공백 포함 2,000~2,300자(사진 추천 줄 제외). 1,800자 미만이면 반려된다 — 짧게 끝내지 말고 각 소제목 아래를 충분히 채운다\n' +
-    '· 사진 추천 6~8군데'
+    '· 사진 추천 6~8군데\n' +
+    '\n[임팩트 목표 — 정보 나열처럼 밋밋하면 안 된다]\n' +
+    '· 도입 첫 3줄 안에 숫자 1개(예: 조회수 500, 3일, 2,000만 원)\n' +
+    '· 소제목 4개 중 2개 이상에 숫자를 넣는다(예: "## 남의 계정 글 3,000개 쓰고 안 것")\n' +
+    '· 소제목마다 그 아래에 구체적인 숫자 1개 이상 — 숫자는 [검증된 사실]·[대표 에피소드]의 것만(지어내면 코드가 잡아낸다)\n' +
+    '· "!! " 숫자 카드 2~3개를 글 흐름의 절정에 둔다(사례 결과·대표 실패 숫자)\n' +
+    '· ":: " 콜아웃 1~2개(소제목의 핵심 결론), "[전]"→"[후]" 비포·애프터 1개(숫자로 대비)\n' +
+    '· 각 소제목의 첫 줄은 통념을 깨거나 숫자로 시작해 바로 결론을 던진다'
   const writerUser = (prev?: { title: string; body: string }, fb?: string) =>
     buildMajalnamWriterUser({
       topic,
@@ -224,7 +232,8 @@ function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft): string {
       if (f.severity !== 'info' && f.reason) lines.push(`- "${f.quote}" → ${f.reason}`)
     }
   }
-  for (const i of checkBlogRules(draft).issues) lines.push(`- (자동 점검) ${i.where}: "${i.quote}" — ${i.reason}`)
+  for (const i of [...checkBlogRules(draft).issues, ...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS)])
+    lines.push(`- (자동 점검) ${i.where}: "${i.quote}" — ${i.reason}`)
   // 코드로 잰 구조 수치는 "무엇을 어떻게"까지 구체적으로 — 앞에 둬서 가장 먼저 고치게 한다.
   const headingCount = draft.body.split('\n').filter((l) => /^\s*##/.test(l)).length
   const chars = bodyCharCount(draft.body)
@@ -261,7 +270,12 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     : ''
   const reviewHtml = reviews.map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`).join('<br/>')
   // 맨 위: 채점 실패 안내 + 규칙 자동 점검(효과 단정·연락처·제목 길이) — 코드로, 비용 0.
-  const checkHtml = buildBlogCheckHtml({ reviewed: reviews.length > 0, draft, autoFixes })
+  const checkHtml = buildBlogCheckHtml({
+    reviewed: reviews.length > 0,
+    draft,
+    autoFixes,
+    extraIssues: checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS),
+  })
   // 제목·본문은 "네이버용 복사" 버튼이 찾을 수 있게 표시(data-*)로 감싼다 — 본문은 적당한 꾸밈이
   // 들어간 붙여넣기용 HTML(naverFormat). 키워드 줄·점검 상자·채점은 복사 대상이 아니다.
   const titleEsc = draft.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

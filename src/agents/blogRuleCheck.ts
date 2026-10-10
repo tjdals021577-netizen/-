@@ -133,9 +133,13 @@ export function buildBlogCheckHtml(params: {
   draft: { title: string; body: string }
   // 코드·AI가 이미 자동으로 고친 내역 — 투명하게 보여준다(대표님이 따로 고칠 필요 없음).
   autoFixes?: string[]
+  // 브랜드 전용 추가 점검 결과(마잘남: checkImpact).
+  extraIssues?: BlogRuleIssue[]
 }): string {
-  const { reviewed, draft, autoFixes = [] } = params
-  const { issues, suggestedTitle } = checkBlogRules(draft)
+  const { reviewed, draft, autoFixes = [], extraIssues = [] } = params
+  const checked = checkBlogRules(draft)
+  const suggestedTitle = checked.suggestedTitle
+  const issues = [...checked.issues, ...extraIssues]
   const parts: string[] = []
   if (autoFixes.length > 0) {
     parts.push(`<b>✅ 자동으로 고쳐 두었어요</b><br/>${autoFixes.map((f) => `· ${esc(f)}`).join('<br/>')}`)
@@ -161,3 +165,37 @@ export function buildBlogCheckHtml(params: {
 // 결재함 칩·근무기록에 쓰는 문구 — "채점 실패"만 보면 글이 망가진 줄 알아서 바꿨다.
 export const REVIEW_FAILED_LABEL = '채점 없음 · 글 정상'
 export const REVIEW_FAILED_NOTE = '채점만 실패 — 글은 정상, 읽고 승인'
+
+// 임팩트·숫자 점검(마잘남 블로그 전용 — 대표님: "밋밋하다, 숫자·콜아웃·비포애프터가 있어야").
+// ① 꾸밈 요소(숫자 카드 "!! "·콜아웃 ":: "·비포애프터 "[전]/[후]")가 빠졌는지, 숫자가 너무 적은지
+// ② 돈·사람·비율 단위가 붙은 숫자가 [검증된 사실]에 없는지(지어낸 숫자일 수 있음) — 코드로, 비용 0.
+// 결과는 결재함 상자("못 고친 것")와 미달 자동 고쳐 쓰기 지시에 그대로 들어간다.
+export function checkImpact(body: string, factsText: string): BlogRuleIssue[] {
+  const issues: BlogRuleIssue[] = []
+  const lines = body.split('\n').map((l) => l.trim())
+  if (!lines.some((l) => l.startsWith('!!'))) {
+    issues.push({ where: '본문', quote: '숫자 카드 0개', reason: '"!! " 숫자 카드가 없어 밋밋함(2~3개 필요)' })
+  }
+  if (!lines.some((l) => l.startsWith('::'))) {
+    issues.push({ where: '본문', quote: '콜아웃 0개', reason: '":: " 콜아웃이 없음(1~2개 필요)' })
+  }
+  if (!(lines.some((l) => l.startsWith('[전]')) && lines.some((l) => l.startsWith('[후]')))) {
+    issues.push({ where: '본문', quote: '비포·애프터 없음', reason: '"[전]"→"[후]" 비교가 없음(1개 필요)' })
+  }
+  const text = plainNaverBody(lines.filter((l) => !l.startsWith('[📸')).join('\n')).replace(/\[경험 삽입:[^\]]*\]/g, '')
+  const numberCount = (text.match(/\d[\d,.]*/g) ?? []).length
+  if (numberCount < 6) {
+    issues.push({ where: '본문', quote: `숫자 ${numberCount}개`, reason: '구체적인 숫자가 적음(검증된 사실의 숫자로 6개 이상)' })
+  }
+  const allowed = new Set((factsText.match(/\d[\d,.]*/g) ?? []).map((n) => n.replace(/,/g, '')))
+  const seen = new Set<string>()
+  for (const m of text.matchAll(/(\d[\d,.]*)\s*(억|만\s*원|만|천|원|명|팀|%|건)/g)) {
+    const num = m[1].replace(/,/g, '').replace(/\.$/, '')
+    const key = `${m[1]}${m[2]}`
+    if (!allowed.has(num) && !seen.has(key)) {
+      seen.add(key)
+      issues.push({ where: '본문', quote: key, reason: '[검증된 사실]에 없는 숫자 — 지어낸 수치인지 확인' })
+    }
+  }
+  return issues
+}
