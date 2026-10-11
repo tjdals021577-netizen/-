@@ -112,11 +112,15 @@ function parseDraft(raw: unknown): BlogDraft {
 // 실패했다(2026-10 실사용). 그래서 한도를 넉넉히 주고, 그래도 잘리거나 시간이 모자라면
 // 생각 깊이를 낮춰 끝까지 받아낸다. (SDK 비스트리밍 상한 ≈21k 토큰 안쪽.)
 export type DraftAttempt = { effort: Effort; maxTokens: number; strict: boolean }
+// 2026-10-11 실측: 말투·AI 티 금지·임팩트 규칙이 붙은 뒤 high는 180초 안에 못 끝나 잘렸고(→ low로 40초 만에
+// 쓴 글이 61.7점, 고쳐 쓰기 시간 0초). 그래서 1차를 "보통"으로 — 제시간에 끝내고, 남는 시간에
+// 채점 지적대로 고쳐 쓰기(미달 시)를 확실히 돌린다. 1차가 너무 오래 걸리면 140초에서 끊고 가볍게 다시.
 const DRAFT_ATTEMPTS: DraftAttempt[] = [
-  { effort: 'high', maxTokens: 16_000, strict: false },
-  { effort: 'medium', maxTokens: 12_000, strict: true },
+  { effort: 'medium', maxTokens: 12_000, strict: false },
   { effort: 'low', maxTokens: 8192, strict: true },
 ]
+// 마지막이 아닌 시도의 최대 대기(뒤 시도·고쳐 쓰기 몫 보호).
+const NON_LAST_ATTEMPT_CAP_MS = 140_000
 
 export async function generateMajalnamBlogDraft(params: {
   apiKey: string
@@ -148,7 +152,7 @@ export async function generateMajalnamBlogDraft(params: {
         maxTokens: attempt.maxTokens,
         effort: attempt.effort,
         // 1차가 시간을 다 쓰지 않게 — 뒤 시도 몫(최소 40초)을 남긴다.
-        timeoutMs: Math.max(30_000, isLast ? left - 5_000 : left - 45_000),
+        timeoutMs: Math.max(30_000, isLast ? left - 5_000 : Math.min(NON_LAST_ATTEMPT_CAP_MS, left - 45_000)),
         onUsage: track(onUsage),
       })
       // 어느 깊이로 써졌는지 남긴다 — 1차(깊게)가 실패해 가볍게 쓴 글은 품질이 떨어질 수 있어

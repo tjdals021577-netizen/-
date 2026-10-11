@@ -48,7 +48,9 @@ npm run lint                             # 4) oxlint
 - `CLAUDE_MODEL_CHEAP = 'claude-haiku-5-5'` — 채점·키워드 판단만(비용 절감, 2026-10 4.5→5.5). `src/lib/claude.ts`.
   Haiku 5.5는 생각이 기본 ON이라 생각 토큰도 max_tokens에 포함 → 호출마다 `effort: 'low'` + 한도 여유.
 - **생각 깊이(effort, 2026-10 비용 절감)**: Sonnet 5는 미설정 시 high로 깊게 생각하고 그 토큰도 출력 과금.
-  블로그 글쓰기만 기본(high) 유지 / 모닝·팀채팅 판단·브레인 자료수집 `low` / 유튜브 기획·대행·blog-brain 분석 `medium`.
+  마잘남 블로그 글쓰기는 `medium`(2026-10-11 실측: high는 규칙이 늘어난 뒤 180초 안에 못 끝나 잘림 → 저품질 low 글 +
+  고쳐 쓰기 시간 0초. medium으로 제시간에 쓰고 미달이면 채점 지적대로 고쳐 쓰기) / 모닝·팀채팅 판단·브레인 자료수집 `low` /
+  유튜브 기획·대행·blog-brain 분석 `medium`.
   `callClaudeJson`·`callClaudeVisionJson`·`callClaudeJsonWithWebSearch`의 `effort` 옵션(→ `output_config.effort`).
 - **응답 길이 한도(2026-10, 실사용 실패 2건 후)**: 현재 모델은 생각 토큰도 max_tokens에 포함 → 낮은 한도는
   JSON 잘림("JSON을 찾지 못했습니다")의 주원인. `claude.ts`의 `safeMaxTokens`가 모든 호출에 최소치 보장

@@ -164,13 +164,11 @@ export async function runMajalnamBlogPipeline(params: {
     // 고쳐 쓰기는 "지적된 곳만" 고치는 일이라 가볍게 해도 된다 — 시간이 짧아도 건너뛰지 않게
     // 55초만 남아도 low로 한다(2026-10: 첫 글쓰기가 길어 고쳐 쓰기를 건너뛴 일 이후).
     const attempt: DraftAttempt | undefined =
-      left >= 150_000
-        ? { effort: 'high', maxTokens: 16_000, strict: true }
-        : left >= 90_000
-          ? { effort: 'medium', maxTokens: 12_000, strict: true }
-          : left >= 55_000
-            ? { effort: 'low', maxTokens: 8192, strict: true }
-            : undefined
+      left >= 90_000
+        ? { effort: 'medium', maxTokens: 12_000, strict: true }
+        : left >= 55_000
+          ? { effort: 'low', maxTokens: 8192, strict: true }
+          : undefined
     if (!attempt) {
       autoFixes.push(`미달(${firstAvg.toFixed(1)}점)이지만 시간이 부족해(남은 ${Math.round(left / 1000)}초) 자동 고쳐 쓰기를 건너뜀 — 원본 그대로`)
     } else {
@@ -268,7 +266,7 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     ` · 검색량 ${keyword.searchVolume === null ? '미확인' : keyword.searchVolume.toLocaleString('ko-KR')}` +
     (keywordFallback ? ' (⚠️키워드 단계 실패 — 기본값)' : '') +
     `<br/><small>선정 이유: ${keyword.reason || '-'} · 리서치: ${researchWeek ? `${researchWeek} blog-brain 반영` : '아직 없음'}` +
-    ` · 작성 깊이: ${writerEffort === 'high' ? '깊게(정상)' : writerEffort === 'medium' ? '보통(1차 실패 후 재시도)' : writerEffort === 'low' ? '가볍게(2회 실패 후 재시도 — 품질 확인 필요)' : '-'}${writerSeconds ? ` · 첫 글쓰기 ${writerSeconds}초` : ''}</small>`
+    ` · 작성 깊이: ${writerEffort === 'high' ? '깊게' : writerEffort === 'medium' ? '보통(정상)' : writerEffort === 'low' ? '가볍게(1차 실패 후 재시도 — 품질 확인 필요)' : '-'}${writerSeconds ? ` · 첫 글쓰기 ${writerSeconds}초` : ''}</small>`
   const photoHtml = draft.photoPlacements.length
     ? `<br/><br/><b>사진 배치 제안</b><br/>${draft.photoPlacements.map((p) => `- ${p}`).join('<br/>')}`
     : ''
