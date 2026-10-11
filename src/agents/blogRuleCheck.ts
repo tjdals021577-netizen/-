@@ -244,3 +244,33 @@ export function checkAiTells(body: string): BlogRuleIssue[] {
   }
   return issues
 }
+
+// 채점용 코드 실측(마잘남) — 채점 AI가 글자 수·소제목·사진·키워드 횟수를 직접 세면 자주 틀려 부당하게
+// 감점했다(2026-10). 코드로 잰 정확한 값과 메인 키워드·독자 단계를 채점 입력에 같이 넘긴다.
+export function measureForReview(
+  draft: { title: string; body: string },
+  kw: { mainKeyword: string; subKeywords: string[]; readerStage: string },
+): string {
+  const lines = draft.body.split('\n').map((l) => l.trim())
+  const photoLines = lines.filter((l) => l.startsWith('[📸'))
+  const photoCount = photoLines.reduce((t, l) => t + Number(l.match(/(\d+)\s*장\s*\]/)?.[1] ?? 1), 0)
+  const headings = lines.filter((l) => l.startsWith('##')).length
+  const paragraphs = plainNaverBody(draft.body)
+    .split(/\n\s*\n/)
+    .map((p) => p.split('\n').filter((l) => !/^\s*\[📸/.test(l)).join('\n').trim())
+    .filter((p) => p.length > 0)
+    .map((p) => p.length)
+  const count = (text: string, w: string) => (w ? text.split(w).length - 1 : 0)
+  const plain = plainNaverBody(draft.body)
+  const kwInTitle = draft.title.indexOf(kw.mainKeyword)
+  const subs = kw.subKeywords.map((s) => `${s} ${count(draft.title + plain, s)}회`).join(', ')
+  return `[코드 실측 — 정확히 잰 값이다. 직접 세지 말고 이 값으로 채점한다]
+· 메인 키워드: "${kw.mainKeyword}" — 제목+본문 ${count(draft.title + '\n' + plain, kw.mainKeyword)}회, 제목 안 위치: ${kwInTitle < 0 ? '없음' : kwInTitle === 0 ? '맨 앞' : `${kwInTitle + 1}번째 글자부터`}
+· 서브 키워드: ${subs || '없음'}
+· 독자 인식 단계: ${kw.readerStage}
+· 제목 ${draft.title.trim().length}자 / 본문 ${bodyCharCount(draft.body).toLocaleString('ko-KR')}자(공백 포함, 사진 줄 제외) / 소제목 ${headings}개
+· 문단(빈 줄로 나뉜 덩어리) ${paragraphs.length}개, 길이 ${paragraphs.length ? `${Math.min(...paragraphs)}~${Math.max(...paragraphs)}자` : '-'}
+· 사진 추천 ${photoLines.length}군데·합계 ${photoCount}장
+· 숫자 카드 ${lines.filter((l) => l.startsWith('!!')).length}개 / 콜아웃 ${lines.filter((l) => l.startsWith('::')).length}개 / 비포·애프터 ${lines.some((l) => l.startsWith('[전]')) && lines.some((l) => l.startsWith('[후]')) ? '있음' : '없음'}
+· "진단" 언급 ${count(plain, '진단')}회`
+}

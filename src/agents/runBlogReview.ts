@@ -2,6 +2,7 @@ import {
   callClaudeJson,
   callClaudeVisionJson,
   CLAUDE_MODEL_CHEAP,
+  type Effort,
   type SystemPrompt,
   type VisionImageInput,
 } from '../lib/claude.js'
@@ -229,8 +230,13 @@ export async function runBlogReviewsResilient(params: {
   system?: SystemPrompt
   // 이 시각(ms)까지 끝내야 한다(함수 300초 한도 — 앞의 글쓰기가 오래 걸린 경우 대비).
   deadline?: number
+  // 채점 입력에 덧붙일 정보(마잘남: 코드 실측값·메인 키워드·독자 단계 — AI가 직접 세면 틀려서).
+  userExtra?: string
+  // 채점 생각 깊이(기본 low). 15항목을 공정하게 보려면 medium(싼 모델이라 비용 미미).
+  effort?: Effort
 }): Promise<BlogReview[]> {
-  const { apiKey, draft, system, deadline = Date.now() + 200_000 } = params
+  const { apiKey, draft, system, deadline = Date.now() + 200_000, userExtra, effort = 'low' } = params
+  const baseUser = userExtra ? `${buildReviewUserPrompt(draft)}\n\n${userExtra}` : buildReviewUserPrompt(draft)
   // 15항목 근거 + 역할별 플래그를 한국어로 쓰면 응답이 길고, Haiku 5.5는 생각 토큰도
   // max_tokens에 포함된다(새 토크나이저라 같은 글도 토큰이 ~30% 더 나옴). 4096 한도에서
   // JSON이 잘려 조용히 "채점 실패"가 됐다(2026-10 실사용) → 한도를 넉넉히(Haiku라 비용 미미)
@@ -243,9 +249,9 @@ export async function runBlogReviewsResilient(params: {
       const raw = await callClaudeJson({
         apiKey,
         model: CLAUDE_MODEL_CHEAP,
-        effort: 'low',
+        effort,
         system: system ?? buildCombinedReviewSystemPrompt(),
-        user: isRetry ? buildReviewUserPrompt(draft) + strict : buildReviewUserPrompt(draft),
+        user: isRetry ? baseUser + strict : baseUser,
         maxTokens: 12_000,
         timeoutMs: Math.min(120_000, left - 5_000),
         onUsage: (usage) => recordSpendUsd(estimateCostUsd(usage)),

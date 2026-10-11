@@ -21,15 +21,15 @@ import {
 } from '../../src/agents/majalnamBlogPrompts.js'
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
-import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkAiTells, checkBlogRules, checkImpact, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
-import { NAVER_POST_ATTR, NAVER_TITLE_ATTR, renderNaverBody } from '../../src/agents/naverFormat.js'
+import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkAiTells, checkBlogRules, checkImpact, measureForReview, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
+import { NAVER_POST_ATTR, NAVER_TITLE_ATTR, plainNaverBody, renderNaverBody } from '../../src/agents/naverFormat.js'
 import type { BlogDraft, BlogReview, BlogRole } from '../../src/types/blog.js'
 import type { BlogKeywordResult } from '../../src/types/blogBrain.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 // 고쳐 쓰기 뒤 재채점 몫(Haiku 채점 1회 + 여유).
-const REVIEW_RESERVE_MS = 35_000
+const REVIEW_RESERVE_MS = 45_000
 const BRAND = '마잘남' as const
 
 export interface MajalnamBlogResult {
@@ -59,6 +59,7 @@ const STRUCTURE_TARGET =
   '· 소제목("## "로 시작하는 줄)은 정확히 4개\n' +
   '· 본문은 공백 포함 2,000~2,300자(사진 추천 줄 제외). 1,800자 미만이면 반려된다 — 짧게 끝내지 말고 각 소제목 아래를 충분히 채운다\n' +
   '· 사진 추천 6~8군데\n' +
+  '· 메인 키워드는 제목 1회 + 도입 3줄 안 1회 + 본문 2~3회 = 총 4~6회(그대로의 표현으로)\n' +
   '\n[임팩트 목표 — 정보 나열처럼 밋밋하면 안 된다]\n' +
   '· 도입 첫 3줄 안에 숫자 1개(예: 조회수 500, 3일, 2,000만 원)\n' +
   '· 소제목 4개 중 2개 이상에 숫자를 넣는다(예: "## 남의 계정 글 3,000개 쓰고 안 것")\n' +
@@ -131,6 +132,8 @@ function makeWriterCtx(p: {
       draft,
       system: reviewSystem,
       deadline: Math.min(deadline, Date.now() + 90_000),
+      userExtra: measureForReview(draft, keyword),
+      effort: 'medium',
     })
     const firstAvg = avgOf(reviews)
     if (reviews.length > 0 && firstAvg < PASS_THRESHOLD) {
@@ -150,7 +153,7 @@ function makeWriterCtx(p: {
           const rewritten = await generateMajalnamBlogDraft({
             apiKey,
             system: writerSystem,
-            user: writerUser(draft, buildRewriteFeedback(reviews, draft)),
+            user: writerUser(draft, buildRewriteFeedback(reviews, draft, keyword.mainKeyword)),
             deadline: rewriteDeadline,
             attempts: [attempt],
           })
@@ -163,6 +166,8 @@ function makeWriterCtx(p: {
             draft: second.draft,
             system: reviewSystem,
             deadline,
+            userExtra: measureForReview(second.draft, keyword),
+            effort: 'medium',
           })
           const secondAvg = avgOf(secondReviews)
           if (secondReviews.length > 0 && secondAvg >= firstAvg) {
@@ -302,7 +307,7 @@ export function decodeBlogState(html: string): MajalnamBlogResult | null {
 }
 
 // 채점 지적 → 고쳐 쓰기 지시. 16점 미만 항목의 근거 + 확인 필요 플래그 + 코드 점검 결과를 모은다.
-function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft): string {
+function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft, mainKeyword = ''): string {
   const labelOf = new Map(
     (Object.keys(MAJALNAM_REVIEW_RUBRICS) as BlogRole[]).flatMap((role) =>
       MAJALNAM_REVIEW_RUBRICS[role].map((c) => [c.id, c.label] as const),
@@ -331,6 +336,11 @@ function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft): string {
   if (headingCount < 3) structural.push(`- [필수] 소제목이 ${headingCount}개다 → "## " 소제목을 정확히 4개로 나눈다.`)
   if (chars < 1800) structural.push(`- [필수] 본문이 ${chars.toLocaleString('ko-KR')}자다 → 2,000~2,300자로 늘린다(각 소제목 아래에 이유·예시·독자 상황을 보탠다. 사실은 [검증된 사실]·[대표 에피소드]만).`)
   if (chars > 2500) structural.push(`- [필수] 본문이 ${chars.toLocaleString('ko-KR')}자다 → 2,000~2,300자로 줄인다.`)
+  if (mainKeyword) {
+    const kwCount = `${draft.title}\n${plainNaverBody(draft.body)}`.split(mainKeyword).length - 1
+    if (kwCount < 4) structural.push(`- [필수] 메인 키워드 "${mainKeyword}"가 제목+본문에 ${kwCount}회뿐이다 → 도입 3줄 안 1회 포함, 소제목·본문에 자연스럽게 넣어 총 4~6회로.`)
+    if (kwCount > 6) structural.push(`- [필수] 메인 키워드 "${mainKeyword}"가 ${kwCount}회다 → 4~6회로 줄인다(스터핑 감점).`)
+  }
   lines.unshift(...structural)
   if (lines.length === 0) for (const r of reviews) if (r.summary) lines.push(`- ${r.summary}`)
   return `발행 전 채점에서 통과선(85점)에 못 미쳤다. 아래 지적된 부분만 고치고, 잘 된 부분(주제·흐름·키워드)은 유지해 다시 써라.
