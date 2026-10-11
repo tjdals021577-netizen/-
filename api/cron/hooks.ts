@@ -8,7 +8,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { fetchHooksFromCsvUrls } from '../_lib/sheetHooks.js'
-import { sendJson } from '../_lib/cronHandler.js'
+import { sendJson, isAutomationPaused } from '../_lib/cronHandler.js'
+import { runMajalnamBlogPolish } from '../_lib/majalnamBlogPolish.js'
+
+// 06:30 KST에 돈다(vercel.json). 시트 동기화(몇 초) 뒤, 마잘남 블로그 2단계(06:00에 깊게 쓴 초안 채점·
+// 미달 시 고쳐 쓰기)를 이어서 한다 — 대표님 결정 A. 서버 함수 12개 한도라 별도 함수를 만들지 않았다.
+export const maxDuration = 300
 
 // 자동 크론(Bearer CRON_SECRET)뿐 아니라, 앱 설정 화면의 "지금 불러오기" 버튼도
 // 이 엔드포인트를 부를 수 있게 앱 비밀번호(x-app-password)도 허용한다 — 대표님이
@@ -37,16 +42,31 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
+  const startedAt = Date.now()
+  const isCron = req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`
+  const sheet = await syncHookSheets()
+  // 블로그 2단계는 자동 크론 호출일 때만(앱 "지금 불러오기" 버튼은 시트만), 멈춤 스위치를 따른다.
+  let blogPolish: string | undefined
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (isCron && apiKey && !isAutomationPaused()) {
+    try {
+      blogPolish = await runMajalnamBlogPolish(apiKey, startedAt + 280_000)
+    } catch (err) {
+      blogPolish = `블로그 다듬기 실패: ${err instanceof Error ? err.message : String(err)}`
+    }
+  }
+  sendJson(res, 200, { ...sheet, ...(blogPolish !== undefined ? { blogPolish } : {}) })
+}
+
+async function syncHookSheets(): Promise<Record<string, unknown>> {
   const urlsRaw = process.env.HOOK_SHEET_CSV_URLS
   if (!urlsRaw || !urlsRaw.trim()) {
-    sendJson(res, 200, { ok: true, note: 'HOOK_SHEET_CSV_URLS 미설정 — 건너뜀' })
-    return
+    return { ok: true, note: 'HOOK_SHEET_CSV_URLS 미설정 — 건너뜀' }
   }
   const urls = urlsRaw
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-
   try {
     const { hooks, perSheet } = await fetchHooksFromCsvUrls(urls)
     const nowIso = new Date().toISOString()
@@ -82,14 +102,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       )
       .filter(Boolean)
       .join('\n')
-    sendJson(res, 200, {
+    return {
       ok: true,
       sheets: urls.length,
       saved: records.length,
       perSheet,
       sheetSummary: zeroDiag ? `${sheetSummary}\n${zeroDiag}` : sheetSummary,
-    })
+    }
   } catch (err) {
-    sendJson(res, 200, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }

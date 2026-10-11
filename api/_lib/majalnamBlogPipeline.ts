@@ -2,7 +2,14 @@
 //   키워드 생성(2번) → 블로그 라이터(1번, blog-brain researchBlock 주입) → 발행 전 채점
 // 업메리 블로그는 이 경로를 타지 않는다(기존 라이터 그대로).
 import { runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
-import { fixBlogTitle, generateBlogKeywords, generateMajalnamBlogDraft, type DraftAttempt } from '../../src/agents/runMajalnamBlog.js'
+import {
+  DEEP_DRAFT_ATTEMPTS,
+  DEEP_FIRST_CAP_MS,
+  fixBlogTitle,
+  generateBlogKeywords,
+  generateMajalnamBlogDraft,
+  type DraftAttempt,
+} from '../../src/agents/runMajalnamBlog.js'
 import {
   buildMajalnamWriterSystem,
   buildMajalnamWriterUser,
@@ -37,8 +44,156 @@ export interface MajalnamBlogResult {
   writerEffort?: string
   // 첫 글쓰기 소요(초) — 고쳐 쓰기를 건너뛴 날 원인 파악용.
   writerSeconds?: number
+  // 06:30 2단계(채점·고쳐 쓰기)에 필요한 원래 입력.
+  topic: string
+  keyContent?: string
+  photos?: string
+  // true = 06:00 1단계 결과(아직 채점 전) — 06:30에 polishMajalnamBlog가 이어서 처리한다.
+  pendingPolish?: boolean
 }
 
+// AI는 소제목 수·글자 수를 스스로 정확히 못 센다(2026-10 실사용: 소제목 6개·1,615자). 지시 맨 끝에
+// 정확한 목표치를 다시 못 박고, 코드로 검사한다는 걸 알려 둔다(대표님 원문 규칙의 범위 안쪽 값).
+const STRUCTURE_TARGET =
+  '\n\n[분량·구조 목표 — 발행 전에 코드로 정확히 센다]\n' +
+  '· 소제목("## "로 시작하는 줄)은 정확히 4개\n' +
+  '· 본문은 공백 포함 2,000~2,300자(사진 추천 줄 제외). 1,800자 미만이면 반려된다 — 짧게 끝내지 말고 각 소제목 아래를 충분히 채운다\n' +
+  '· 사진 추천 6~8군데\n' +
+  '\n[임팩트 목표 — 정보 나열처럼 밋밋하면 안 된다]\n' +
+  '· 도입 첫 3줄 안에 숫자 1개(예: 조회수 500, 3일, 2,000만 원)\n' +
+  '· 소제목 4개 중 2개 이상에 숫자를 넣는다(예: "## 남의 계정 글 3,000개 쓰고 안 것")\n' +
+  '· 소제목마다 그 아래에 구체적인 숫자 1개 이상 — 숫자는 [검증된 사실]·[대표 에피소드]의 것만(지어내면 코드가 잡아낸다)\n' +
+  '· "!! " 숫자 카드 2~3개를 글 흐름의 절정에 둔다(사례 결과·대표 실패 숫자)\n' +
+  '· ":: " 콜아웃 1~2개(소제목의 핵심 결론), "[전]"→"[후]" 비포·애프터 1개(숫자로 대비)\n' +
+  '· 각 소제목의 첫 줄은 통념을 깨거나 숫자로 시작해 바로 결론을 던진다'
+
+const avgOf = (rs: BlogReview[]) => (rs.length > 0 ? rs.reduce((t, r) => t + r.totalScore, 0) / rs.length : 0)
+
+// 글쓰기·채점에 공통으로 쓰는 것(1단계·2단계·팀채팅 공용).
+function makeWriterCtx(p: {
+  apiKey: string
+  topic: string
+  keyword: BlogKeywordResult
+  keyContent?: string
+  photos?: string
+  researchBlock: string
+}) {
+  const { apiKey, topic, keyword, keyContent, photos, researchBlock } = p
+  const writerSystem = buildMajalnamWriterSystem({ researchBlock, ctaLink: process.env.BLOG_CTA_LINK })
+  const reviewSystem = buildMajalnamReviewSystem(researchBlock)
+  const writerUser = (prev?: { title: string; body: string }, fb?: string) =>
+    buildMajalnamWriterUser({
+      topic,
+      mainKeyword: keyword.mainKeyword,
+      subKeywords: keyword.subKeywords,
+      readerStage: keyword.readerStage,
+      keyContent,
+      photos,
+      previousDraft: prev,
+      feedback: fb,
+    }) + STRUCTURE_TARGET
+
+  // 발행 전 자동 수정 — 대표님이 매번 확인·수정하지 않게. ① 코드로(제목 단정 수식어 삭제,
+  // 연락처 가림·AI 티 정리) ② 제목 길이(25~35자)가 어긋나면 싼 모델로 제목만 다시 쓴다(검증 후 반영).
+  async function polish(d: BlogDraft, titleDeadline: number): Promise<{ draft: BlogDraft; fixes: string[] }> {
+    const { draft: fixedDraft, fixes } = autoFixDraft(d)
+    let out = fixedDraft
+    if (!titleLengthOk(out.title)) {
+      const before = out.title
+      const fixedTitle = await fixBlogTitle({
+        apiKey,
+        title: before,
+        mainKeyword: keyword.mainKeyword,
+        subKeywords: keyword.subKeywords,
+        isValid: (t) => titleLengthOk(t) && checkBlogRules({ title: t, body: '' }).issues.length === 0,
+        deadline: titleDeadline,
+      })
+      if (fixedTitle) {
+        out = { ...out, title: fixedTitle }
+        fixes.push(`제목 길이 교정(${before.trim().length}자 → ${fixedTitle.length}자): "${before}" → "${fixedTitle}"`)
+      }
+    }
+    return { draft: out, fixes }
+  }
+
+  // 채점 → (85점 미만이면) 채점 지적대로 1회 고쳐 쓰기 → 재채점 → 점수 오른 쪽 채택(대표님 결정).
+  // deadline 안에서 고쳐 쓰기+재채점 시간이 남을 때만, 남은 시간에 맞춰 생각 깊이를 고른다.
+  async function scoreAndRewrite(
+    draftIn: BlogDraft,
+    autoFixesIn: string[],
+    deadline: number,
+  ): Promise<{ draft: BlogDraft; reviews: BlogReview[]; autoFixes: string[] }> {
+    let draft = draftIn
+    const autoFixes = [...autoFixesIn]
+    let reviews = await runBlogReviewsResilient({
+      apiKey,
+      roles: BLOG_ROLES,
+      draft,
+      system: reviewSystem,
+      deadline: Math.min(deadline, Date.now() + 90_000),
+    })
+    const firstAvg = avgOf(reviews)
+    if (reviews.length > 0 && firstAvg < PASS_THRESHOLD) {
+      const rewriteDeadline = deadline - REVIEW_RESERVE_MS
+      const left = rewriteDeadline - Date.now()
+      // 고쳐 쓰기는 "지적된 곳만" 고치는 일이라 보통이면 충분 — 짧아도 55초면 가볍게라도 한다.
+      const attempt: DraftAttempt | undefined =
+        left >= 90_000
+          ? { effort: 'medium', maxTokens: 12_000, strict: true }
+          : left >= 55_000
+            ? { effort: 'low', maxTokens: 8192, strict: true }
+            : undefined
+      if (!attempt) {
+        autoFixes.push(`미달(${firstAvg.toFixed(1)}점)이지만 시간이 부족해(남은 ${Math.round(left / 1000)}초) 자동 고쳐 쓰기를 건너뜀 — 원본 그대로`)
+      } else {
+        try {
+          const rewritten = await generateMajalnamBlogDraft({
+            apiKey,
+            system: writerSystem,
+            user: writerUser(draft, buildRewriteFeedback(reviews, draft)),
+            deadline: rewriteDeadline,
+            attempts: [attempt],
+          })
+          const { effort: _e, ...rewrittenDraft } = rewritten
+          void _e
+          const second = await polish(rewrittenDraft, rewriteDeadline + 10_000)
+          const secondReviews = await runBlogReviewsResilient({
+            apiKey,
+            roles: BLOG_ROLES,
+            draft: second.draft,
+            system: reviewSystem,
+            deadline,
+          })
+          const secondAvg = avgOf(secondReviews)
+          if (secondReviews.length > 0 && secondAvg >= firstAvg) {
+            draft = second.draft
+            reviews = secondReviews
+            autoFixes.length = 0
+            autoFixes.push(...second.fixes)
+            autoFixes.push(`미달(${firstAvg.toFixed(1)}점) → 채점 지적대로 자동 고쳐 쓰기 1회 → ${secondAvg.toFixed(1)}점`)
+          } else {
+            autoFixes.push(
+              secondReviews.length > 0
+                ? `자동 고쳐 쓰기 1회 했지만 점수가 오르지 않아(${secondAvg.toFixed(1)}점) 원본(${firstAvg.toFixed(1)}점) 유지`
+                : '자동 고쳐 쓰기본 채점이 실패해 원본 유지',
+            )
+          }
+        } catch (err) {
+          console.warn('[majalnam-blog] 자동 고쳐 쓰기 실패:', err instanceof Error ? err.message : String(err))
+          autoFixes.push('자동 고쳐 쓰기 시도가 실패해 원본 유지')
+        }
+      }
+    }
+    return { draft, reviews, autoFixes }
+  }
+
+  return { writerSystem, writerUser, polish, scoreAndRewrite }
+}
+
+// mode
+//  · 'full'  (팀채팅) — 한 번에: 키워드 → 글쓰기(보통) → 자동 수정 → 채점 → 미달 시 고쳐 쓰기.
+//  · 'draft' (06:00 크론, 대표님 결정 A) — 키워드 → 글쓰기(깊게) → 자동 수정까지만. 채점·고쳐 쓰기는
+//    06:30 2단계(polishMajalnamBlog)가 따로 5분을 써서 한다.
 export async function runMajalnamBlogPipeline(params: {
   apiKey: string
   topic: string
@@ -48,13 +203,14 @@ export async function runMajalnamBlogPipeline(params: {
   // 팀채팅 재수정 — 직전 글 + 대표님 요청.
   previousDraft?: { title: string; body: string }
   feedback?: string
+  mode?: 'full' | 'draft'
 }): Promise<MajalnamBlogResult> {
-  const { apiKey, topic, date, keyContent, photos, previousDraft, feedback } = params
+  const { apiKey, topic, date, keyContent, photos, previousDraft, feedback, mode = 'full' } = params
   const isRevision = !!(previousDraft && feedback)
-  // 함수 한도 300초 — 글쓰기는 시작 후 240초까지만 쓰고, 나머지는 채점·저장 몫으로 남긴다.
-  // 전체(고쳐 쓰기·재채점 포함)는 시작 후 280초 안에 끝낸다(저장 몫 20초).
+  const draftOnly = mode === 'draft'
+  // 함수 한도 300초. full: 글쓰기 240초까지·전체 280초. draft: 채점이 없으니 글쓰기에 265초까지.
   const startedAt = Date.now()
-  const writerDeadline = startedAt + 240_000
+  const writerDeadline = startedAt + (draftOnly ? 265_000 : 240_000)
   const pipelineDeadline = startedAt + 280_000
 
   const [recentKeywords, stageCounts, keywordVolumes, brain] = await Promise.all([
@@ -78,140 +234,71 @@ export async function runMajalnamBlogPipeline(params: {
   if (!isRevision) await saveBlogKeyword({ date, brand: BRAND, keyword })
 
   // 1번 글쓰기 — researchBlock은 blog-brain 최신 리포트(수집 실패 주엔 지난주 것이 그대로 최신).
-  const researchBlock = brain?.research_block ?? ''
-  const writerSystem = buildMajalnamWriterSystem({ researchBlock, ctaLink: process.env.BLOG_CTA_LINK })
-  const reviewSystem = buildMajalnamReviewSystem(researchBlock)
-  // AI는 소제목 수·글자 수를 스스로 정확히 못 센다(2026-10 실사용: 소제목 6개·1,615자). 지시 맨 끝에
-  // 정확한 목표치를 다시 못 박고, 코드로 검사한다는 걸 알려 둔다(대표님 원문 규칙의 범위 안쪽 값).
-  const STRUCTURE_TARGET =
-    '\n\n[분량·구조 목표 — 발행 전에 코드로 정확히 센다]\n' +
-    '· 소제목("## "로 시작하는 줄)은 정확히 4개\n' +
-    '· 본문은 공백 포함 2,000~2,300자(사진 추천 줄 제외). 1,800자 미만이면 반려된다 — 짧게 끝내지 말고 각 소제목 아래를 충분히 채운다\n' +
-    '· 사진 추천 6~8군데\n' +
-    '\n[임팩트 목표 — 정보 나열처럼 밋밋하면 안 된다]\n' +
-    '· 도입 첫 3줄 안에 숫자 1개(예: 조회수 500, 3일, 2,000만 원)\n' +
-    '· 소제목 4개 중 2개 이상에 숫자를 넣는다(예: "## 남의 계정 글 3,000개 쓰고 안 것")\n' +
-    '· 소제목마다 그 아래에 구체적인 숫자 1개 이상 — 숫자는 [검증된 사실]·[대표 에피소드]의 것만(지어내면 코드가 잡아낸다)\n' +
-    '· "!! " 숫자 카드 2~3개를 글 흐름의 절정에 둔다(사례 결과·대표 실패 숫자)\n' +
-    '· ":: " 콜아웃 1~2개(소제목의 핵심 결론), "[전]"→"[후]" 비포·애프터 1개(숫자로 대비)\n' +
-    '· 각 소제목의 첫 줄은 통념을 깨거나 숫자로 시작해 바로 결론을 던진다'
-  const writerUser = (prev?: { title: string; body: string }, fb?: string) =>
-    buildMajalnamWriterUser({
-      topic,
-      mainKeyword: keyword.mainKeyword,
-      subKeywords: keyword.subKeywords,
-      readerStage: keyword.readerStage,
-      keyContent,
-      photos,
-      previousDraft: prev,
-      feedback: fb,
-    }) + STRUCTURE_TARGET
+  const ctx = makeWriterCtx({ apiKey, topic, keyword, keyContent, photos, researchBlock: brain?.research_block ?? '' })
   const writeStartedAt = Date.now()
   const rawDraft = await generateMajalnamBlogDraft({
     apiKey,
-    system: writerSystem,
-    user: writerUser(previousDraft, feedback),
+    system: ctx.writerSystem,
+    user: ctx.writerUser(previousDraft, feedback),
     deadline: writerDeadline,
+    ...(draftOnly ? { attempts: DEEP_DRAFT_ATTEMPTS, nonLastCapMs: DEEP_FIRST_CAP_MS } : {}),
   })
-
-  // 발행 전 자동 수정 — 대표님이 매번 확인·수정하지 않게. ① 코드로(제목 단정 수식어 삭제,
-  // 연락처 가림) ② 제목 길이(25~35자)가 어긋나면 싼 모델로 제목만 다시 쓴다(검증 후 반영).
-  async function polish(d: BlogDraft, titleDeadline: number): Promise<{ draft: BlogDraft; fixes: string[] }> {
-    const { draft: fixedDraft, fixes } = autoFixDraft(d)
-    let out = fixedDraft
-    if (!titleLengthOk(out.title)) {
-      const before = out.title
-      const fixedTitle = await fixBlogTitle({
-        apiKey,
-        title: before,
-        mainKeyword: keyword.mainKeyword,
-        subKeywords: keyword.subKeywords,
-        // 길이 + 금지 표현(제목 쪽)까지 코드로 다시 확인한 것만 반영.
-        isValid: (t) => titleLengthOk(t) && checkBlogRules({ title: t, body: '' }).issues.length === 0,
-        deadline: titleDeadline,
-      })
-      if (fixedTitle) {
-        out = { ...out, title: fixedTitle }
-        fixes.push(`제목 길이 교정(${before.trim().length}자 → ${fixedTitle.length}자): "${before}" → "${fixedTitle}"`)
-      }
-    }
-    return { draft: out, fixes }
-  }
-
   const writerSeconds = Math.round((Date.now() - writeStartedAt) / 1000)
   const { effort: writerEffort, ...writtenDraft } = rawDraft
-  const first = await polish(writtenDraft, writerDeadline + 15_000)
-  let draft = first.draft
-  const autoFixes = first.fixes
+  const first = await ctx.polish(writtenDraft, draftOnly ? pipelineDeadline : writerDeadline + 15_000)
 
-  // 발행 전 채점(대표님 결정 B: 유지) — 1번의 15항목과 같은 채점표.
-  let reviews = await runBlogReviewsResilient({
-    apiKey,
-    roles: BLOG_ROLES,
-    draft,
-    system: reviewSystem,
-    deadline: Math.min(writerDeadline + 45_000, pipelineDeadline),
-  })
-
-  // 미달(85점 미만)이면 채점 지적을 넘겨 딱 1번 고쳐 쓰고 다시 채점한다(2026-10 대표님 결정 —
-  // "알아서 고쳐서 올라오게"). 점수가 오른 쪽을 쓴다. 함수 한도(300초) 안에서 고쳐 쓰기+재채점
-  // 시간이 남을 때만 — 남은 시간에 맞춰 생각 깊이를 고른다(모자라면 건너뛰고 원본 그대로).
-  const avgOf = (rs: BlogReview[]) => (rs.length > 0 ? rs.reduce((t, r) => t + r.totalScore, 0) / rs.length : 0)
-  const firstAvg = avgOf(reviews)
-  if (reviews.length > 0 && firstAvg < PASS_THRESHOLD) {
-    const rewriteDeadline = pipelineDeadline - REVIEW_RESERVE_MS
-    const left = rewriteDeadline - Date.now()
-    // 고쳐 쓰기는 "지적된 곳만" 고치는 일이라 가볍게 해도 된다 — 시간이 짧아도 건너뛰지 않게
-    // 55초만 남아도 low로 한다(2026-10: 첫 글쓰기가 길어 고쳐 쓰기를 건너뛴 일 이후).
-    const attempt: DraftAttempt | undefined =
-      left >= 90_000
-        ? { effort: 'medium', maxTokens: 12_000, strict: true }
-        : left >= 55_000
-          ? { effort: 'low', maxTokens: 8192, strict: true }
-          : undefined
-    if (!attempt) {
-      autoFixes.push(`미달(${firstAvg.toFixed(1)}점)이지만 시간이 부족해(남은 ${Math.round(left / 1000)}초) 자동 고쳐 쓰기를 건너뜀 — 원본 그대로`)
-    } else {
-      try {
-        const rewritten = await generateMajalnamBlogDraft({
-          apiKey,
-          system: writerSystem,
-          user: writerUser(draft, buildRewriteFeedback(reviews, draft)),
-          deadline: rewriteDeadline,
-          attempts: [attempt],
-        })
-        const { effort: _e, ...rewrittenDraft } = rewritten
-        void _e
-        const second = await polish(rewrittenDraft, rewriteDeadline + 10_000)
-        const secondReviews = await runBlogReviewsResilient({
-          apiKey,
-          roles: BLOG_ROLES,
-          draft: second.draft,
-          system: reviewSystem,
-          deadline: pipelineDeadline,
-        })
-        const secondAvg = avgOf(secondReviews)
-        if (secondReviews.length > 0 && secondAvg >= firstAvg) {
-          draft = second.draft
-          reviews = secondReviews
-          autoFixes.length = 0
-          autoFixes.push(...second.fixes)
-          autoFixes.push(`미달(${firstAvg.toFixed(1)}점) → 채점 지적대로 자동 고쳐 쓰기 1회 → ${secondAvg.toFixed(1)}점`)
-        } else {
-          autoFixes.push(
-            secondReviews.length > 0
-              ? `자동 고쳐 쓰기 1회 했지만 점수가 오르지 않아(${secondAvg.toFixed(1)}점) 원본(${firstAvg.toFixed(1)}점) 유지`
-              : '자동 고쳐 쓰기본 채점이 실패해 원본 유지',
-          )
-        }
-      } catch (err) {
-        console.warn('[majalnam-blog] 자동 고쳐 쓰기 실패:', err instanceof Error ? err.message : String(err))
-        autoFixes.push('자동 고쳐 쓰기 시도가 실패해 원본 유지')
-      }
-    }
+  const base = {
+    keyword,
+    keywordFallback: fallback,
+    researchWeek: brain?.week,
+    writerEffort,
+    writerSeconds,
+    topic,
+    keyContent,
+    photos,
   }
+  if (draftOnly) {
+    return { ...base, draft: first.draft, reviews: [], autoFixes: first.fixes, pendingPolish: true }
+  }
+  const scored = await ctx.scoreAndRewrite(first.draft, first.fixes, pipelineDeadline)
+  return { ...base, ...scored }
+}
 
-  return { draft, reviews, keyword, keywordFallback: fallback, researchWeek: brain?.week, autoFixes, writerEffort, writerSeconds }
+// 06:30 2단계(대표님 결정 A): 06:00에 깊게 쓴 글을 이어받아 채점 → 미달이면 고쳐 쓰기 → 재채점.
+// 이 단계만으로 5분을 쓰므로 고쳐 쓰기를 건너뛸 일이 거의 없다.
+export async function polishMajalnamBlog(params: {
+  apiKey: string
+  state: MajalnamBlogResult
+  deadline: number
+}): Promise<MajalnamBlogResult> {
+  const { apiKey, state, deadline } = params
+  const brain = await getLatestBlogBrain(BRAND)
+  const ctx = makeWriterCtx({
+    apiKey,
+    topic: state.topic,
+    keyword: state.keyword,
+    keyContent: state.keyContent,
+    photos: state.photos,
+    researchBlock: brain?.research_block ?? '',
+  })
+  const scored = await ctx.scoreAndRewrite(state.draft, state.autoFixes, deadline)
+  return { ...state, ...scored, researchWeek: brain?.week ?? state.researchWeek, pendingPolish: false }
+}
+
+// 1단계 결과를 결재함 HTML 안에 숨겨 둔다(HTML 주석 — 화면·복사에 안 나옴). 06:30 2단계가 이걸 읽어
+// 이어서 처리하고, 처리 후에는 주석 없이 다시 저장해 두 번 다듬지 않는다.
+const STATE_MARK = 'MJBLOG-STATE:'
+export function encodeBlogState(result: MajalnamBlogResult): string {
+  return `<!--${STATE_MARK}${Buffer.from(JSON.stringify(result), 'utf8').toString('base64')}-->`
+}
+export function decodeBlogState(html: string): MajalnamBlogResult | null {
+  const m = html.match(new RegExp(`<!--${STATE_MARK}([A-Za-z0-9+/=]+)-->`))
+  if (!m) return null
+  try {
+    return JSON.parse(Buffer.from(m[1], 'base64').toString('utf8')) as MajalnamBlogResult
+  } catch {
+    return null
+  }
 }
 
 // 채점 지적 → 고쳐 쓰기 지시. 16점 미만 항목의 근거 + 확인 필요 플래그 + 코드 점검 결과를 모은다.
@@ -272,17 +359,20 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     : ''
   const reviewHtml = reviews.map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`).join('<br/>')
   // 맨 위: 채점 실패 안내 + 규칙 자동 점검(효과 단정·연락처·제목 길이) — 코드로, 비용 0.
-  const checkHtml = buildBlogCheckHtml({
-    reviewed: reviews.length > 0,
-    draft,
-    autoFixes,
-    extraIssues: [...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS), ...checkAiTells(draft.body)],
-  })
+  // 06:00 1단계(채점 전)면 "06:30에 채점·다듬기" 안내만 띄운다.
+  const checkHtml = result.pendingPolish
+    ? `<div style="border:1.5px solid #74c0fc;border-radius:10px;padding:10px 12px;background:#e7f5ff;color:#1c3d5a"><b>⏳ 06:30에 채점하고, 85점 미만이면 채점 지적대로 고쳐 써서 이 글을 업데이트해요.</b><br/>지금은 06:00에 깊게 쓴 1단계 초안이에요. 06:30 이후에 다시 열어 보세요.</div><br/>`
+    : buildBlogCheckHtml({
+      reviewed: reviews.length > 0,
+      draft,
+      autoFixes,
+      extraIssues: [...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS), ...checkAiTells(draft.body)],
+    })
   // 제목·본문은 "네이버용 복사" 버튼이 찾을 수 있게 표시(data-*)로 감싼다 — 본문은 적당한 꾸밈이
   // 들어간 붙여넣기용 HTML(naverFormat). 키워드 줄·점검 상자·채점은 복사 대상이 아니다.
   const titleEsc = draft.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const postHtml =
     `<div ${NAVER_TITLE_ATTR} style="font-size:17px;font-weight:700;margin:6px 0 10px">${titleEsc}</div>` +
     `<div ${NAVER_POST_ATTR} style="border:1px solid #e5e5e5;border-radius:10px;padding:18px 12px;background:#fff">${renderNaverBody(draft.body, markCta)}</div>`
-  return `${checkHtml}${kwLine}<br/><br/>${postHtml}${photoHtml}<br/><br/>${reviewHtml}`
+  return `${checkHtml}${kwLine}<br/><br/>${postHtml}${photoHtml}<br/><br/>${reviewHtml}${result.pendingPolish ? encodeBlogState(result) : ''}`
 }

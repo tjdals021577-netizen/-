@@ -48,8 +48,8 @@ npm run lint                             # 4) oxlint
 - `CLAUDE_MODEL_CHEAP = 'claude-haiku-5-5'` — 채점·키워드 판단만(비용 절감, 2026-10 4.5→5.5). `src/lib/claude.ts`.
   Haiku 5.5는 생각이 기본 ON이라 생각 토큰도 max_tokens에 포함 → 호출마다 `effort: 'low'` + 한도 여유.
 - **생각 깊이(effort, 2026-10 비용 절감)**: Sonnet 5는 미설정 시 high로 깊게 생각하고 그 토큰도 출력 과금.
-  마잘남 블로그 글쓰기는 `medium`(2026-10-11 실측: high는 규칙이 늘어난 뒤 180초 안에 못 끝나 잘림 → 저품질 low 글 +
-  고쳐 쓰기 시간 0초. medium으로 제시간에 쓰고 미달이면 채점 지적대로 고쳐 쓰기) / 모닝·팀채팅 판단·브레인 자료수집 `low` /
+  마잘남 블로그 글쓰기: 06:00 자동은 `high`(2단계 분리로 글쓰기에 최대 230초 — 한 번에 하면 180초 안에 못 끝나 잘렸음),
+  고쳐 쓰기·팀채팅은 `medium` / 모닝·팀채팅 판단·브레인 자료수집 `low` /
   유튜브 기획·대행·blog-brain 분석 `medium`.
   `callClaudeJson`·`callClaudeVisionJson`·`callClaudeJsonWithWebSearch`의 `effort` 옵션(→ `output_config.effort`).
 - **응답 길이 한도(2026-10, 실사용 실패 2건 후)**: 현재 모델은 생각 토큰도 max_tokens에 포함 → 낮은 한도는
@@ -95,6 +95,11 @@ npm run lint                             # 4) oxlint
       "결론적으로·그렇다면·지금 바로" 등을 잡아 자동 고쳐 쓰기에 전달. 결재함 "① 네이버 제목 복사 / ② 본문 복사(꾸밈 포함)" 버튼(`ApprovalScreen`).
       네이버 블로그 자동 발행은 하지 않는다(공식 글쓰기 API 불확실 + 자동 발행 감지 시 저품질·제재 위험).
     - `api/_lib/majalnamBlogPipeline.ts` — 06:00 크론·팀채팅 공용: 키워드 → 라이터(researchBlock 주입) → 채점.
+      **두 번에 나눠 실행(2026-10 대표님 결정 A)**: 06:00 `content-schedule`은 `mode: 'draft'` — 깊게(high, 최대 230초) 쓰고
+      자동 수정까지만 해서 결재함에 "채점 대기(06:30)"로 저장(상태는 HTML 주석 `MJBLOG-STATE:`에 숨김).
+      06:30 `hooks` 크론(시트 동기화 뒤, 크론 호출일 때만)이 `majalnamBlogPolish.ts` → `polishMajalnamBlog`로 채점 →
+      미달이면 고쳐 쓰기(보통) → 재채점 후 **같은** 결재함·근무기록·캘린더 항목을 업데이트(승인·반려된 건 안 건드림).
+      팀채팅은 `mode: 'full'`(보통으로 한 번에).
     - `api/_lib/naverBlogData.ts` — blog-brain 수집. env에 네이버 키 있으면 A(검색API·검색광고API),
       없으면 B: **1순위 네이버 블로그 검색 결과 페이지 직접 읽기**(비용 0, 실제 네이버 순위 — 2026-10 웹서치만으론 상위글 0건),
       0건이면 2순위 웹서치(응답 건수·제외된 도메인을 근무기록에 남김). 어느 쪽이든 m.blog 본문을 코드로 실측(글자·사진·소제목·도입·FAQ·CTA).
@@ -107,7 +112,7 @@ npm run lint                             # 4) oxlint
 - **`src/lib/`** — 상태 저장(localStorage 기반) + `claude.ts`(프록시 호출·프롬프트 캐싱
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
-- **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00,
+- **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `hooks` 06:30(시트 동기화 + 블로그 2단계),
   `radar` 07:50, `brain` 매일 09:00(주 1회 분량, 아래 참고), `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
   - 2026-10 대표님 비용 절감으로 **스케줄에서 뺀 크론**(파일은 그대로 — vercel.json에 한 줄 추가하면 다시 켜짐):
     - `thread-daily`(07:40, 스레드 5포맷 자동): `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }`

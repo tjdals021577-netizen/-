@@ -190,8 +190,11 @@ async function generateMajalnamBlog(apiKey: string, date: string): Promise<strin
   const brand: Brand = '마잘남'
   const { topic } = await pickTopic(brand, 'blog')
   const photoImages = await fetchTodayPhotos(date, brand)
+  // 대표님 결정 A(두 번에 나눠 실행): 06:00엔 깊게 쓰기까지만, 채점·고쳐 쓰기는 06:30 2단계
+  // (api/cron/hooks.ts → majalnamBlogPolish)가 같은 결재 항목을 업데이트한다.
   const result = await runMajalnamBlogPipeline({
     apiKey,
+    mode: 'draft',
     topic,
     date,
     // 새 라이터는 사진을 "한 줄 설명"으로 받는다 — 대표님이 올린 사진은 설명이 없으니
@@ -201,11 +204,9 @@ async function generateMajalnamBlog(apiKey: string, date: string): Promise<strin
         ? `대표님이 오늘 올린 사진 ${photoImages.length}장(설명 없음) — 사진 추천 지점 중 어울리는 곳에 "[📸 첨부 사진: 대표님 사진 N번]"으로 배치`
         : undefined,
   })
-  const { draft, reviews, keyword } = result
-  const reviewed = reviews.length > 0
-  const avg = reviewed ? reviews.reduce((s, r) => s + r.totalScore, 0) / reviews.length : 0
-  const passed = reviewed && avg >= PASS_THRESHOLD
-  const scoreNote = reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : REVIEW_FAILED_NOTE
+  const { draft, keyword } = result
+  const passed = false
+  const scoreNote = '06:00 1단계(깊게 쓰기) 완료 — 06:30 채점·다듬기 예정'
   const html = buildMajalnamBlogHtml(result)
   const kwNote = `키워드 "${keyword.mainKeyword}" ${keyword.readerStage}`
   const nowIso = new Date().toISOString()
@@ -230,7 +231,7 @@ async function generateMajalnamBlog(apiKey: string, date: string): Promise<strin
     title: draft.title,
     content_html: html,
     passed,
-    score_label: reviewed ? `${avg.toFixed(1)}/100` : REVIEW_FAILED_LABEL,
+    score_label: '채점 대기(06:30)',
     created_at: nowIso,
     status: 'pending',
     source_work_log_id: logId,

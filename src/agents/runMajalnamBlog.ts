@@ -122,6 +122,14 @@ const DRAFT_ATTEMPTS: DraftAttempt[] = [
 // 마지막이 아닌 시도의 최대 대기(뒤 시도·고쳐 쓰기 몫 보호).
 const NON_LAST_ATTEMPT_CAP_MS = 140_000
 
+// 06:00 1단계 전용(대표님 결정 A — 두 번에 나눠 실행): 채점·고쳐 쓰기를 06:30 2단계로 미루고
+// 5분을 글쓰기에 쓴다. 1차 깊게(high, 최대 230초) → 실패하면 가볍게 받아 두고 06:30에 고쳐 쓴다.
+export const DEEP_DRAFT_ATTEMPTS: DraftAttempt[] = [
+  { effort: 'high', maxTokens: 16_000, strict: false },
+  { effort: 'low', maxTokens: 8192, strict: true },
+]
+export const DEEP_FIRST_CAP_MS = 230_000
+
 export async function generateMajalnamBlogDraft(params: {
   apiKey: string
   system: SystemBlock[]
@@ -129,10 +137,20 @@ export async function generateMajalnamBlogDraft(params: {
   onUsage?: UsageCallback
   // 이 시각(ms)까지 끝내야 한다(크론·팀채팅 함수 300초 한도 — 앞의 키워드, 뒤의 채점 몫 제외).
   deadline?: number
-  // 시도 순서를 바꿀 때(미달 자동 고쳐 쓰기: 남은 시간에 맞는 깊이 1번만).
+  // 시도 순서를 바꿀 때(미달 자동 고쳐 쓰기: 남은 시간에 맞는 깊이 1번만 / 06:00 1단계: 깊게).
   attempts?: DraftAttempt[]
+  // 마지막이 아닌 시도의 최대 대기 — 06:00 1단계(채점을 06:30으로 미룸)는 깊게 쓸 시간을 길게 준다.
+  nonLastCapMs?: number
 }): Promise<BlogDraft & { effort: Effort }> {
-  const { apiKey, system, user, onUsage, deadline = Date.now() + 220_000, attempts = DRAFT_ATTEMPTS } = params
+  const {
+    apiKey,
+    system,
+    user,
+    onUsage,
+    deadline = Date.now() + 220_000,
+    attempts = DRAFT_ATTEMPTS,
+    nonLastCapMs = NON_LAST_ATTEMPT_CAP_MS,
+  } = params
   // prefill은 모델 미지원이라 쓰지 않는다(claude.ts 참고) — 2·3차에 "JSON만" 강한 지시.
   const strictReminder =
     '\n\n[매우 중요] 설명·머리말·마크다운 코드블록(```) 없이, ' +
@@ -152,7 +170,7 @@ export async function generateMajalnamBlogDraft(params: {
         maxTokens: attempt.maxTokens,
         effort: attempt.effort,
         // 1차가 시간을 다 쓰지 않게 — 뒤 시도 몫(최소 40초)을 남긴다.
-        timeoutMs: Math.max(30_000, isLast ? left - 5_000 : Math.min(NON_LAST_ATTEMPT_CAP_MS, left - 45_000)),
+        timeoutMs: Math.max(30_000, isLast ? left - 5_000 : Math.min(nonLastCapMs, left - 45_000)),
         onUsage: track(onUsage),
       })
       // 어느 깊이로 써졌는지 남긴다 — 1차(깊게)가 실패해 가볍게 쓴 글은 품질이 떨어질 수 있어
