@@ -121,73 +121,76 @@ export function AppShell() {
   }, [])
 
   return (
+    // 바깥은 실제 화면 기준 최대 폭, 안쪽(ui-zoom)은 큰 모니터에서 화면 전체 배율(index.css).
     <div className="mx-auto min-h-screen px-4 py-5" style={{ maxWidth: 'var(--content-max)' }}>
-      <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-bold text-[var(--text)]">
-          <span className="h-5 w-5 rounded-md bg-[var(--accent)]" />
-          업메리 · 마잘남 AI 운영
-        </div>
+      <div className="ui-zoom">
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+            <span className="h-5 w-5 rounded-md bg-[var(--accent)]" />
+            업메리 · 마잘남 AI 운영
+          </div>
 
-        <div className="flex gap-0.5 rounded-full bg-[var(--surface-2)] p-0.5 text-xs font-semibold">
-          {BRANDS.map((b) => (
-            <button
-              key={b}
-              type="button"
-              onClick={() => setBrand(b)}
-              className={`rounded-full px-3.5 py-1 transition ${
-                brand === b ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-faint)] hover:text-[var(--text)]'
-              }`}
-            >
-              {b}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      {/* 풀폭 탭 바 — 본문 폭에 맞춰 꽉 차게, 활성 탭은 accent 밑줄로 확실히 구분.
-          overflow는 쓰지 않는다(호버 드롭다운이 잘리므로) — 좁은 화면에선 줄바꿈. */}
-      <nav className="mb-5 flex flex-wrap items-stretch gap-x-1 border-b border-[var(--border)]">
-        {availableTabs.map((tab) => {
-          const active = activeTab === tab.id
-          return (
-            <div key={tab.id} className="group relative">
+          <div className="flex gap-0.5 rounded-full bg-[var(--surface-2)] p-0.5 text-xs font-semibold">
+            {BRANDS.map((b) => (
               <button
+                key={b}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative flex items-center gap-1.5 whitespace-nowrap px-3.5 pb-2.5 pt-1.5 text-[13.5px] font-semibold transition-colors ${
-                  active ? 'text-[var(--accent)]' : 'text-[var(--text-faint)] hover:text-[var(--text)]'
+                onClick={() => setBrand(b)}
+                className={`rounded-full px-3.5 py-1 transition ${
+                  brand === b ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-faint)] hover:text-[var(--text)]'
                 }`}
               >
-                {tab.label}
-                {tab.id === 'approval' && pendingApprovalCount > 0 && (
-                  <span className="rounded-full bg-[var(--open)] px-1.5 text-[10px] font-bold text-white">
-                    {pendingApprovalCount}
-                  </span>
-                )}
-                <span
-                  className={`absolute inset-x-1 -bottom-px h-0.5 rounded-full transition-all ${
-                    active ? 'bg-[var(--accent)] opacity-100' : 'opacity-0'
-                  }`}
-                />
+                {b}
               </button>
-              {SHOW_TAB_PREVIEW && (
-                <TabPreview tab={tab} pendingCount={pendingApprovalCount} dash={dash} />
-              )}
-            </div>
-          )
-        })}
-      </nav>
+            ))}
+          </div>
+        </header>
 
-      <main>
-        {activeTab === 'team' && <TeamChatScreen brand={brand} />}
-        {activeTab === 'dash' && <DashboardScreen />}
-        {activeTab === 'agency' && <AgencyScreen />}
-        {activeTab === 'blog' && <ChannelWorkspaceScreen brand={brand} channel="blog" />}
-        {activeTab === 'thread' && <ChannelWorkspaceScreen brand={brand} channel="thread" />}
-        {activeTab === 'youtube' && <ChannelWorkspaceScreen brand={brand} channel="youtube" />}
-        {activeTab === 'approval' && <ApprovalScreen brand={brand} />}
-        {activeTab === 'settings' && <SettingsScreen />}
-      </main>
+        {/* 풀폭 탭 바 — 본문 폭에 맞춰 꽉 차게, 활성 탭은 accent 밑줄로 확실히 구분.
+            overflow는 쓰지 않는다(호버 드롭다운이 잘리므로) — 좁은 화면에선 줄바꿈. */}
+        <nav className="mb-5 flex flex-wrap items-stretch gap-x-1 border-b border-[var(--border)]">
+          {availableTabs.map((tab) => {
+            const active = activeTab === tab.id
+            return (
+              <div key={tab.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`relative flex items-center gap-1.5 whitespace-nowrap px-3.5 pb-2.5 pt-1.5 text-[13.5px] font-semibold transition-colors ${
+                    active ? 'text-[var(--accent)]' : 'text-[var(--text-faint)] hover:text-[var(--text)]'
+                  }`}
+                >
+                  {tab.label}
+                  {tab.id === 'approval' && pendingApprovalCount > 0 && (
+                    <span className="rounded-full bg-[var(--open)] px-1.5 text-[10px] font-bold text-white">
+                      {pendingApprovalCount}
+                    </span>
+                  )}
+                  <span
+                    className={`absolute inset-x-1 -bottom-px h-0.5 rounded-full transition-all ${
+                      active ? 'bg-[var(--accent)] opacity-100' : 'opacity-0'
+                    }`}
+                  />
+                </button>
+                {SHOW_TAB_PREVIEW && (
+                  <TabPreview tab={tab} pendingCount={pendingApprovalCount} dash={dash} />
+                )}
+              </div>
+            )
+          })}
+        </nav>
+
+        <main>
+          {activeTab === 'team' && <TeamChatScreen brand={brand} />}
+          {activeTab === 'dash' && <DashboardScreen />}
+          {activeTab === 'agency' && <AgencyScreen />}
+          {activeTab === 'blog' && <ChannelWorkspaceScreen brand={brand} channel="blog" />}
+          {activeTab === 'thread' && <ChannelWorkspaceScreen brand={brand} channel="thread" />}
+          {activeTab === 'youtube' && <ChannelWorkspaceScreen brand={brand} channel="youtube" />}
+          {activeTab === 'approval' && <ApprovalScreen brand={brand} />}
+          {activeTab === 'settings' && <SettingsScreen />}
+        </main>
+      </div>
     </div>
   )
 }

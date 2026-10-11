@@ -625,7 +625,11 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
           </p>
         </div>
 
-        <div className="flex h-[75vh] max-h-[820px] min-h-[520px] min-w-0 flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+        {/* 높이는 화면의 75% — 큰 모니터 배율(--ui-zoom)만큼 나눠서 배율을 써도 화면보다 커지지 않게. */}
+        <div
+          className="flex min-h-[520px] min-w-0 flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)]"
+          style={{ height: 'calc(75vh / var(--ui-zoom, 1))' }}
+        >
           <div className="flex items-center gap-2.5 border-b border-[var(--border)] p-3.5">
             {viewingAgent ? (
               <>

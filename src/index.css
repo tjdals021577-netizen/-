@@ -61,8 +61,28 @@
 
   /* 본문 최대폭 — 지금 1024px에서 넓혀 밀도 있는 관리자 폭으로(적용은 2단계) */
   --content-max: 1200px;
+  /* 큰 PC 화면 배율(대표님: "PC인데 화면이 작아 보인다") — 아래 미디어쿼리에서만 커진다. */
+  --ui-zoom: 1;
 
   color-scheme: light;
+}
+
+/* 넓은 모니터에선 본문 폭을 넓히고 화면 전체를 살짝 키운다(글자가 px 고정이라 배율로 한 번에).
+   노트북·모바일(1440px 미만)은 그대로. 폭(--content-max)은 확대 전 실제 화면 기준. */
+@media (min-width: 1440px) {
+  :root {
+    --content-max: 1400px;
+    --ui-zoom: 1.1;
+  }
+}
+@media (min-width: 1800px) {
+  :root {
+    --content-max: 1560px;
+    --ui-zoom: 1.2;
+  }
+}
+.ui-zoom {
+  zoom: var(--ui-zoom);
 }
 
 @media (prefers-color-scheme: dark) {
