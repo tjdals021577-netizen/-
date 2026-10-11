@@ -1,0 +1,200 @@
+// 서비스 계정(JSON 키)으로 GA4 Data API를 호출한다. 별도 npm 패키지(googleapis 등) 없이
+// Node 내장 crypto로 JWT를 직접 서명해서 액세스 토큰을 발급받는다(서비스 계정 표준 플로우).
+import { createSign } from 'node:crypto'
+
+interface ServiceAccountKey {
+  client_email: string
+  private_key: string
+}
+
+export interface Ga4Report {
+  sessions: number
+  activeUsers: number
+  conversions: number
+  topPages: { path: string; views: number }[]
+  trafficSources: { source: string; sessions: number }[]
+  naverLandingPages: { landingPage: string; sessions: number }[]
+  blogReferrers: { referrer: string; views: number }[]
+  // UTM 세분화 — 출처(utm_source)·매체(utm_medium)·캠페인(utm_campaign)별 세션.
+  // "youtube / cpc / 여름세일" 처럼 어느 채널·어느 캠페인이 트래픽을 만드는지
+  // 정확히 본다(트래픽 출처 세분화). 캠페인/매체가 없으면 GA4가 "(not set)"로 준다.
+  utmBreakdown: { source: string; medium: string; campaign: string; sessions: number }[]
+}
+
+interface RunReportResponse {
+  rows?: { dimensionValues?: { value: string }[]; metricValues?: { value: string }[] }[]
+}
+
+function base64url(input: Buffer | string): string {
+  return Buffer.from(input)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+async function getAccessToken(key: ServiceAccountKey): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const claims = base64url(
+    JSON.stringify({
+      iss: key.client_email,
+      scope: 'https://www.googleapis.com/auth/analytics.readonly',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: now + 3600,
+      iat: now,
+    }),
+  )
+  const signInput = `${header}.${claims}`
+  const signer = createSign('RSA-SHA256')
+  signer.update(signInput)
+  signer.end()
+  const signature = base64url(signer.sign(key.private_key))
+  const jwt = `${signInput}.${signature}`
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`GA4 토큰 발급 실패: ${res.status} ${await res.text()}`)
+  }
+  const data = (await res.json()) as { access_token: string }
+  return data.access_token
+}
+
+async function runReport(
+  accessToken: string,
+  propertyId: string,
+  body: object,
+): Promise<RunReportResponse> {
+  const res = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) {
+    throw new Error(`GA4 runReport 실패: ${res.status} ${await res.text()}`)
+  }
+  return res.json() as Promise<RunReportResponse>
+}
+
+// startDate/endDate는 GA4 API가 그대로 받는 형식('yesterday', 'today', 'NdaysAgo', 'YYYY-MM-DD').
+export async function fetchGa4Report(params: {
+  serviceAccountKeyJson: string
+  propertyId: string
+  startDate: string
+  endDate: string
+}): Promise<Ga4Report> {
+  const key = JSON.parse(params.serviceAccountKeyJson) as ServiceAccountKey
+  const accessToken = await getAccessToken(key)
+  const dateRanges = [{ startDate: params.startDate, endDate: params.endDate }]
+
+  const [summary, pages, sources, naverLandingPages, blogReferrers, utm] = await Promise.all([
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'conversions' }],
+    }),
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'pagePath' }],
+      metrics: [{ name: 'screenPageViews' }],
+      orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+      limit: '5',
+    }),
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'sessionSource' }],
+      metrics: [{ name: 'sessions' }],
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      // 유튜브(utm_source=youtube)처럼 소규모 출처도 누락되지 않게 상위 10개까지.
+      limit: '10',
+    }),
+    // 네이버 검색으로 들어온 세션이 "어느 페이지로 착지했는지" — 브랜드명
+    // 검색(보통 홈으로 착지)과 블로그 글 검색(그 글 주소로 착지)을 구분하는
+    // 용도(대표님 요청 — GA4는 검색어 자체는 안 주지만 착지 페이지는 준다).
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'landingPage' }],
+      metrics: [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'sessionSource',
+          stringFilter: { matchType: 'CONTAINS', value: 'naver', caseSensitive: false },
+        },
+      },
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit: '5',
+    }),
+    // 네이버 블로그에서 타고 들어온 원본 주소(리퍼러) 전체 — 주소에 블로그
+    // 아이디가 들어있어서(blog.naver.com/멘토아이디/글번호) 어느 멘토의 블로그
+    // 글에서 왔는지 구분할 수 있다. 멘토들이 UTM 링크를 써주지 않아도 되는
+    // 방법(대표님 요청). 단, 네이버 앱 내장 브라우저는 리퍼러를 잘라먹는
+    // 경우가 있어 잡히는 만큼만 보이는 best-effort 데이터다.
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'pageReferrer' }],
+      metrics: [{ name: 'screenPageViews' }],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'pageReferrer',
+          stringFilter: { matchType: 'CONTAINS', value: 'blog.naver', caseSensitive: false },
+        },
+      },
+      orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+      limit: '10',
+    }),
+    // UTM 세분화 — 출처×매체×캠페인 조합별 세션(상위 15). utm_source=youtube&
+    // utm_medium=cta 같은 링크가 이 조합으로 정확히 잡힌다.
+    runReport(accessToken, params.propertyId, {
+      dateRanges,
+      dimensions: [
+        { name: 'sessionSource' },
+        { name: 'sessionMedium' },
+        { name: 'sessionCampaignName' },
+      ],
+      metrics: [{ name: 'sessions' }],
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit: '15',
+    }),
+  ])
+
+  const summaryValues = summary.rows?.[0]?.metricValues
+  return {
+    sessions: Number(summaryValues?.[0]?.value ?? 0),
+    activeUsers: Number(summaryValues?.[1]?.value ?? 0),
+    conversions: Number(summaryValues?.[2]?.value ?? 0),
+    topPages: (pages.rows ?? []).map((r) => ({
+      path: r.dimensionValues?.[0]?.value ?? '',
+      views: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+    trafficSources: (sources.rows ?? []).map((r) => ({
+      source: r.dimensionValues?.[0]?.value ?? '',
+      sessions: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+    naverLandingPages: (naverLandingPages.rows ?? []).map((r) => ({
+      landingPage: r.dimensionValues?.[0]?.value ?? '',
+      sessions: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+    blogReferrers: (blogReferrers.rows ?? []).map((r) => ({
+      referrer: r.dimensionValues?.[0]?.value ?? '',
+      views: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+    utmBreakdown: (utm.rows ?? []).map((r) => ({
+      source: r.dimensionValues?.[0]?.value ?? '',
+      medium: r.dimensionValues?.[1]?.value ?? '',
+      campaign: r.dimensionValues?.[2]?.value ?? '',
+      sessions: Number(r.metricValues?.[0]?.value ?? 0),
+    })),
+  }
+}
