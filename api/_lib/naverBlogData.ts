@@ -14,6 +14,8 @@ import { createHmac } from 'node:crypto'
 import { callClaudeJsonWithWebSearch, type UsageCallback } from '../../src/lib/claude.js'
 import type { OfficialNotice, TopPostData } from '../../src/types/blogBrain.js'
 
+const DESKTOP_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
 const MOBILE_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
 
@@ -253,9 +255,47 @@ export async function fetchKeywordVolumes(hints: string[]): Promise<string> {
 
 // ── 웹서치 수집기(B 모드의 상위글 + 공식 공지) ──
 
+// ── B 모드 1순위: 네이버 블로그 검색 결과 페이지를 직접 읽는다(키·AI 비용 없음) ──
+// "상위노출"은 네이버 검색 순위라, 일반 웹서치(네이버 글이 거의 안 잡힘 — 2026-10 실사용 0건)보다
+// 네이버 검색 결과 그 자체가 정확하다. 결과 HTML에서 블로그 글 주소를 나온 순서대로 뽑는다.
+// 주 1회·키워드 몇 개만 조회하므로 부담이 작다. 막히거나 0건이면 웹서치로 넘어간다.
+export function extractNaverBlogUrls(html: string, limit: number): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const re = /https?:\/\/(?:m\.)?blog\.naver\.com\/([A-Za-z0-9_-]{3,30})\/(\d{8,})/g
+  for (const m of html.matchAll(re)) {
+    const key = `${m[1]}/${m[2]}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(`https://blog.naver.com/${key}`)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+async function naverSearchPageTop(keyword: string, limit: number): Promise<string[]> {
+  const q = encodeURIComponent(keyword)
+  const targets: { url: string; ua: string }[] = [
+    { url: `https://m.search.naver.com/search.naver?ssc=tab.m_blog.all&query=${q}`, ua: MOBILE_UA },
+    { url: `https://search.naver.com/search.naver?ssc=tab.blog.all&query=${q}`, ua: DESKTOP_UA },
+  ]
+  for (const t of targets) {
+    try {
+      const res = await fetchWithTimeout(t.url, { headers: { 'User-Agent': t.ua, 'Accept-Language': 'ko-KR,ko;q=0.9' } }, 10_000)
+      if (!res.ok) continue
+      const urls = extractNaverBlogUrls(await res.text(), limit)
+      if (urls.length > 0) return urls
+    } catch {
+      // 다음 후보로.
+    }
+  }
+  return []
+}
+
 interface CollectorResult {
   posts: { keyword: string; rank: number; title: string; url: string }[]
   notices: OfficialNotice[]
+  diag?: string
 }
 
 async function webSearchCollect(params: {
@@ -304,9 +344,16 @@ ${postPart}[수집 ${includePosts ? '2' : '1'} — 공식 공지]
       keyword: String(p.keyword ?? ''),
       rank: typeof p.rank === 'number' ? p.rank : 0,
       title: String(p.title ?? ''),
-      url: String(p.url ?? ''),
+      url: String(p.url ?? '').trim(),
     }))
-    .filter((p) => p.keyword && parseNaverPostUrl(p.url))
+  // 진단: 웹서치가 몇 건을 줬고 몇 건이 네이버 글 주소가 아니라 빠졌는지(0건일 때 원인 파악용).
+  const rejectedHosts = [...new Set(posts.filter((p) => !parseNaverPostUrl(p.url)).map((p) => {
+    try { return new URL(p.url).hostname } catch { return '주소 없음' }
+  }))].slice(0, 3)
+  const kept = posts
+    .filter((p) => parseNaverPostUrl(p.url))
+    // 키워드를 빠뜨린 결과도 버리지 않는다(첫 키워드로 채움).
+    .map((p) => ({ ...p, keyword: p.keyword || keywords[0] || '' }))
   const cutoff = Date.parse(todayKst) - 8 * 86_400_000
   const notices = (Array.isArray(raw.notices) ? raw.notices : [])
     .filter((n): n is Record<string, unknown> => typeof n === 'object' && n !== null)
@@ -317,7 +364,11 @@ ${postPart}[수집 ${includePosts ? '2' : '1'} — 공식 공지]
       summary: String(n.summary ?? ''),
     }))
     .filter((n) => n.title && !(Date.parse(n.date) < cutoff))
-  return { posts, notices }
+  return {
+    posts: kept,
+    notices,
+    diag: `응답 ${posts.length}건 중 네이버 글 ${kept.length}건${rejectedHosts.length ? `(제외: ${rejectedHosts.join(', ')})` : ''}`,
+  }
 }
 
 // 동시에 너무 많이 긁지 않게(네이버 차단 방지) 4개씩. stopAt이 지나면 남은 항목은
@@ -409,7 +460,34 @@ export async function collectBlogBrainData(params: {
       }
     }
   } else {
-    // B: 웹서치로 상위글 + 공지를 한 번에. 실패·0건이면 범위를 줄여 한 번 더.
+    // B 1순위: 네이버 블로그 검색 결과 페이지 직접(키워드 4개 × 상위 7개, 비용 0).
+    const targets = keywords.slice(0, 4)
+    const scraped = await Promise.all(
+      targets.map(async (kw) => (await naverSearchPageTop(kw, 7)).map((url, i) => ({ keyword: kw, rank: i + 1, title: '', url }))),
+    )
+    rawPosts = scraped.flat()
+    notes.push(`네이버 검색 페이지: 상위글 ${rawPosts.length}건`)
+    // 상위글을 페이지에서 얻었으면 공식 공지만 웹서치로 따로(검색 2회, A 모드와 같은 방식).
+    if (rawPosts.length > 0 && timeLeft() > 60_000) {
+      try {
+        notices = (
+          await webSearchCollect({
+            apiKey,
+            keywords: [],
+            includePosts: false,
+            todayKst,
+            maxSearches: 2,
+            timeoutMs: Math.min(150_000, timeLeft()),
+            onUsage,
+          })
+        ).notices
+      } catch (err) {
+        notes.push(`공지 수집 실패: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+  if (mode === 'B' && rawPosts.length === 0) {
+    // B 2순위: 웹서치로 상위글 + 공지. 실패·0건이면 범위를 줄여 한 번 더.
     const tries = [
       { kws: keywords.slice(0, 4), searches: 6, timeout: 240_000 },
       { kws: keywords.slice(0, 2), searches: 4, timeout: 180_000 },
@@ -435,7 +513,7 @@ export async function collectBlogBrainData(params: {
           if (i > 0) notes.push('웹서치 1차 실패 → 범위 줄여 재시도 성공')
           break
         }
-        notes.push(`웹서치 ${i + 1}차: 상위글 0건`)
+        notes.push(`웹서치 ${i + 1}차: 상위글 0건${collected.diag ? ` — ${collected.diag}` : ''}`)
       } catch (err) {
         notes.push(`웹서치 ${i + 1}차 실패: ${err instanceof Error ? err.message : String(err)}`)
       }
