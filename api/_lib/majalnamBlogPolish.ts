@@ -1,12 +1,12 @@
-// 08시대 2단계(대표님 결정 A — 두 번에 나눠 실행): 06:00 content-schedule이 깊게 써서 올린 마잘남
-// 블로그 초안을 찾아 채점 → 85점 미만이면 채점 지적대로 고쳐 쓰기 → 재채점하고, 결재함·근무기록·
-// 캘린더의 "같은 항목"을 업데이트한다. 서버 함수가 12개 한도라 새 함수를 만들지 않고 hooks 크론
-// (08시대으로 이동) 안에서 실행된다.
+// 블로그 2단계(대표님 결정 A — 두 번에 나눠 실행): 1단계 크론이 깊게 써서 올린 블로그 초안을 찾아
+// 채점 → 85점 미만이면 채점 지적대로 고쳐 쓰기 → 재채점하고, 결재함·근무기록·캘린더의 "같은 항목"을
+// 업데이트한다. 마잘남은 hooks 크론(08시대), 업메리는 api/cron/[task].ts의 upmery-blog-polish(07시대).
 import { supabaseSelect, supabaseUpdate } from './supabaseAdmin.js'
 import { buildMajalnamBlogHtml, decodeBlogState, polishMajalnamBlog, type MajalnamBlogResult } from './majalnamBlogPipeline.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 import { PASS_THRESHOLD } from '../../src/types/domain.js'
 import { REVIEW_FAILED_LABEL } from '../../src/agents/blogRuleCheck.js'
+import type { Brand } from '../../src/types/brand.js'
 
 interface ApprovalRow {
   id: string
@@ -15,11 +15,11 @@ interface ApprovalRow {
   source_work_log_id: string | null
 }
 
-export async function runMajalnamBlogPolish(apiKey: string, deadline: number): Promise<string> {
+export async function runMajalnamBlogPolish(apiKey: string, deadline: number, brand: Brand = '마잘남'): Promise<string> {
   const today = kstDateKey(kstNow())
   const rows = await supabaseSelect<ApprovalRow>(
     'approval_queue',
-    `brand=eq.${encodeURIComponent('마잘남')}&agent=eq.writer` +
+    `brand=eq.${encodeURIComponent(brand)}&agent=eq.writer` +
       `&created_at=gte.${today}T00:00:00%2B09:00&order=created_at.desc&select=id,status,content_html,source_work_log_id`,
   )
   const target = rows.find((r) => r.status === 'pending' && r.content_html.includes('MJBLOG-STATE:'))
@@ -34,7 +34,7 @@ export async function runMajalnamBlogPolish(apiKey: string, deadline: number): P
   } catch (err) {
     // 실패해도 1단계 글은 그대로 살린다 — "채점만 실패, 글 정상"으로 표시하고 상태 표시는 지운다.
     failed = err instanceof Error ? err.message : String(err)
-    result = { ...state, reviews: [], pendingPolish: false, autoFixes: [...state.autoFixes, '08시대 채점·다듬기 실패 — 06:00 글 그대로'] }
+    result = { ...state, reviews: [], pendingPolish: false, autoFixes: [...state.autoFixes, '채점·다듬기 실패 — 1단계 글 그대로'] }
   }
 
   const reviewed = result.reviews.length > 0
@@ -62,7 +62,7 @@ export async function runMajalnamBlogPolish(apiKey: string, deadline: number): P
       title: result.draft.title,
       content_html: html,
       status: passed ? 'planned' : 'open',
-      note: `${note} (08시대 다듬기) · 발행 전 [경험 삽입] 채우기`,
+      note: `${note} (2단계 다듬기) · 발행 전 [경험 삽입] 채우기`,
     }).catch(() => undefined)
   }
   return failed ? `다듬기 실패(글은 유지): ${failed}` : note

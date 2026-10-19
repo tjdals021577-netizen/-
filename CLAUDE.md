@@ -6,7 +6,7 @@
 ## 이 프로젝트가 뭔가
 업메리·마잘남 **두 브랜드를 위한 AI 콘텐츠 운영 플랫폼**. (README.md는 초기 "3인 영상
 편집 심사위원회" 시절 설명이라 현재와 다름 — 실제 현황은 이 파일과 `docs/`를 기준으로 볼 것.)
-- **업메리**: 타로 상담 개인 사업 — 블로그만 운영.
+- **업메리**(퀸퀸 타로): 타로 부업 수익화 1:1 컨설팅(대표가 현직 타로 상담사) — 블로그만 운영.
 - **마잘남**: 스레드 마케팅 대행 에이전시 — 스레드 + 블로그 + 유튜브 운영.
 - 스택: React + Vite + TypeScript(프론트) · Vercel 서버리스(`api/`) · Supabase · Anthropic Claude.
 
@@ -62,9 +62,13 @@ npm run lint                             # 4) oxlint
 - 예산 가드: `src/lib/budgetGuard.ts`(일일 상한), 프록시에도 `DAILY_BUDGET_USD` 상한.
 - `PASS_THRESHOLD = 85`(통과) — `src/types/domain.ts`. **마잘남 블로그는 미달이면 채점 지적을 넘겨 1회 자동 고쳐 쓰기 +
   재채점, 점수 오른 쪽 채택**(2026-10 대표님 결정, 300초 한도 안에서 시간 남을 때만 — `majalnamBlogPipeline.ts`).
-  업메리 블로그는 미달이어도 재작성 안 함.
+  2026-10부터 **업메리 블로그도 같은 흐름**(아래 "업메리 블로그").
 - **Vercel Hobby = 서버리스 함수 12개 한도(현재 12개 꽉 참).** `api/` 아래 `_`로 시작하지 않는
   새 .ts 파일을 만들면 배포가 전부 실패한다 → 새 기능은 기존 함수 안에 넣거나 `api/_lib/`에.
+  가벼운 크론을 더 붙일 땐 **`api/cron/[task].ts`(동적 경로, 함수 1개)**에 작업 이름으로 추가하고 vercel.json에
+  `/api/cron/<작업 이름>`을 넣는다(현재: cleanup · upmery-blog · upmery-blog-polish).
+- **Hobby 크론은 정해진 분이 아니라 "그 시간대 안 아무 때나" 실행된다** → 순서가 중요한 단계(1단계 글쓰기 → 2단계 다듬기)는
+  시간대를 1시간 이상 띄운다.
 - Claude 모델은 **assistant prefill 미지원** — `assistantPrefill`은 무시된다(JSON은 지시+extractJson).
 - 멈춤/진행 스위치: `api/_lib/cronHandler.ts`의 `PAUSED_DEFAULT`(또는 env `AUTOMATION_PAUSED`).
 
@@ -81,7 +85,7 @@ npm run lint                             # 4) oxlint
   - `agencyPrompts.ts` — 대행(클라이언트별). 직종별 퍼널이 특히 유효.
   - `runBrain.ts` — **content-brain**(유튜브·스레드 소재 전용) 웹서치 리서치. `BRAND_RESEARCH_FOCUS`로 범위 제한.
     마잘남은 유튜브 작업물 공개형 소재(workAngles·rebuttals·references → `brain_reports.extras`).
-  - **마잘남 블로그 재설계(2026-10, 대표님 지시서)** — 업메리 블로그는 기존 `blogPrompts.ts` 그대로.
+  - **마잘남 블로그 재설계(2026-10, 대표님 지시서)** — 업메리도 같은 구조(아래 "업메리 블로그"). 옛 `blogPrompts.ts` 경로는 이제 안 씀.
     - `majalnamBlogPrompts.ts` — 대표님 원문 프롬프트 3개(1 글쓰기·2 키워드 생성·3 blog-brain 분석)
       **문구 그대로**. 발행 전 채점표도 1번의 15항목과 일치(`MAJALNAM_REVIEW_RUBRICS`).
     - `runMajalnamBlog.ts` — 키워드 생성(Haiku)·글쓰기(Sonnet)·blog-brain 분석(Sonnet) 호출+폴백.
@@ -101,6 +105,13 @@ npm run lint                             # 4) oxlint
       06시대 글쓰기와 겹치지 않게 08시대로)이 `majalnamBlogPolish.ts` → `polishMajalnamBlog`로 채점 →
       미달이면 고쳐 쓰기(보통) → 재채점 후 **같은** 결재함·근무기록·캘린더 항목을 업데이트(승인·반려된 건 안 건드림).
       팀채팅은 `mode: 'full'`(보통으로 한 번에).
+    - **업메리 블로그(2026-10, 대표님 "마잘남처럼 똑같이")**: 같은 파이프라인에 브랜드 설정만 바꿔 끼운다 —
+      `src/agents/blogBrandConfig.ts`(`getBlogBrandConfig`) + `src/agents/upmeryBlogPrompts.ts`(대표님 홈페이지 2개에서 뽑은
+      말투·`UPMERY_VERIFIED_FACTS`·수강생 기록·독자 단계·키워드·주제·채점표). CTA = 카카오톡 채널(`UPMERY_CTA_DEFAULT`,
+      env `BLOG_CTA_LINK_UPMERY`로 교체 가능). 수익 글이라 면책 문장(`UPMERY_DISCLAIMER`) 필수 — 없으면 자동 추가.
+      공용 1단계 작업 `api/_lib/blogDailyDraft.ts`(마잘남 content-schedule도 이걸 씀).
+      일정: 업메리 1단계 **04시대**(`/api/cron/upmery-blog`) → 2단계 **07시대**(`/api/cron/upmery-blog-polish`).
+      팀채팅 라이터도 업메리면 같은 파이프라인. (업메리 주간 blog-brain 분석은 아직 없음 — 마잘남만.)
       **채점 공정성(2026-10)**: 채점 AI에 `measureForReview`(코드 실측 — 메인 키워드·횟수·제목 위치·독자 단계·글자 수·소제목·
       문단 길이·사진 수·꾸밈 개수)를 넘기고, 채점 system에 `MAJALNAM_VERIFIED_FACTS` 전체 + 점수 기준선(기준 지킴 17~20 /
       아쉬움 14~16 / 위반 13↓)을 넣었다. 채점은 Haiku `medium`. (전엔 메인 키워드도 모르고 수치를 직접 세다 부당 감점)
@@ -116,14 +127,15 @@ npm run lint                             # 4) oxlint
 - **`src/lib/`** — 상태 저장(localStorage 기반) + `claude.ts`(프록시 호출·프롬프트 캐싱
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
-- **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `hooks` 08시대(시트 동기화 + 블로그 2단계),
+- **`api/cron/`** — 서버 자동화(KST): `upmery-blog` 04시대, `content-schedule` 06:00(마잘남 블로그 1단계),
+  `upmery-blog-polish` 07시대, `hooks` 08시대(시트 동기화 + 마잘남 블로그 2단계),
   `radar` 07:50, `brain` 매일 09:00(주 1회 분량, 아래 참고), `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
   - 2026-10 대표님 비용 절감으로 **스케줄에서 뺀 크론**(파일은 그대로 — vercel.json에 한 줄 추가하면 다시 켜짐):
     - `thread-daily`(07:40, 스레드 5포맷 자동): `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }`
     - `morning`(08:00, 모닝 브리핑 + 카톡 발송): `{ "path": "/api/cron/morning", "schedule": "0 23 * * *" }`
     - `agency`(07:30, 스레드 대행 클라이언트 자동 시안, 2026-10 대표님 지시로 중단):
       `{ "path": "/api/cron/agency", "schedule": "30 22 * * *" }` — 대행 탭 "오늘 초안 생성"(수동)은 계속 가능
-  - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일. 업메리 블로그 자동 OFF.
+  - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일. 업메리 블로그는 여기선 OFF — 대신 `[task].ts`의 upmery-blog가 매일 쓴다.
     **유튜브는 일시정지** — `YOUTUBE_ACTIVE = false`면 월·수·금 유튜브 기획과 content-brain(유튜브 소재 리서치)이
     함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
     일시정지 동안 팀채팅을 열 때마다 "유튜브 기획은 언제 다시 들어가시나요?" 알림 카드가 뜬다

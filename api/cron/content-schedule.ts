@@ -24,7 +24,8 @@ import { supabaseSelect, supabaseInsert } from '../_lib/supabaseAdmin.js'
 import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
 // 브레인 리포트 조회·포맷은 공용 헬퍼로(extras 컬럼 유무 방어 + 유튜브 작업물 소재 포함).
 import { fetchLatestBrainReport, formatBrainFindings, type BrainReportRow } from '../_lib/blogStore.js'
-import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from '../_lib/majalnamBlogPipeline.js'
+import { runDailyBlogDraft } from '../_lib/blogDailyDraft.js'
+import { MAJALNAM_BLOG_TOPICS } from '../../src/agents/majalnamBlogPrompts.js'
 import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from '../../src/agents/blogRuleCheck.js'
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
@@ -52,15 +53,6 @@ function buildBlogHtml(draft: BlogDraft, reviews: BlogReview[]): string {
 
 // 마잘남 블로그 "문의 전환용" 7주제 — 대표님 지정. 매일 하나씩 돌아가며 쓴다
 // (7일에 한 바퀴). 브레인 리서치는 topic이 아니라 내용 디벨롭(brainFindings)으로 함께 반영.
-const MAJALNAM_BLOG_TOPICS = [
-  '내가 스레드를 고집하는 이유 (대표 진정성)',
-  '마잘남이라는 이름이 만들어진 이야기 (브랜드 가치)',
-  '계정 비포/애프터 실제 운영 사례 (포트폴리오)',
-  '상담 때 매번 똑같이 답하는 질문 5개 (고객 니즈)',
-  '사장님들이 가장 많이 속는 스레드 상식 (신뢰 구축)',
-  '팔로워는 늘려도 매출이 안 붙는 계정의 공통점 (문제 정의)',
-  '저희와 결이 안 맞는 사장님 유형 (필터링)',
-]
 
 // 업메리 블로그 "상담 신청 전환용" 6주제 — 대표님 지정. 매일 하나씩 돌아가며 쓴다.
 const UPMERY_BLOG_TOPICS = [
@@ -186,70 +178,9 @@ async function fetchRecentFeedback(
 // 마잘남 블로그(재설계 지시서, 2026-10): 키워드 생성(2번) → 새 라이터(1번) → 채점.
 // 기존 브레인 marketFindings 주입은 제거됐고(지시서 5번), 매주 blog-brain이 만든
 // researchBlock이 대신 들어간다. 주제는 기존 "전환용 7주제" 로테이션 그대로.
+// 마잘남 블로그 1단계(06시대) — 업메리(04시대)와 같은 공용 작업(api/_lib/blogDailyDraft.ts).
 async function generateMajalnamBlog(apiKey: string, date: string): Promise<string> {
-  const brand: Brand = '마잘남'
-  const { topic } = await pickTopic(brand, 'blog')
-  const photoImages = await fetchTodayPhotos(date, brand)
-  // 대표님 결정 A(두 번에 나눠 실행): 06:00엔 깊게 쓰기까지만, 채점·고쳐 쓰기는 08시대 2단계
-  // (api/cron/hooks.ts → majalnamBlogPolish)가 같은 결재 항목을 업데이트한다.
-  const result = await runMajalnamBlogPipeline({
-    apiKey,
-    mode: 'draft',
-    topic,
-    date,
-    // 새 라이터는 사진을 "한 줄 설명"으로 받는다 — 대표님이 올린 사진은 설명이 없으니
-    // 장수만 알려주고 배치 위치만 표시하게 한다.
-    photos:
-      photoImages.length > 0
-        ? `대표님이 오늘 올린 사진 ${photoImages.length}장(설명 없음) — 사진 추천 지점 중 어울리는 곳에 "[📸 첨부 사진: 대표님 사진 N번]"으로 배치`
-        : undefined,
-  })
-  const { draft, keyword } = result
-  const passed = false
-  const scoreNote = '06:00 1단계(깊게 쓰기) 완료 — 08시대 채점·다듬기 예정'
-  const html = buildMajalnamBlogHtml(result)
-  const kwNote = `키워드 "${keyword.mainKeyword}" ${keyword.readerStage}`
-  const nowIso = new Date().toISOString()
-  const logId = makeId()
-
-  await supabaseInsert('work_log', {
-    id: logId,
-    agent: 'writer',
-    brand,
-    kind: '주간 스케줄 자동 기획',
-    status: 'done',
-    status_label: '완료',
-    started_at: nowIso,
-    ended_at: nowIso,
-    note: `${scoreNote} · ${kwNote} · 사진 ${photoImages.length}장`,
-    detail_html: html,
-  })
-  await supabaseInsert('approval_queue', {
-    id: makeId(),
-    agent: 'writer',
-    brand,
-    title: draft.title,
-    content_html: html,
-    passed,
-    score_label: '채점 대기(8시대)',
-    created_at: nowIso,
-    status: 'pending',
-    source_work_log_id: logId,
-  })
-  await supabaseInsert('calendar_entries', {
-    id: makeId(),
-    date,
-    brand,
-    channel: 'blog',
-    title: draft.title,
-    status: passed ? 'planned' : 'open',
-    note: `${scoreNote} (주간 스케줄 자동 기획) · ${kwNote} · 발행 전 [경험 삽입] 채우기`,
-    content_html: html,
-    checklist: makeDefaultChecklist(true),
-    created_at: nowIso,
-    source_work_log_id: logId,
-  })
-  return `${brand} 블로그: ${scoreNote} · ${kwNote}`
+  return runDailyBlogDraft(apiKey, '마잘남', date)
 }
 
 async function generateBlogForBrand(apiKey: string, brand: Brand, date: string): Promise<string> {

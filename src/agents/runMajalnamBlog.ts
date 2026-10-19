@@ -47,8 +47,10 @@ export async function generateBlogKeywords(params: {
   recentKeywords: string[]
   stageCounts: Record<ReaderStage, number>
   onUsage?: UsageCallback
+  // 브랜드별 키워드 전략 프롬프트(업메리 등). 기본은 마잘남.
+  system?: string
 }): Promise<{ keyword: BlogKeywordResult; fallback: boolean }> {
-  const { apiKey, topic, keywordVolumes, recentKeywords, stageCounts, onUsage } = params
+  const { apiKey, topic, keywordVolumes, recentKeywords, stageCounts, onUsage, system = KEYWORD_SYSTEM } = params
   const user = buildKeywordUser({ topic, keywordVolumes, recentKeywords, stageCounts })
   const hasVolumeData = keywordVolumes.trim() !== '' && keywordVolumes.trim() !== '없음'
   for (const strict of [false, true]) {
@@ -59,7 +61,7 @@ export async function generateBlogKeywords(params: {
           // 키워드 고르기는 "판단"이라 싼 모델로 충분(비용 절감 원칙).
           model: CLAUDE_MODEL_CHEAP,
           effort: 'low',
-          system: KEYWORD_SYSTEM,
+          system,
           user: strict ? `${user}\n\n[매우 중요] 지정된 스키마의 JSON 객체 하나만 출력하라. 설명·코드블록 금지.` : user,
           // Haiku 5.5는 생각 토큰도 한도에 포함 — 짧은 JSON이라도 잘리지 않게 여유를 둔다.
           maxTokens: 2048,

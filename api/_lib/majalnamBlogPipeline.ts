@@ -1,6 +1,6 @@
-// 마잘남 블로그 한 편을 만드는 전체 흐름(지시서 4·5번) — 06:00 크론과 팀채팅이 공유.
+// 블로그 한 편을 만드는 전체 흐름(마잘남 지시서 4·5번) — 자동 크론과 팀채팅이 공유.
 //   키워드 생성(2번) → 블로그 라이터(1번, blog-brain researchBlock 주입) → 발행 전 채점
-// 업메리 블로그는 이 경로를 타지 않는다(기존 라이터 그대로).
+// 2026-10부터 업메리도 같은 흐름 — 브랜드별 내용은 src/agents/blogBrandConfig.ts(이름은 예전 그대로 Majalnam*).
 import { runBlogReviewsResilient } from '../../src/agents/runBlogReview.js'
 import {
   DEEP_DRAFT_ATTEMPTS,
@@ -10,15 +10,9 @@ import {
   generateMajalnamBlogDraft,
   type DraftAttempt,
 } from '../../src/agents/runMajalnamBlog.js'
-import {
-  buildMajalnamWriterSystem,
-  buildMajalnamWriterUser,
-  buildMajalnamReviewSystem,
-  CTA_LINK_PLACEHOLDER,
-  MAJALNAM_CORE_KEYWORDS,
-  MAJALNAM_REVIEW_RUBRICS,
-  MAJALNAM_VERIFIED_FACTS,
-} from '../../src/agents/majalnamBlogPrompts.js'
+import { CTA_LINK_PLACEHOLDER } from '../../src/agents/majalnamBlogPrompts.js'
+import { getBlogBrandConfig, type BlogBrandConfig } from '../../src/agents/blogBrandConfig.js'
+import type { Brand } from '../../src/types/brand.js'
 import { fetchKeywordVolumes } from './naverBlogData.js'
 import { getLatestBlogBrain, getRecentMainKeywords, getWeekStageCounts, saveBlogKeyword } from './blogStore.js'
 import { autoFixDraft, bodyCharCount, buildBlogCheckHtml, checkAiTells, checkBlogRules, checkImpact, measureForReview, titleLengthOk } from '../../src/agents/blogRuleCheck.js'
@@ -30,9 +24,10 @@ import { PASS_THRESHOLD } from '../../src/types/domain.js'
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 // 고쳐 쓰기 뒤 재채점 몫(Haiku 채점 1회 + 여유).
 const REVIEW_RESERVE_MS = 45_000
-const BRAND = '마잘남' as const
 
 export interface MajalnamBlogResult {
+  // 브랜드(예전에 저장된 1단계 상태엔 없을 수 있음 → 마잘남으로 본다).
+  brand?: Brand
   draft: BlogDraft
   reviews: BlogReview[]
   keyword: BlogKeywordResult
@@ -54,24 +49,29 @@ export interface MajalnamBlogResult {
 
 // AI는 소제목 수·글자 수를 스스로 정확히 못 센다(2026-10 실사용: 소제목 6개·1,615자). 지시 맨 끝에
 // 정확한 목표치를 다시 못 박고, 코드로 검사한다는 걸 알려 둔다(대표님 원문 규칙의 범위 안쪽 값).
-const STRUCTURE_TARGET =
-  '\n\n[분량·구조 목표 — 발행 전에 코드로 정확히 센다]\n' +
-  '· 소제목("## "로 시작하는 줄)은 정확히 4개\n' +
-  '· 본문은 공백 포함 2,000~2,300자(사진 추천 줄 제외). 1,800자 미만이면 반려된다 — 짧게 끝내지 말고 각 소제목 아래를 충분히 채운다\n' +
-  '· 사진 추천 6~8군데\n' +
-  '· 메인 키워드는 제목 1회 + 도입 3줄 안 1회 + 본문 2~3회 = 총 4~6회(그대로의 표현으로)\n' +
-  '\n[임팩트 목표 — 정보 나열처럼 밋밋하면 안 된다]\n' +
-  '· 도입 첫 3줄 안에 숫자 1개(예: 조회수 500, 3일, 2,000만 원)\n' +
-  '· 소제목 4개 중 2개 이상에 숫자를 넣는다(예: "## 남의 계정 글 3,000개 쓰고 안 것")\n' +
-  '· 소제목마다 그 아래에 구체적인 숫자 1개 이상 — 숫자는 [검증된 사실]·[대표 에피소드]의 것만(지어내면 코드가 잡아낸다)\n' +
-  '· "!! " 숫자 카드 2~3개를 글 흐름의 절정에 둔다(사례 결과·대표 실패 숫자)\n' +
-  '· ":: " 콜아웃 1~2개(소제목의 핵심 결론), "[전]"→"[후]" 비포·애프터 1개(숫자로 대비)\n' +
-  '· 각 소제목의 첫 줄은 통념을 깨거나 숫자로 시작해 바로 결론을 던진다'
+function structureTarget(cfg: BlogBrandConfig): string {
+  return (
+    '\n\n[분량·구조 목표 — 발행 전에 코드로 정확히 센다]\n' +
+    '· 소제목("## "로 시작하는 줄)은 정확히 4개\n' +
+    '· 본문은 공백 포함 2,000~2,300자(사진 추천 줄 제외). 1,800자 미만이면 반려된다 — 짧게 끝내지 말고 각 소제목 아래를 충분히 채운다\n' +
+    '· 사진 추천 6~8군데\n' +
+    '· 메인 키워드는 제목 1회 + 도입 3줄 안 1회 + 본문 2~3회 = 총 4~6회(그대로의 표현으로)\n' +
+    '\n[임팩트 목표 — 정보 나열처럼 밋밋하면 안 된다]\n' +
+    `· 도입 첫 3줄 안에 숫자 1개(예: ${cfg.impactExamples.intro})\n` +
+    `· 소제목 4개 중 2개 이상에 숫자를 넣는다(예: "${cfg.impactExamples.heading}")\n` +
+    '· 소제목마다 그 아래에 구체적인 숫자 1개 이상 — 숫자는 [검증된 사실]·[대표 에피소드]의 것만(지어내면 코드가 잡아낸다)\n' +
+    '· "!! " 숫자 카드 2~3개를 글 흐름의 절정에 둔다(사례 결과·대표 실패 숫자)\n' +
+    '· ":: " 콜아웃 1~2개(소제목의 핵심 결론), "[전]"→"[후]" 비포·애프터 1개(숫자로 대비)\n' +
+    '· 각 소제목의 첫 줄은 통념을 깨거나 숫자로 시작해 바로 결론을 던진다' +
+    (cfg.disclaimer ? `\n· 수익 숫자를 쓰면 바로 뒤에 "${cfg.disclaimer}"를 한 번 넣는다` : '')
+  )
+}
 
 const avgOf = (rs: BlogReview[]) => (rs.length > 0 ? rs.reduce((t, r) => t + r.totalScore, 0) / rs.length : 0)
 
 // 글쓰기·채점에 공통으로 쓰는 것(1단계·2단계·팀채팅 공용).
 function makeWriterCtx(p: {
+  cfg: BlogBrandConfig
   apiKey: string
   topic: string
   keyword: BlogKeywordResult
@@ -79,11 +79,11 @@ function makeWriterCtx(p: {
   photos?: string
   researchBlock: string
 }) {
-  const { apiKey, topic, keyword, keyContent, photos, researchBlock } = p
-  const writerSystem = buildMajalnamWriterSystem({ researchBlock, ctaLink: process.env.BLOG_CTA_LINK })
-  const reviewSystem = buildMajalnamReviewSystem(researchBlock)
+  const { cfg, apiKey, topic, keyword, keyContent, photos, researchBlock } = p
+  const writerSystem = cfg.writerSystem({ researchBlock, ctaLink: process.env[cfg.ctaEnvKey] || cfg.ctaDefault })
+  const reviewSystem = cfg.reviewSystem(researchBlock)
   const writerUser = (prev?: { title: string; body: string }, fb?: string) =>
-    buildMajalnamWriterUser({
+    cfg.writerUser({
       topic,
       mainKeyword: keyword.mainKeyword,
       subKeywords: keyword.subKeywords,
@@ -92,13 +92,18 @@ function makeWriterCtx(p: {
       photos,
       previousDraft: prev,
       feedback: fb,
-    }) + STRUCTURE_TARGET
+    }) + structureTarget(cfg)
 
   // 발행 전 자동 수정 — 대표님이 매번 확인·수정하지 않게. ① 코드로(제목 단정 수식어 삭제,
   // 연락처 가림·AI 티 정리) ② 제목 길이(25~35자)가 어긋나면 싼 모델로 제목만 다시 쓴다(검증 후 반영).
   async function polish(d: BlogDraft, titleDeadline: number): Promise<{ draft: BlogDraft; fixes: string[] }> {
     const { draft: fixedDraft, fixes } = autoFixDraft(d)
     let out = fixedDraft
+    // 수익 얘기를 하는 브랜드(업메리)는 면책 문장이 필수 — AI가 빠뜨렸으면 글 맨 끝에 붙인다.
+    if (cfg.disclaimer && !out.body.includes(cfg.disclaimer)) {
+      out = { ...out, body: `${out.body.trimEnd()}\n\n${cfg.disclaimer}` }
+      fixes.push('수익 면책 문장 추가')
+    }
     if (!titleLengthOk(out.title)) {
       const before = out.title
       const fixedTitle = await fixBlogTitle({
@@ -153,7 +158,7 @@ function makeWriterCtx(p: {
           const rewritten = await generateMajalnamBlogDraft({
             apiKey,
             system: writerSystem,
-            user: writerUser(draft, buildRewriteFeedback(reviews, draft, keyword.mainKeyword)),
+            user: writerUser(draft, buildRewriteFeedback(reviews, draft, keyword.mainKeyword, cfg)),
             deadline: rewriteDeadline,
             attempts: [attempt],
           })
@@ -209,8 +214,10 @@ export async function runMajalnamBlogPipeline(params: {
   previousDraft?: { title: string; body: string }
   feedback?: string
   mode?: 'full' | 'draft'
+  brand?: Brand
 }): Promise<MajalnamBlogResult> {
-  const { apiKey, topic, date, keyContent, photos, previousDraft, feedback, mode = 'full' } = params
+  const { apiKey, topic, date, keyContent, photos, previousDraft, feedback, mode = 'full', brand = '마잘남' } = params
+  const cfg = getBlogBrandConfig(brand)
   const isRevision = !!(previousDraft && feedback)
   const draftOnly = mode === 'draft'
   // 함수 한도 300초. full: 글쓰기 240초까지·전체 280초. draft: 채점이 없으니 글쓰기에 265초까지.
@@ -221,10 +228,10 @@ export async function runMajalnamBlogPipeline(params: {
   const [recentKeywords, stageCounts, keywordVolumes, brain] = await Promise.all([
     // 재수정은 "같은 글"을 고치는 거라 최근 키워드 제외 규칙을 적용하지 않는다
     // (자기 자신의 키워드가 제외돼 엉뚱한 키워드로 바뀌는 것 방지).
-    isRevision ? Promise.resolve([]) : getRecentMainKeywords(BRAND),
-    getWeekStageCounts(BRAND),
-    fetchKeywordVolumes(MAJALNAM_CORE_KEYWORDS),
-    getLatestBlogBrain(BRAND),
+    isRevision ? Promise.resolve([]) : getRecentMainKeywords(brand),
+    getWeekStageCounts(brand),
+    fetchKeywordVolumes(cfg.coreKeywords),
+    getLatestBlogBrain(brand),
   ])
 
   // 2번 키워드 생성 — 재수정이면 직전 글 제목을 주제로 삼아 그 글의 키워드를 다시 잡는다.
@@ -234,12 +241,13 @@ export async function runMajalnamBlogPipeline(params: {
     keywordVolumes,
     recentKeywords,
     stageCounts,
+    system: cfg.keywordSystem,
   })
   // 새 글일 때만 이력에 남긴다(재수정까지 세면 주간 단계 비율이 왜곡됨).
-  if (!isRevision) await saveBlogKeyword({ date, brand: BRAND, keyword })
+  if (!isRevision) await saveBlogKeyword({ date, brand, keyword })
 
   // 1번 글쓰기 — researchBlock은 blog-brain 최신 리포트(수집 실패 주엔 지난주 것이 그대로 최신).
-  const ctx = makeWriterCtx({ apiKey, topic, keyword, keyContent, photos, researchBlock: brain?.research_block ?? '' })
+  const ctx = makeWriterCtx({ cfg, apiKey, topic, keyword, keyContent, photos, researchBlock: brain?.research_block ?? '' })
   const writeStartedAt = Date.now()
   const rawDraft = await generateMajalnamBlogDraft({
     apiKey,
@@ -253,6 +261,7 @@ export async function runMajalnamBlogPipeline(params: {
   const first = await ctx.polish(writtenDraft, draftOnly ? pipelineDeadline : writerDeadline + 15_000)
 
   const base = {
+    brand,
     keyword,
     keywordFallback: fallback,
     researchWeek: brain?.week,
@@ -277,8 +286,10 @@ export async function polishMajalnamBlog(params: {
   deadline: number
 }): Promise<MajalnamBlogResult> {
   const { apiKey, state, deadline } = params
-  const brain = await getLatestBlogBrain(BRAND)
+  const brand = state.brand ?? '마잘남'
+  const brain = await getLatestBlogBrain(brand)
   const ctx = makeWriterCtx({
+    cfg: getBlogBrandConfig(brand),
     apiKey,
     topic: state.topic,
     keyword: state.keyword,
@@ -287,7 +298,7 @@ export async function polishMajalnamBlog(params: {
     researchBlock: brain?.research_block ?? '',
   })
   const scored = await ctx.scoreAndRewrite(state.draft, state.autoFixes, deadline)
-  return { ...state, ...scored, researchWeek: brain?.week ?? state.researchWeek, pendingPolish: false }
+  return { ...state, ...scored, brand, researchWeek: brain?.week ?? state.researchWeek, pendingPolish: false }
 }
 
 // 1단계 결과를 결재함 HTML 안에 숨겨 둔다(HTML 주석 — 화면·복사에 안 나옴). 08시대 2단계가 이걸 읽어
@@ -307,10 +318,10 @@ export function decodeBlogState(html: string): MajalnamBlogResult | null {
 }
 
 // 채점 지적 → 고쳐 쓰기 지시. 16점 미만 항목의 근거 + 확인 필요 플래그 + 코드 점검 결과를 모은다.
-function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft, mainKeyword = ''): string {
+function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft, mainKeyword: string, cfg: BlogBrandConfig): string {
   const labelOf = new Map(
-    (Object.keys(MAJALNAM_REVIEW_RUBRICS) as BlogRole[]).flatMap((role) =>
-      MAJALNAM_REVIEW_RUBRICS[role].map((c) => [c.id, c.label] as const),
+    (Object.keys(cfg.rubrics) as BlogRole[]).flatMap((role) =>
+      cfg.rubrics[role].map((c) => [c.id, c.label] as const),
     ),
   )
   const lines: string[] = []
@@ -324,7 +335,7 @@ function buildRewriteFeedback(reviews: BlogReview[], draft: BlogDraft, mainKeywo
   }
   for (const i of [
     ...checkBlogRules(draft).issues,
-    ...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS),
+    ...checkImpact(draft.body, cfg.verifiedFacts),
     ...checkAiTells(draft.body),
   ])
     lines.push(`- (자동 점검) ${i.where}: "${i.quote}" — ${i.reason}`)
@@ -353,6 +364,7 @@ ${lines.slice(0, 20).join('\n')}`
 // ([경험 삽입 …], 진단 폼 링크)는 노란 형광펜으로 표시해 놓치지 않게 한다.
 export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
   const { draft, reviews, keyword, keywordFallback, researchWeek, autoFixes, writerEffort, writerSeconds } = result
+  const cfg = getBlogBrandConfig(result.brand ?? '마잘남')
   // 진단 폼 링크 자리표시자는 노란 형광펜(대표님이 발행 전 채울 자리). [경험 삽입]은 renderNaverBody가 처리.
   const markCta = (html: string) =>
     html.split(CTA_LINK_PLACEHOLDER).join(`<span style="background:#fff3a3">${CTA_LINK_PLACEHOLDER}</span>`)
@@ -369,14 +381,14 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     : ''
   const reviewHtml = reviews.map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`).join('<br/>')
   // 맨 위: 채점 실패 안내 + 규칙 자동 점검(효과 단정·연락처·제목 길이) — 코드로, 비용 0.
-  // 06:00 1단계(채점 전)면 "08시대에 채점·다듬기" 안내만 띄운다.
+  // 1단계(채점 전)면 "9시 전에 채점·다듬기" 안내만 띄운다.
   const checkHtml = result.pendingPolish
-    ? `<div style="border:1.5px solid #74c0fc;border-radius:10px;padding:10px 12px;background:#e7f5ff;color:#1c3d5a"><b>⏳ 오전 8시대에 채점하고, 85점 미만이면 채점 지적대로 고쳐 써서 이 글을 업데이트해요.</b><br/>지금은 아침 6시대에 깊게 쓴 1단계 초안이에요. 9시쯤 다시 열어 보세요(아직 승인하지 마세요).</div><br/>`
+    ? `<div style="border:1.5px solid #74c0fc;border-radius:10px;padding:10px 12px;background:#e7f5ff;color:#1c3d5a"><b>⏳ 오전 9시 전에 채점하고, 85점 미만이면 채점 지적대로 고쳐 써서 이 글을 업데이트해요.</b><br/>지금은 새벽에 깊게 쓴 1단계 초안이에요. 9시쯤 다시 열어 보세요(아직 승인하지 마세요).</div><br/>`
     : buildBlogCheckHtml({
       reviewed: reviews.length > 0,
       draft,
       autoFixes,
-      extraIssues: [...checkImpact(draft.body, MAJALNAM_VERIFIED_FACTS), ...checkAiTells(draft.body)],
+      extraIssues: [...checkImpact(draft.body, cfg.verifiedFacts), ...checkAiTells(draft.body)],
     })
   // 제목·본문은 "네이버용 복사" 버튼이 찾을 수 있게 표시(data-*)로 감싼다 — 본문은 적당한 꾸밈이
   // 들어간 붙여넣기용 HTML(naverFormat). 키워드 줄·점검 상자·채점은 복사 대상이 아니다.

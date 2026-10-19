@@ -217,8 +217,10 @@ async function finishContentJob(opts: {
 // 팀채팅 지시문은 "주제", 재수정이면 직전 글 + 지시문을 넘긴다.
 async function runMajalnamWriter(body: DispatchBody, apiKey: string, startedAt: string, date: string): Promise<string> {
   const { instruction, previousOutput } = body
+  // 2026-10부터 업메리도 같은 블로그 흐름(브랜드별 내용만 다름 — blogBrandConfig).
   const result = await runMajalnamBlogPipeline({
     apiKey,
+    brand: body.brand,
     topic: instruction,
     date,
     previousDraft: previousOutput ? { title: previousOutput.title, body: previousOutput.content } : undefined,
@@ -232,7 +234,7 @@ async function runMajalnamWriter(body: DispatchBody, apiKey: string, startedAt: 
   await finishContentJob({
     logId: body.logId,
     agent: 'writer',
-    brand: '마잘남',
+    brand: body.brand,
     channel: 'blog',
     kind: '수동 지시(팀 채팅)',
     title: draft.title,
@@ -248,7 +250,7 @@ async function runMajalnamWriter(body: DispatchBody, apiKey: string, startedAt: 
 
 async function runWriter(apiKey: string, body: DispatchBody, startedAt: string, date: string): Promise<string> {
   const { brand, instruction, previousOutput } = body
-  if (brand === '마잘남') return runMajalnamWriter(body, apiKey, startedAt, date)
+  if (brand === '마잘남' || brand === '업메리') return runMajalnamWriter(body, apiKey, startedAt, date)
   const [marketFindings, pastFeedback] = await Promise.all([
     fetchBrainFindings(brand),
     fetchRecentFeedback(brand, 'blog'),
