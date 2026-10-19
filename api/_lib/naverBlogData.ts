@@ -98,10 +98,41 @@ interface Measured {
 const FAQ_RE = /FAQ|자주\s*(묻는|하는)\s*질문|Q\s*[.:)]|Q\s*\d|Q&A|질문\s*\d/i
 const CTA_RE = /(문의|신청|상담|링크|클릭|댓글|이웃|구독|DM|카톡|카카오|예약|방문|진단)/
 
+// 소제목 컴포넌트 없이 본문 글씨로 소제목을 다는 블로그가 대부분이라(2026-10 상위글 소제목 중앙값 0으로 나옴),
+// 짧은 한 줄이 번호·기호로 시작하거나 큰 글씨(19px↑)면 소제목(strong), 한 줄 전체가 굵은 글씨면 소제목 후보(weak).
+const HEADING_MARKER_RE =
+  /^(?:\d{1,2}\s*[.)](?!\d)\s*\S|0\d\s|\d️?⃣|[■□▶▷►▸●◆◇★☆✔✅✓◼◾【❶-❿①-⑩]|(?:STEP|PART|Step|Part|Chapter)\s*\d|#\d)/
+
+// 문단 글씨 크기(px 또는 se-fs-fs 숫자) 중 가장 큰 값. 지정이 없으면 0.
+function fontSize(innerHtml: string): number {
+  const sizes = [
+    ...[...innerHtml.matchAll(/se-fs-fs(\d+)/g)].map((m) => Number(m[1])),
+    ...[...innerHtml.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1])),
+  ]
+  return sizes.length > 0 ? Math.max(...sizes) : 0
+}
+
+// baseSize = 그 글의 본문 글씨 크기(가장 흔한 크기). 본문을 통째로 크게 쓰는 블로그도 있어서
+// "본문보다 크고 19 이상"일 때만 큰 글씨 소제목으로 본다.
+function styledHeading(innerHtml: string, text: string, baseSize: number): 'strong' | 'weak' | null {
+  const len = charLen(text)
+  if (len < 2 || len > 40) return null
+  // 마침표로 끝나는 문장은 본문이다(소제목은 보통 마침표를 안 찍는다).
+  if (/[.。]$/.test(text)) return null
+  if (HEADING_MARKER_RE.test(text)) return 'strong'
+  const size = fontSize(innerHtml)
+  if (size >= 19 && size > baseSize) return 'strong'
+  if (len > 30) return null
+  const withoutBold = innerHtml
+    .replace(/<(b|strong)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<span[^>]*font-weight:\s*(?:bold|[6-9]00)[^>]*>[\s\S]*?<\/span>/gi, '')
+  return withoutBold !== innerHtml && htmlToText(withoutBold) === '' ? 'weak' : null
+}
+
 // 스마트에디터 ONE(se-main-container) 본문을 컴포넌트 단위로 읽어 측정한다.
 // 문단(p.se-text-paragraph)마다 "가장 가까운 앞 컴포넌트"의 종류로 제목/소제목/
 // 인용구/본문을 구분한다(컴포넌트 끝 태그를 찾지 않아도 돼서 구조 변화에 덜 민감).
-function measureSmartEditor(html: string): Measured | null {
+export function measureSmartEditor(html: string): Measured | null {
   const start = html.indexOf('se-main-container')
   if (start < 0) return null
   const body = html.slice(start)
@@ -117,12 +148,22 @@ function measureSmartEditor(html: string): Measured | null {
     }
     return cls
   }
+  const paraRe = /<p class="se-text-paragraph[^"]*"[^>]*>([\s\S]*?)<\/p>/g
+  const sizeCount = new Map<number, number>()
+  for (const m of body.matchAll(paraRe)) {
+    if (!htmlToText(m[1])) continue
+    const size = fontSize(m[1])
+    sizeCount.set(size, (sizeCount.get(size) ?? 0) + 1)
+  }
+  const baseSize = [...sizeCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
   let title = ''
-  const headings: string[] = []
-  const quotes: string[] = []
+  // 소제목 컴포넌트를 쓴 글은 그것만 센다. 아니면 짧은 인용구·번호/기호·큰 글씨(strong)와
+  // 한 줄 전체 굵은 글씨(weak)를 소제목으로 센다.
+  const sectionTitles: string[] = []
+  const headings: { text: string; strong: boolean }[] = []
   const paragraphs: string[] = []
   const allText: string[] = []
-  for (const m of body.matchAll(/<p class="se-text-paragraph[^"]*"[^>]*>([\s\S]*?)<\/p>/g)) {
+  for (const m of body.matchAll(paraRe)) {
     const text = htmlToText(m[1])
     if (!text) continue
     const cls = owner(m.index ?? 0)
@@ -131,14 +172,22 @@ function measureSmartEditor(html: string): Measured | null {
       continue
     }
     allText.push(text)
-    if (cls.includes('se-sectionTitle')) headings.push(clip(text, 40))
-    else if (cls.includes('se-quotation')) quotes.push(text)
-    else paragraphs.push(text)
+    if (cls.includes('se-sectionTitle')) sectionTitles.push(clip(text, 40))
+    else if (cls.includes('se-quotation')) {
+      // 인용구로 소제목을 다는 블로그가 많다 — 짧은 인용구만 소제목으로 센다.
+      if (charLen(text) <= 40) headings.push({ text, strong: true })
+    } else {
+      const styled = styledHeading(m[1], text, baseSize)
+      if (styled) headings.push({ text, strong: styled === 'strong' })
+      else paragraphs.push(text)
+    }
   }
   if (allText.length === 0) return null
-  // 소제목 컴포넌트를 안 쓰고 인용구로 소제목을 다는 블로그가 많아, 소제목이 0개면
-  // 짧은 인용구를 소제목 대용으로 센다.
-  const headingList = headings.length > 0 ? headings : quotes.filter((q) => charLen(q) <= 40).map((q) => clip(q, 40))
+  // 굵은 글씨 한 줄이 너무 많으면(강조를 남발하는 블로그) 소제목이 아니라 강조라서 빼고 센다.
+  const headingList =
+    sectionTitles.length > 0
+      ? sectionTitles
+      : (headings.length > 15 ? headings.filter((h) => h.strong) : headings).map((h) => h.text)
   const joined = allText.join(' ')
   const tail = paragraphs.slice(-6).reverse()
   const cta = tail.find((p) => CTA_RE.test(p)) ?? paragraphs[paragraphs.length - 1] ?? ''

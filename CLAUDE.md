@@ -119,6 +119,8 @@ npm run lint                             # 4) oxlint
     - `api/_lib/naverBlogData.ts` — blog-brain 수집. env에 네이버 키 있으면 A(검색API·검색광고API),
       없으면 B: **1순위 네이버 블로그 검색 결과 페이지 직접 읽기**(비용 0, 실제 네이버 순위 — 2026-10 웹서치만으론 상위글 0건),
       0건이면 2순위 웹서치(응답 건수·제외된 도메인을 근무기록에 남김). 어느 쪽이든 m.blog 본문을 코드로 실측(글자·사진·소제목·도입·FAQ·CTA).
+      소제목(`measureSmartEditor`, 2026-10 중앙값 0 오측정 후): 소제목 컴포넌트가 있으면 그것만, 없으면 짧은 인용구 ·
+      번호/기호로 시작하는 짧은 줄 · 본문보다 큰 글씨(19↑) · 한 줄 전체 굵은 글씨(15개 넘으면 강조로 보고 제외)를 센다.
     - `api/_lib/blogStore.ts` — `blog_keywords`·`blog_brain_reports`·`brain_reports.extras` 읽기/쓰기
       (테이블 없어도 안 깨지게 전부 방어).
   - `chatDecide.ts` — 팀채팅 대화형 판단(question/act/reply, `isRevision`). 전자책은 이미 내장이라
