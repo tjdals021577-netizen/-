@@ -299,8 +299,10 @@ export async function analyzeBlogBrain(params: {
   onUsage?: UsageCallback
   // 이 시각(ms)까지 끝내야 한다(크론 시간 한도). 남은 시간이 1분 미만이면 다음 시도를 안 한다.
   deadline?: number
+  // 브랜드별 분석 프롬프트(업메리 등). 기본은 마잘남 원문 3번.
+  system?: string
 }): Promise<BlogBrainResult | undefined> {
-  const { apiKey, notices, posts, lastWeekResult, onUsage, deadline = Date.now() + 540_000 } = params
+  const { apiKey, notices, posts, lastWeekResult, onUsage, deadline = Date.now() + 540_000, system = BLOG_BRAIN_SYSTEM } = params
   const strict = '\n\n[매우 중요] 지정된 스키마의 JSON 객체 하나만 출력하라. 설명·코드블록 금지.'
   // 1차 일반 → 2차 "JSON만" 강한 지시 → 3차 입력을 줄여(상위글 12개, 지난주 리포트 제외) 한 번 더.
   // 입력이 커서 응답이 잘리거나 시간이 걸린 경우에도 3차에서 끝까지 가도록.
@@ -315,7 +317,7 @@ export async function analyzeBlogBrain(params: {
     try {
       const raw = await callClaudeJson({
         apiKey,
-        system: BLOG_BRAIN_SYSTEM,
+        system,
         user,
         maxTokens: 4096,
         timeoutMs: Math.min(150_000, left - 10_000),

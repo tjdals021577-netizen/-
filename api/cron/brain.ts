@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { estimateCostUsd } from '../../src/lib/budgetGuard.js'
 import { researchMarketResilient } from '../../src/agents/runBrain.js'
 import { analyzeBlogBrain } from '../../src/agents/runMajalnamBlog.js'
-import { MAJALNAM_CORE_KEYWORDS } from '../../src/agents/majalnamBlogPrompts.js'
+import { getBlogBrandConfig } from '../../src/agents/blogBrandConfig.js'
 import { BRAND_CONTEXT, BRAND_CHANNELS, BRAND_RESEARCH_FOCUS, type Brand } from '../../src/types/brand.js'
 import { kstNow, kstDateKey, YOUTUBE_ACTIVE } from '../../src/lib/weeklySchedule.js'
 import { supabaseInsert } from '../_lib/supabaseAdmin.js'
@@ -27,7 +27,7 @@ const DEADLINE_MS = 760_000
 
 // 재설계 지시서(2026-10): 브레인을 2개로 분리하되, Vercel Hobby 함수 12개 한도 때문에
 // 새 함수를 만들지 않고 이 크론 하나에서 둘 다 돌린다(대표님 결정: "1번 OK, 문제없게만").
-//   · blog-brain   — 네이버 블로그 상위노출 분석 전용. 마잘남만(대표님 결정).
+//   · blog-brain   — 네이버 블로그 상위노출 분석 전용. 마잘남 + 업메리(2026-10 추가), 브랜드별 병렬.
 //   · content-brain — 유튜브·스레드 소재 전용(블로그 로직 조사 제거). 마잘남만 — 업메리는
 //                     블로그만 운영해 유튜브·스레드 소재가 필요 없다.
 //
@@ -36,7 +36,8 @@ const DEADLINE_MS = 760_000
 // 화요일도 실패하면 수요일… 성공할 때까지 매일 다시 시도하고, 이미 있으면 확인만 하고
 // 끝낸다(Claude 호출 0 = 비용 0). 테이블이 아직 없어(SQL 실행 전) 확인이 안 되면 월요일에만
 // 돈다(확인 없이 매일 돌면 비용만 7배).
-const BLOG_BRAIN_BRANDS: Brand[] = ['마잘남']
+// 2026-10 업메리 추가(대표님: "마잘남이랑 똑같이") — 브랜드별 키워드·분석 프롬프트는 blogBrandConfig.
+const BLOG_BRAIN_BRANDS: Brand[] = ['마잘남', '업메리']
 
 function isKstMonday(): boolean {
   return kstNow().getUTCDay() === 1
@@ -111,7 +112,8 @@ async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Pr
 
     // 타깃 키워드 = 최근 4주 메인 키워드 + 고정 핵심 키워드(중복 제거, 최근 것 우선).
     const [recent, lastWeek] = await Promise.all([getRecentMainKeywords(brand), getLatestBlogBrain(brand, week)])
-    const keywords = [...new Set([...recent, ...MAJALNAM_CORE_KEYWORDS])]
+    const cfg = getBlogBrandConfig(brand)
+    const keywords = [...new Set([...recent, ...cfg.coreKeywords])]
     const collected = await collectBlogBrainData({
       apiKey,
       keywords,
@@ -143,6 +145,7 @@ async function runBlogBrain(apiKey: string, brand: Brand, startedAt: number): Pr
       lastWeekResult: lastWeek?.result ? JSON.stringify(lastWeek.result) : undefined,
       onUsage,
       deadline,
+      system: cfg.blogBrainSystem,
     })
     if (!result) {
       await logBrain({

@@ -111,7 +111,8 @@ npm run lint                             # 4) oxlint
       env `BLOG_CTA_LINK_UPMERY`로 교체 가능). 수익 글이라 면책 문장(`UPMERY_DISCLAIMER`) 필수 — 없으면 자동 추가.
       공용 1단계 작업 `api/_lib/blogDailyDraft.ts`(마잘남 content-schedule도 이걸 씀).
       일정: 업메리 1단계 **04시대**(`/api/cron/upmery-blog`) → 2단계 **07시대**(`/api/cron/upmery-blog-polish`).
-      팀채팅 라이터도 업메리면 같은 파이프라인. (업메리 주간 blog-brain 분석은 아직 없음 — 마잘남만.)
+      팀채팅 라이터도 업메리면 같은 파이프라인. **주간 blog-brain도 업메리 포함**(`UPMERY_BLOG_BRAIN_SYSTEM` = 마잘남 원문 3번에서
+      브랜드 내용만 교체, 키워드는 `UPMERY_CORE_KEYWORDS`) — brain 크론이 두 브랜드를 병렬로 분석, 각자 글쓰기에 반영.
       **채점 공정성(2026-10)**: 채점 AI에 `measureForReview`(코드 실측 — 메인 키워드·횟수·제목 위치·독자 단계·글자 수·소제목·
       문단 길이·사진 수·꾸밈 개수)를 넘기고, 채점 system에 `MAJALNAM_VERIFIED_FACTS` 전체 + 점수 기준선(기준 지킴 17~20 /
       아쉬움 14~16 / 위반 13↓)을 넣었다. 채점은 Haiku `medium`. (전엔 메인 키워드도 모르고 수치를 직접 세다 부당 감점)
@@ -140,7 +141,7 @@ npm run lint                             # 4) oxlint
     함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
     일시정지 동안 팀채팅을 열 때마다 "유튜브 기획은 언제 다시 들어가시나요?" 알림 카드가 뜬다
     (`TeamChatScreen.tsx`, 닫아도 다음 방문에 다시 뜸). true로 바꾸면 자동으로 사라진다.
-  - `brain` = 한 함수에서 **blog-brain + content-brain** 병렬(함수 한도 때문에 분리 안 함), 둘 다 마잘남만
+  - `brain` = 한 함수에서 **blog-brain(마잘남·업메리) + content-brain(마잘남)** 병렬(함수 한도 때문에 분리 안 함)
     (content-brain은 `YOUTUBE_ACTIVE`일 때만). **매일 깨어나되 이번 주 분석이 없을 때만 일한다**
     (월요일 실패 시 다음 날 자동 재시도, 이미 있으면 Claude 호출 0). 테이블 확인 불가(SQL 전)면 월요일만.
     blog-brain 단계별 폴백: 웹서치 재시도(범위 축소) → 지난주 상위글 URL 재측정 → 분석 3회(마지막은 입력 축소),

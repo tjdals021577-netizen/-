@@ -6,6 +6,7 @@ import type { BlogRole } from '../types/blog.js'
 import type { ReaderStage } from '../types/blogBrain.js'
 import type { Brand } from '../types/brand.js'
 import {
+  BLOG_BRAIN_SYSTEM,
   buildMajalnamReviewSystem,
   buildMajalnamWriterSystem,
   buildMajalnamWriterUser,
@@ -19,6 +20,7 @@ import {
   buildUpmeryReviewSystem,
   buildUpmeryWriterSystem,
   buildUpmeryWriterUser,
+  UPMERY_BLOG_BRAIN_SYSTEM,
   UPMERY_BLOG_TOPICS,
   UPMERY_CORE_KEYWORDS,
   UPMERY_CTA_DEFAULT,
@@ -44,6 +46,8 @@ export interface BlogBrandConfig {
   topics: string[]
   coreKeywords: string[]
   keywordSystem: string
+  // 주간 상위노출 분석(blog-brain) 프롬프트.
+  blogBrainSystem: string
   writerSystem: (p: { researchBlock?: string; ctaLink?: string }) => SystemBlock[]
   writerUser: (p: WriterUserParams) => string
   reviewSystem: (researchBlock?: string) => SystemBlock[]
@@ -63,6 +67,7 @@ const MAJALNAM: BlogBrandConfig = {
   topics: MAJALNAM_BLOG_TOPICS,
   coreKeywords: MAJALNAM_CORE_KEYWORDS,
   keywordSystem: KEYWORD_SYSTEM,
+  blogBrainSystem: BLOG_BRAIN_SYSTEM,
   writerSystem: buildMajalnamWriterSystem,
   writerUser: buildMajalnamWriterUser,
   reviewSystem: buildMajalnamReviewSystem,
@@ -77,6 +82,7 @@ const UPMERY: BlogBrandConfig = {
   topics: UPMERY_BLOG_TOPICS,
   coreKeywords: UPMERY_CORE_KEYWORDS,
   keywordSystem: UPMERY_KEYWORD_SYSTEM,
+  blogBrainSystem: UPMERY_BLOG_BRAIN_SYSTEM,
   writerSystem: buildUpmeryWriterSystem,
   writerUser: buildUpmeryWriterUser,
   reviewSystem: buildUpmeryReviewSystem,
