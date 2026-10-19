@@ -11,8 +11,10 @@ import { fetchHooksFromCsvUrls } from '../_lib/sheetHooks.js'
 import { sendJson, isAutomationPaused } from '../_lib/cronHandler.js'
 import { runMajalnamBlogPolish } from '../_lib/majalnamBlogPolish.js'
 
-// 06:30 KST에 돈다(vercel.json). 시트 동기화(몇 초) 뒤, 마잘남 블로그 2단계(06:00에 깊게 쓴 초안 채점·
-// 미달 시 고쳐 쓰기)를 이어서 한다 — 대표님 결정 A. 서버 함수 12개 한도라 별도 함수를 만들지 않았다.
+// 08시대 KST에 돈다(vercel.json "0 23 * * *"). Vercel Hobby 크론은 정해진 시각이 아니라 "그 시간대 안
+// 아무 때나" 실행된다 — 06시대 글쓰기(content-schedule)와 절대 겹치지 않게 다듬기는 08시대로 뒀다.
+// 시트 동기화(몇 초) 뒤, 마잘남 블로그 2단계(06시대에 깊게 쓴 초안 채점·미달 시 고쳐 쓰기)를 이어서 한다
+// — 대표님 결정 A. 서버 함수 12개 한도라 별도 함수를 만들지 않았다.
 export const maxDuration = 300
 
 // 자동 크론(Bearer CRON_SECRET)뿐 아니라, 앱 설정 화면의 "지금 불러오기" 버튼도

@@ -1,7 +1,7 @@
-// 06:30 2단계(대표님 결정 A — 두 번에 나눠 실행): 06:00 content-schedule이 깊게 써서 올린 마잘남
+// 08시대 2단계(대표님 결정 A — 두 번에 나눠 실행): 06:00 content-schedule이 깊게 써서 올린 마잘남
 // 블로그 초안을 찾아 채점 → 85점 미만이면 채점 지적대로 고쳐 쓰기 → 재채점하고, 결재함·근무기록·
 // 캘린더의 "같은 항목"을 업데이트한다. 서버 함수가 12개 한도라 새 함수를 만들지 않고 hooks 크론
-// (06:30으로 이동) 안에서 실행된다.
+// (08시대으로 이동) 안에서 실행된다.
 import { supabaseSelect, supabaseUpdate } from './supabaseAdmin.js'
 import { buildMajalnamBlogHtml, decodeBlogState, polishMajalnamBlog, type MajalnamBlogResult } from './majalnamBlogPipeline.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
@@ -34,7 +34,7 @@ export async function runMajalnamBlogPolish(apiKey: string, deadline: number): P
   } catch (err) {
     // 실패해도 1단계 글은 그대로 살린다 — "채점만 실패, 글 정상"으로 표시하고 상태 표시는 지운다.
     failed = err instanceof Error ? err.message : String(err)
-    result = { ...state, reviews: [], pendingPolish: false, autoFixes: [...state.autoFixes, '06:30 채점·다듬기 실패 — 06:00 글 그대로'] }
+    result = { ...state, reviews: [], pendingPolish: false, autoFixes: [...state.autoFixes, '08시대 채점·다듬기 실패 — 06:00 글 그대로'] }
   }
 
   const reviewed = result.reviews.length > 0
@@ -62,7 +62,7 @@ export async function runMajalnamBlogPolish(apiKey: string, deadline: number): P
       title: result.draft.title,
       content_html: html,
       status: passed ? 'planned' : 'open',
-      note: `${note} (06:30 다듬기) · 발행 전 [경험 삽입] 채우기`,
+      note: `${note} (08시대 다듬기) · 발행 전 [경험 삽입] 채우기`,
     }).catch(() => undefined)
   }
   return failed ? `다듬기 실패(글은 유지): ${failed}` : note

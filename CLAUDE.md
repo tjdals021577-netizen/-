@@ -96,8 +96,9 @@ npm run lint                             # 4) oxlint
       네이버 블로그 자동 발행은 하지 않는다(공식 글쓰기 API 불확실 + 자동 발행 감지 시 저품질·제재 위험).
     - `api/_lib/majalnamBlogPipeline.ts` — 06:00 크론·팀채팅 공용: 키워드 → 라이터(researchBlock 주입) → 채점.
       **두 번에 나눠 실행(2026-10 대표님 결정 A)**: 06:00 `content-schedule`은 `mode: 'draft'` — 깊게(high, 최대 230초) 쓰고
-      자동 수정까지만 해서 결재함에 "채점 대기(06:30)"로 저장(상태는 HTML 주석 `MJBLOG-STATE:`에 숨김).
-      06:30 `hooks` 크론(시트 동기화 뒤, 크론 호출일 때만)이 `majalnamBlogPolish.ts` → `polishMajalnamBlog`로 채점 →
+      자동 수정까지만 해서 결재함에 "채점 대기(8시대)"로 저장(상태는 HTML 주석 `MJBLOG-STATE:`에 숨김).
+      **08시대** `hooks` 크론(시트 동기화 뒤, 크론 호출일 때만 — Vercel Hobby 크론은 "그 시간대 안 아무 때나" 실행돼
+      06시대 글쓰기와 겹치지 않게 08시대로)이 `majalnamBlogPolish.ts` → `polishMajalnamBlog`로 채점 →
       미달이면 고쳐 쓰기(보통) → 재채점 후 **같은** 결재함·근무기록·캘린더 항목을 업데이트(승인·반려된 건 안 건드림).
       팀채팅은 `mode: 'full'`(보통으로 한 번에).
       **채점 공정성(2026-10)**: 채점 AI에 `measureForReview`(코드 실측 — 메인 키워드·횟수·제목 위치·독자 단계·글자 수·소제목·
@@ -115,7 +116,7 @@ npm run lint                             # 4) oxlint
 - **`src/lib/`** — 상태 저장(localStorage 기반) + `claude.ts`(프록시 호출·프롬프트 캐싱
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
-- **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `hooks` 06:30(시트 동기화 + 블로그 2단계),
+- **`api/cron/`** — 서버 자동화(KST): `content-schedule` 06:00, `hooks` 08시대(시트 동기화 + 블로그 2단계),
   `radar` 07:50, `brain` 매일 09:00(주 1회 분량, 아래 참고), `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
   - 2026-10 대표님 비용 절감으로 **스케줄에서 뺀 크론**(파일은 그대로 — vercel.json에 한 줄 추가하면 다시 켜짐):
     - `thread-daily`(07:40, 스레드 5포맷 자동): `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }`

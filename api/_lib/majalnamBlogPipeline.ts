@@ -44,11 +44,11 @@ export interface MajalnamBlogResult {
   writerEffort?: string
   // 첫 글쓰기 소요(초) — 고쳐 쓰기를 건너뛴 날 원인 파악용.
   writerSeconds?: number
-  // 06:30 2단계(채점·고쳐 쓰기)에 필요한 원래 입력.
+  // 08시대 2단계(채점·고쳐 쓰기)에 필요한 원래 입력.
   topic: string
   keyContent?: string
   photos?: string
-  // true = 06:00 1단계 결과(아직 채점 전) — 06:30에 polishMajalnamBlog가 이어서 처리한다.
+  // true = 06:00 1단계 결과(아직 채점 전) — 08시대에 polishMajalnamBlog가 이어서 처리한다.
   pendingPolish?: boolean
 }
 
@@ -198,7 +198,7 @@ function makeWriterCtx(p: {
 // mode
 //  · 'full'  (팀채팅) — 한 번에: 키워드 → 글쓰기(보통) → 자동 수정 → 채점 → 미달 시 고쳐 쓰기.
 //  · 'draft' (06:00 크론, 대표님 결정 A) — 키워드 → 글쓰기(깊게) → 자동 수정까지만. 채점·고쳐 쓰기는
-//    06:30 2단계(polishMajalnamBlog)가 따로 5분을 써서 한다.
+//    08시대 2단계(polishMajalnamBlog)가 따로 5분을 써서 한다.
 export async function runMajalnamBlogPipeline(params: {
   apiKey: string
   topic: string
@@ -269,7 +269,7 @@ export async function runMajalnamBlogPipeline(params: {
   return { ...base, ...scored }
 }
 
-// 06:30 2단계(대표님 결정 A): 06:00에 깊게 쓴 글을 이어받아 채점 → 미달이면 고쳐 쓰기 → 재채점.
+// 08시대 2단계(대표님 결정 A): 06:00에 깊게 쓴 글을 이어받아 채점 → 미달이면 고쳐 쓰기 → 재채점.
 // 이 단계만으로 5분을 쓰므로 고쳐 쓰기를 건너뛸 일이 거의 없다.
 export async function polishMajalnamBlog(params: {
   apiKey: string
@@ -290,7 +290,7 @@ export async function polishMajalnamBlog(params: {
   return { ...state, ...scored, researchWeek: brain?.week ?? state.researchWeek, pendingPolish: false }
 }
 
-// 1단계 결과를 결재함 HTML 안에 숨겨 둔다(HTML 주석 — 화면·복사에 안 나옴). 06:30 2단계가 이걸 읽어
+// 1단계 결과를 결재함 HTML 안에 숨겨 둔다(HTML 주석 — 화면·복사에 안 나옴). 08시대 2단계가 이걸 읽어
 // 이어서 처리하고, 처리 후에는 주석 없이 다시 저장해 두 번 다듬지 않는다.
 const STATE_MARK = 'MJBLOG-STATE:'
 export function encodeBlogState(result: MajalnamBlogResult): string {
@@ -369,9 +369,9 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     : ''
   const reviewHtml = reviews.map((r) => `${r.role}: ${r.totalScore}점 — ${r.summary}`).join('<br/>')
   // 맨 위: 채점 실패 안내 + 규칙 자동 점검(효과 단정·연락처·제목 길이) — 코드로, 비용 0.
-  // 06:00 1단계(채점 전)면 "06:30에 채점·다듬기" 안내만 띄운다.
+  // 06:00 1단계(채점 전)면 "08시대에 채점·다듬기" 안내만 띄운다.
   const checkHtml = result.pendingPolish
-    ? `<div style="border:1.5px solid #74c0fc;border-radius:10px;padding:10px 12px;background:#e7f5ff;color:#1c3d5a"><b>⏳ 06:30에 채점하고, 85점 미만이면 채점 지적대로 고쳐 써서 이 글을 업데이트해요.</b><br/>지금은 06:00에 깊게 쓴 1단계 초안이에요. 06:30 이후에 다시 열어 보세요.</div><br/>`
+    ? `<div style="border:1.5px solid #74c0fc;border-radius:10px;padding:10px 12px;background:#e7f5ff;color:#1c3d5a"><b>⏳ 오전 8시대에 채점하고, 85점 미만이면 채점 지적대로 고쳐 써서 이 글을 업데이트해요.</b><br/>지금은 아침 6시대에 깊게 쓴 1단계 초안이에요. 9시쯤 다시 열어 보세요(아직 승인하지 마세요).</div><br/>`
     : buildBlogCheckHtml({
       reviewed: reviews.length > 0,
       draft,

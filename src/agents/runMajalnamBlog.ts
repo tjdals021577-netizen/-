@@ -122,8 +122,8 @@ const DRAFT_ATTEMPTS: DraftAttempt[] = [
 // 마지막이 아닌 시도의 최대 대기(뒤 시도·고쳐 쓰기 몫 보호).
 const NON_LAST_ATTEMPT_CAP_MS = 140_000
 
-// 06:00 1단계 전용(대표님 결정 A — 두 번에 나눠 실행): 채점·고쳐 쓰기를 06:30 2단계로 미루고
-// 5분을 글쓰기에 쓴다. 1차 깊게(high, 최대 230초) → 실패하면 가볍게 받아 두고 06:30에 고쳐 쓴다.
+// 06:00 1단계 전용(대표님 결정 A — 두 번에 나눠 실행): 채점·고쳐 쓰기를 08시대 2단계로 미루고
+// 5분을 글쓰기에 쓴다. 1차 깊게(high, 최대 230초) → 실패하면 가볍게 받아 두고 08시대에 고쳐 쓴다.
 export const DEEP_DRAFT_ATTEMPTS: DraftAttempt[] = [
   { effort: 'high', maxTokens: 16_000, strict: false },
   { effort: 'low', maxTokens: 8192, strict: true },
@@ -139,7 +139,7 @@ export async function generateMajalnamBlogDraft(params: {
   deadline?: number
   // 시도 순서를 바꿀 때(미달 자동 고쳐 쓰기: 남은 시간에 맞는 깊이 1번만 / 06:00 1단계: 깊게).
   attempts?: DraftAttempt[]
-  // 마지막이 아닌 시도의 최대 대기 — 06:00 1단계(채점을 06:30으로 미룸)는 깊게 쓸 시간을 길게 준다.
+  // 마지막이 아닌 시도의 최대 대기 — 06:00 1단계(채점을 08시대으로 미룸)는 깊게 쓸 시간을 길게 준다.
   nonLastCapMs?: number
 }): Promise<BlogDraft & { effort: Effort }> {
   const {
