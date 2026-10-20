@@ -241,19 +241,119 @@ function lastTextBlock(response: {
 // 호출부가 "한도를 늘리거나 생각을 줄여" 다시 시도할 수 있다(생각 토큰도 한도에 포함됨).
 export class ClaudeTruncatedError extends ClaudeCallError {}
 
+// 맨 뒤의 쉼표를 떼어낸다 — {"a":1,} 처럼 모델이 흔히 흘리는 깨짐.
+function dropTrailingComma(s: string): string {
+  const t = s.replace(/\s+$/, '')
+  return t.endsWith(',') ? t.slice(0, -1) : s
+}
+
+// 객체가 잘렸을 때 값 없이 남은 키 조각을 떼어낸다.
+// 예: {"title":"가","body"  /  {"title":"가","body":   → {"title":"가"}
+function dropDanglingKey(s: string): string {
+  let t = dropTrailingComma(s).replace(/\s+$/, '')
+  // 콜론에서 끊긴 경우({"a":1,"b":)는 값이 아예 없다 — 콜론을 떼고 키까지 지운다.
+  if (t.endsWith(':')) t = t.slice(0, -1).replace(/\s+$/, '')
+  let depth = 0
+  let inStr = false
+  for (let i = t.length - 1; i >= 0; i--) {
+    const ch = t[i]
+    if (inStr) {
+      // 역방향이라 \" 인지 보려면 앞의 역슬래시 개수를 센다(짝수면 진짜 따옴표).
+      if (ch === '"') {
+        let back = 0
+        while (i - 1 - back >= 0 && t[i - 1 - back] === '\\') back++
+        if (back % 2 === 0) inStr = false
+      }
+      continue
+    }
+    if (ch === '"') { inStr = true; continue }
+    if (ch === '}' || ch === ']') { depth++; continue }
+    if (ch === '{' || ch === '[') { if (depth === 0) return t.slice(0, i + 1); depth--; continue }
+    if (ch === ',' && depth === 0) return t.slice(0, i)
+    if (ch === ':' && depth === 0) return t          // 키:값 쌍이 온전하다
+  }
+  return t
+}
+
+// 모델이 낸 JSON이 조금 깨졌을 때 되살린다. 실제로 겪은 깨짐만 고친다:
+//   ① 문자열 "안"에 진짜 줄바꿈·탭이 들어옴 — 블로그 본문처럼 긴 글에서 특히 잦다.
+//      JSON 문자열 안에는 제어문자를 그대로 넣을 수 없어 JSON.parse가 통째로 실패한다.
+//   ② 본문 속 따옴표를 이스케이프하지 않음 — 예: "그가 "진짜"라고 했다"
+//      닫는 따옴표 뒤에 , : } ] 가 오지 않으면 본문용 따옴표로 보고 \" 로 바꾼다.
+//   ③ 응답이 잘려 문자열·괄호가 안 닫힘 — 그 자리에서 닫아준다
+//      (잘린 글이라도 통째로 버리는 것보다 제목·본문을 건지는 편이 낫다).
+//   ④ 맨 뒤 쉼표.
+// ⚠️ 멀쩡한 JSON에는 쓰지 않는다 — JSON.parse가 실패했을 때만 부른다.
+export function repairJson(src: string): string {
+  let out = ''
+  let inStr = false
+  let esc = false
+  const stack: string[] = []
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i]
+    if (inStr) {
+      if (esc) { out += ch; esc = false; continue }
+      if (ch === '\\') { out += ch; esc = true; continue }
+      if (ch === '"') {
+        // 뒤에 , : } ] 또는 끝이 오면 진짜 닫는 따옴표, 아니면 본문 속 따옴표.
+        const rest = src.slice(i + 1).replace(/^\s+/, '')
+        if (rest === '' || ',:}]'.includes(rest[0])) { out += ch; inStr = false }
+        else out += '\\"'
+        continue
+      }
+      if (ch === '\n') { out += '\\n'; continue }
+      if (ch === '\r') { out += '\\r'; continue }
+      if (ch === '\t') { out += '\\t'; continue }
+      if (ch < ' ') continue                      // 그 밖의 제어문자는 버린다
+      out += ch
+      continue
+    }
+    if (ch === '"') { out += ch; inStr = true; continue }
+    if (ch === '{' || ch === '[') { stack.push(ch); out += ch; continue }
+    if (ch === '}' || ch === ']') {
+      out = dropTrailingComma(out)
+      stack.pop()
+      out += ch
+      continue
+    }
+    out += ch
+  }
+  if (inStr) out += '"'                            // 잘린 문자열을 닫는다
+  while (stack.length) {
+    const open = stack.pop()
+    out = open === '{' ? dropDanglingKey(out) : dropTrailingComma(out)
+    out += open === '{' ? '}' : ']'
+  }
+  return out
+}
+
 function parseJsonResponse(text: string, stopReason?: string | null): unknown {
   const truncated = () =>
     new ClaudeTruncatedError('응답이 최대 길이에 도달해 JSON이 중간에 잘렸습니다.')
-  let jsonText: string
+  let jsonText: string | null = null
   try {
     jsonText = extractJson(text)
-  } catch (err) {
-    throw stopReason === 'max_tokens' ? truncated() : err
-  }
-  try {
     return JSON.parse(jsonText)
   } catch {
-    throw stopReason === 'max_tokens' ? truncated() : new ClaudeCallError('모델 응답 JSON 파싱에 실패했습니다.')
+    // 여기서 바로 포기하면 긴 블로그 본문이 줄바꿈 하나 때문에 통째로 버려진다
+    // (대표님 보고 2026-10-20: "업메리 라이터 — 모델 응답 JSON 파싱에 실패했습니다").
+    // 흔한 깨짐을 고쳐 한 번 더 시도한다.
+    if (jsonText !== null) {
+      try {
+        return JSON.parse(repairJson(jsonText))
+      } catch { /* 아래 2차 시도 */ }
+    }
+    // extractJson은 "마지막 }"까지만 잘라온다 — 응답이 중간에 잘렸다면 그 }가
+    // 본문 속 괄호일 수 있다. 첫 { 부터 끝까지를 통째로 복구해본다.
+    const start = text.indexOf('{')
+    if (start !== -1) {
+      try {
+        return JSON.parse(repairJson(text.slice(start)))
+      } catch { /* 아래에서 실패 처리 */ }
+    }
+    throw stopReason === 'max_tokens'
+      ? truncated()
+      : new ClaudeCallError('모델 응답 JSON 파싱에 실패했습니다.')
   }
 }
 
