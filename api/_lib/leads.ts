@@ -48,7 +48,7 @@ export async function listLeads(): Promise<LeadListResult> {
   const pixelId = process.env.META_PIXEL_ID?.trim() || null
   const capiConfigured = !!(pixelId && process.env.META_CAPI_TOKEN?.trim())
   try {
-    const leads = await supabaseSelect<LeadRow>(TABLE, 'select=*&order=created_at.desc&limit=300')
+    const leads = await supabaseSelect<LeadRow>(TABLE, 'select=*&order=created_at.desc&limit=1000')
     return { ok: true, leads, pixelId, capiConfigured }
   } catch (err) {
     if (isMissingTableError(err)) return { ok: false, tableMissing: true, pixelId, capiConfigured }

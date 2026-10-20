@@ -4,24 +4,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { LEAD_STATUSES, type LeadRow, type LeadStatus } from '../types/lead'
 import { buildLeadDoneSnippet, buildLeadFormSnippet } from '../lib/leadFormSnippet'
+import { callLeadsApi, type LeadListResponse } from '../lib/leadsApi'
 
-type ListResponse =
-  | { ok: true; leads: LeadRow[]; pixelId: string | null; capiConfigured: boolean }
-  | { ok: false; tableMissing: true; pixelId: string | null; capiConfigured: boolean }
+type ListResponse = LeadListResponse
 
 const DONE_URL_KEY = 'ai-ops:lead-form-done-url'
-
-async function callLeadsApi<T>(body: object): Promise<T> {
-  const password = import.meta.env.VITE_APP_PASSWORD
-  const res = await fetch('/api/radar-refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(password ? { 'X-App-Password': password } : {}) },
-    body: JSON.stringify(body),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string })?.error || `서버 오류 (${res.status})`)
-  return data as T
-}
 
 function kstTime(iso: string): string {
   const d = new Date(Date.parse(iso) + 9 * 60 * 60 * 1000)

@@ -12,6 +12,7 @@ import { fetchStorageUsage, type StorageUsage } from '../../lib/storageUsage'
 import type { CalendarChannel } from '../../types/calendar'
 import { MorningPanel } from '../MorningPanel'
 import { LeadsPanel } from '../LeadsPanel'
+import { AdsPanel } from '../AdsPanel'
 import { BRANDS, type Brand } from '../../types/brand'
 
 function todaySpendForBrand(brand: Brand): number {
@@ -953,7 +954,8 @@ export function DashboardScreen() {
         ))}
       </div>
 
-      {/* 업메리 상담 신청(리드) — 메타 광고 전환용 폼 신청 목록·상태 */}
+      {/* 업메리 광고 퍼널(채널별 비용 대비 성과) + 상담 신청(리드) 목록·상태 */}
+      <AdsPanel />
       <LeadsPanel />
 
       {/* 기간별 분석 — 방문자 추이·월별 매출 그래프 + 일자별 표 (브랜드별) */}

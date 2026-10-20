@@ -7,6 +7,7 @@ import { fetchThreadStats } from '../_lib/threads.js'
 import { analyzeYoutubeContent } from '../../src/agents/runYoutubeAnalysis.js'
 import { BRANDS, BRAND_CONTEXT, BRAND_CHANNELS, type Brand } from '../../src/types/brand.js'
 import { requireCronAuth, haltIfPaused, sendJson } from '../_lib/cronHandler.js'
+import { fetchMetaAdInsights } from '../_lib/metaAds.js'
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -307,6 +308,41 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     } else {
       results.push(`${brand} 스레드: 건너뜀 (미설정)`)
     }
+  }
+
+  // 메타 광고(업메리) — 광고별·일별 노출·클릭·비용·리드 수, 최근 30일(어제까지)을 매일 새로 받아
+  // radar_snapshots(source 'meta_ads')의 traffic_sources 칸에 광고 줄 목록으로 저장한다(새 컬럼 없이).
+  // 요약 칸: sessions = 클릭 합, active_users = 노출 합, conversions = 메타 집계 리드 합(매출 칸은 비움 —
+  // 광고비가 매출로 읽히지 않게). 다른 화면은 모두 source로 걸러 읽어서 섞이지 않는다.
+  // 대시보드 "광고" 카드가 이걸 리드 테이블과 합쳐 채널·광고별 퍼널을 계산한다. AI 호출 없음.
+  const metaAdAccount = process.env.META_AD_ACCOUNT_ID?.trim()
+  const metaAdToken = process.env.META_ACCESS_TOKEN?.trim()
+  if (metaAdAccount && metaAdToken) {
+    try {
+      const today = kstToday()
+      const until = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+      const since = new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86_400_000).toISOString().slice(0, 10)
+      const rows = await fetchMetaAdInsights({ accountId: metaAdAccount, accessToken: metaAdToken, since, until })
+      const spend = rows.reduce((s, r) => s + r.spend, 0)
+      const yesterdaySpend = rows.filter((r) => r.date === until).reduce((s, r) => s + r.spend, 0)
+      await supabaseInsert('radar_snapshots', {
+        id: makeId(),
+        brand: '업메리',
+        source: 'meta_ads',
+        period_label: `${since}~${until} 광고별·일별`,
+        sessions: Math.round(rows.reduce((s, r) => s + r.clicks, 0)),
+        active_users: Math.round(rows.reduce((s, r) => s + r.impressions, 0)),
+        conversions: Math.round(rows.reduce((s, r) => s + r.metaLeads, 0)),
+        top_pages: [],
+        traffic_sources: rows,
+        created_at: nowIso,
+      })
+      results.push(`업메리 메타 광고: ${rows.length}줄 · 30일 비용 ${Math.round(spend).toLocaleString('ko-KR')}원 · 어제 ${Math.round(yesterdaySpend).toLocaleString('ko-KR')}원`)
+    } catch (err) {
+      results.push(`업메리 메타 광고: 실패 (${err instanceof Error ? err.message : String(err)})`)
+    }
+  } else {
+    results.push('업메리 메타 광고: 건너뜀 (미설정)')
   }
 
   sendJson(res, 200, { ok: true, results })

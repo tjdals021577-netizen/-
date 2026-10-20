@@ -5,6 +5,7 @@ import { testSupabaseConnection } from '../../lib/remoteSync'
 import { listReferences, addReference, deleteReference, syncReferencesFromSupabase } from '../../lib/referenceStore'
 import { mediaTypeOf, fileToDownscaledBase64 } from '../../lib/imageFile'
 import { triggerHookSyncNow } from '../../lib/hookStore'
+import { DaangnCsvUpload } from '../DaangnCsvUpload'
 
 export function SettingsScreen() {
   const [todaySpend] = useState(() => getTodaySpendUsd())
@@ -129,6 +130,8 @@ export function SettingsScreen() {
           </pre>
         )}
       </div>
+
+      <DaangnCsvUpload />
 
       <div className="mb-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="mb-1 text-sm font-semibold text-[var(--text)]">레퍼런스 이미지 라이브러리</p>

@@ -161,6 +161,16 @@ npm run lint                             # 4) oxlint
     통화 완료 `Contact`·결제 `Purchase`(금액 KRW, 결제로 바꿀 때 금액 필수). 전화번호는 82 국가번호 붙여 SHA-256. 7일 지난 건
     메타가 안 받아 처리됨 표시. 실패하면 표시 안 하고 다음 날 재시도. 근무기록엔 **건수만**(이름·전화 원문 금지).
     env `META_PIXEL_ID`·`META_CAPI_TOKEN`(없으면 건너뜀), 선택 `META_TEST_EVENT_CODE`(이벤트 관리자 테스트)·`META_GRAPH_VERSION`(기본 v23.0).
+- **업메리 광고 퍼널 카드(2026-10 대표님 요청)**: 대시보드 "광고" 카드(`AdsPanel.tsx`, 새 탭 없음) — 채널별 노출 → 클릭 → 신청 →
+  통화 → 결제 + 비용·신청당 비용·결제당 비용·ROAS, 기간 "어제까지 7일 / 30일". **AI 호출 없이 코드로만 집계**(`src/lib/adFunnel.ts`).
+  - 메타 광고: `radar` 크론이 `api/_lib/metaAds.ts`(마케팅 API 읽기, 광고별·일별, 최근 30일 매일 다시 받음)로 수집 →
+    `radar_snapshots` source `meta_ads`, 광고 줄 목록은 **`traffic_sources` 칸**에(새 컬럼 없음, 매출 칸 비움 — 다른 화면은 source로 걸러 읽음).
+    env `META_AD_ACCOUNT_ID`·`META_ACCESS_TOKEN`(ads_read) — 없으면 건너뜀. GA4·아임웹 수집은 그대로.
+  - 당근: API 없음 → 설정 화면 CSV 업로드(`DaangnCsvUpload.tsx`, 날짜·비용·노출·클릭 열 자동 인식, 같은 날짜는 덮어쓰고 쌓임) →
+    `radar_snapshots` source `daangn_ads`(공개 키 insert, `src/lib/adStore.ts`).
+  - 채널 = 리드 `utm_source` 소문자 통일 후 meta / daangn / threads / instagram / 기타(별칭은 `channelOf`). 통화 = 통화 완료 이상(결제 포함).
+    메타 광고별 신청은 `utm_content`를 광고 ID 또는 광고 이름과 맞춤 → 메타 URL 매개변수에 `utm_content={{ad.id}}` 권장.
+    합계 줄은 비용 데이터가 있는 유료 채널만(무료 유입을 섞으면 신청당 비용·ROAS가 부풀려짐).
 - **데이터 흐름**: 크론이 **Supabase**에 쓰고, 브라우저는 **localStorage**를 읽는다 →
   화면 진입 시 `remoteSync`가 당겨온다(그래서 방금 크론 결과가 안 보이면 새로고침/탭 재진입).
 
@@ -168,6 +178,9 @@ npm run lint                             # 4) oxlint
 - Supabase SQL(1회): `alter table radar_snapshots add column if not exists daily_revenue jsonb not null default '[]';`
   그리고 `content_feedback` 테이블(이미 생성됨). 스키마는 `db/schema.sql` 참고.
   마잘남 블로그 재설계용: `blog_keywords`·`blog_brain_reports` 테이블 + `brain_reports.extras` 컬럼(schema.sql 하단).
+- 업메리 광고 카드: Vercel env `META_AD_ACCOUNT_ID`·`META_ACCESS_TOKEN`(마케팅 API ads_read) 등록, 메타 광고 URL 매개변수
+  `utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.id}}`, 당근 광고 링크엔 `utm_source=daangn`,
+  당근 CSV는 설정 화면에서 주기적으로 올리기.
 - 업메리 상담 신청(리드): Supabase SQL로 `leads` 테이블+정책(schema.sql 맨 아래 블록) 1회 실행, Vercel env `META_PIXEL_ID`·
   `META_CAPI_TOKEN` 등록, 아임웹에 폼 페이지(코드 블록)·완료 페이지 만들기, 메타 광고 링크에 UTM을 붙여 폼 페이지로 바로 연결.
 - 선택 env(마잘남 블로그): `BLOG_CTA_LINK`(진단 폼, 없으면 자리표시자), 네이버 A모드용
