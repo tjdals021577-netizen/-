@@ -389,3 +389,49 @@ alter table reference_hooks enable row level security;
 create policy "select reference_hooks" on reference_hooks for select to public using (true);
 create policy "insert reference_hooks" on reference_hooks for insert to public with check (true);
 create policy "update reference_hooks" on reference_hooks for update to public using (true) with check (true);
+
+-- ───────────────────────────────────────────────────────────────
+-- 업메리 상담 신청(리드) — 2026-10. 아임웹 코드 블록 폼이 공개(anon) 키로 직접 넣는다.
+-- ★ 개인정보라 공개 키는 "insert만" 허용한다(select·update·delete 정책 없음 = 읽기·수정 금지).
+--   폼은 Prefer: return=minimal 단순 insert라 select 정책 없이도 된다(upsert는 select가 필요해서 안 씀).
+--   대시보드 목록·상태 변경과 메타 전환 크론은 서버(service 키)로만 읽고 쓴다(api/_lib/leads.ts).
+-- ★ insert 조건으로 폼이 상태·전송 기록을 조작하지 못하게 막는다.
+create table if not exists leads (
+  id text primary key,
+  brand text not null default '업메리',
+  name text not null,
+  phone text not null,
+  tarot_experience text,
+  daily_time text,
+  consent boolean not null default false,
+  consent_at timestamptz,
+  utm_source text,
+  utm_medium text,
+  utm_campaign text,
+  utm_content text,
+  fbclid text,
+  fbc text,
+  fbp text,
+  page_url text,
+  user_agent text,
+  status text not null default '신청',
+  status_updated_at timestamptz,
+  called_at timestamptz,
+  paid_at timestamptz,
+  paid_amount integer,
+  capi_lead_sent_at timestamptz,
+  capi_contact_sent_at timestamptz,
+  capi_purchase_sent_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists leads_created_at_idx on leads (created_at desc);
+alter table leads enable row level security;
+create policy "insert leads (form)" on leads for insert to public with check (
+  consent = true
+  and brand = '업메리'
+  and status = '신청'
+  and char_length(name) between 1 and 40
+  and char_length(phone) between 9 and 20
+  and status_updated_at is null and called_at is null and paid_at is null and paid_amount is null
+  and capi_lead_sent_at is null and capi_contact_sent_at is null and capi_purchase_sent_at is null
+);

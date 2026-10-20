@@ -2,15 +2,32 @@
 // 즉시 아임웹 이번 달 매출을 당겨온다. 업메리·마잘남 둘 다. CRON_SECRET이 아니라 앱
 // 비밀번호로 막는다(브라우저에서 호출). 아임웹 키는 서버 환경변수에만 있고 브라우저로
 // 나가지 않는다(브라우저는 이 엔드포인트만 호출).
+// 2026-10: 서버 함수 12개 한도 때문에 대시보드의 "업메리 상담 신청(리드)" 목록·상태 변경도
+// 여기서 받는다(본문 action = 'leads' | 'lead-status'). 리드는 개인정보라 앱 비밀번호가
+// 설정돼 있을 때만 열어 준다.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { fetchImwebOrderSummary } from './_lib/imweb.js'
 import { supabaseInsert } from './_lib/supabaseAdmin.js'
 import { sendJson, sendText } from './_lib/cronHandler.js'
+import { listLeads, updateLeadStatus } from './_lib/leads.js'
 import { BRANDS, type Brand } from '../src/types/brand.js'
 
 const IMWEB_ENV_KEYS: Record<Brand, { apiKey: string; secret: string }> = {
   업메리: { apiKey: 'IMWEB_API_KEY_UPMERY', secret: 'IMWEB_SECRET_KEY_UPMERY' },
   마잘남: { apiKey: 'IMWEB_API_KEY_MAJALNAM', secret: 'IMWEB_SECRET_KEY_MAJALNAM' },
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) chunks.push(chunk as Buffer)
+  const text = Buffer.concat(chunks).toString('utf8').trim()
+  if (!text) return {}
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
 }
 
 function makeId(): string {
@@ -36,6 +53,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const configuredPassword = process.env.VITE_APP_PASSWORD
   if (configuredPassword && req.headers['x-app-password'] !== configuredPassword) {
     sendText(res, 401, '인증 실패')
+    return
+  }
+
+  const body = await readJsonBody(req)
+  if (body.action === 'leads' || body.action === 'lead-status') {
+    if (!configuredPassword) {
+      sendJson(res, 403, { error: '앱 비밀번호(VITE_APP_PASSWORD)가 설정돼 있어야 리드를 볼 수 있습니다.' })
+      return
+    }
+    try {
+      if (body.action === 'leads') sendJson(res, 200, await listLeads())
+      else sendJson(res, 200, await updateLeadStatus({ id: String(body.id ?? ''), status: body.status, amount: body.amount }))
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+    }
     return
   }
 

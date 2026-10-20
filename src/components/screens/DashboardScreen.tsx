@@ -11,6 +11,7 @@ import { getEntries, syncEntriesFromSupabase } from '../../lib/calendarStore'
 import { fetchStorageUsage, type StorageUsage } from '../../lib/storageUsage'
 import type { CalendarChannel } from '../../types/calendar'
 import { MorningPanel } from '../MorningPanel'
+import { LeadsPanel } from '../LeadsPanel'
 import { BRANDS, type Brand } from '../../types/brand'
 
 function todaySpendForBrand(brand: Brand): number {
@@ -951,6 +952,9 @@ export function DashboardScreen() {
           <BrandSection key={b} brand={b} refreshKey={refreshKey} />
         ))}
       </div>
+
+      {/* 업메리 상담 신청(리드) — 메타 광고 전환용 폼 신청 목록·상태 */}
+      <LeadsPanel />
 
       {/* 기간별 분석 — 방문자 추이·월별 매출 그래프 + 일자별 표 (브랜드별) */}
       {BRANDS.map((b) => (

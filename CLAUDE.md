@@ -66,7 +66,7 @@ npm run lint                             # 4) oxlint
 - **Vercel Hobby = 서버리스 함수 12개 한도(현재 12개 꽉 참).** `api/` 아래 `_`로 시작하지 않는
   새 .ts 파일을 만들면 배포가 전부 실패한다 → 새 기능은 기존 함수 안에 넣거나 `api/_lib/`에.
   가벼운 크론을 더 붙일 땐 **`api/cron/[task].ts`(동적 경로, 함수 1개)**에 작업 이름으로 추가하고 vercel.json에
-  `/api/cron/<작업 이름>`을 넣는다(현재: cleanup · upmery-blog · upmery-blog-polish).
+  `/api/cron/<작업 이름>`을 넣는다(현재: cleanup · upmery-blog · upmery-blog-polish · meta-capi).
 - **Hobby 크론은 정해진 분이 아니라 "그 시간대 안 아무 때나" 실행된다** → 순서가 중요한 단계(1단계 글쓰기 → 2단계 다듬기)는
   시간대를 1시간 이상 띄운다.
 - Claude 모델은 **assistant prefill 미지원** — `assistantPrefill`은 무시된다(JSON은 지시+extractJson).
@@ -131,7 +131,7 @@ npm run lint                             # 4) oxlint
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
 - **`api/cron/`** — 서버 자동화(KST): `upmery-blog` 04시대, `content-schedule` 06:00(마잘남 블로그 1단계),
-  `upmery-blog-polish` 07시대, `hooks` 08시대(시트 동기화 + 마잘남 블로그 2단계),
+  `upmery-blog-polish` 07시대, `meta-capi` 07시대(업메리 리드 → 메타 전환), `hooks` 08시대(시트 동기화 + 마잘남 블로그 2단계),
   `radar` 07:50, `brain` 매일 09:00(주 1회 분량, 아래 참고), `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
   - 2026-10 대표님 비용 절감으로 **스케줄에서 뺀 크론**(파일은 그대로 — vercel.json에 한 줄 추가하면 다시 켜짐):
     - `thread-daily`(07:40, 스레드 5포맷 자동): `{ "path": "/api/cron/thread-daily", "schedule": "40 22 * * *" }`
@@ -149,6 +149,18 @@ npm run lint                             # 4) oxlint
     blog-brain 단계별 폴백: 웹서치 재시도(범위 축소) → 지난주 상위글 URL 재측정 → 분석 3회(마지막은 입력 축소),
     전부 760초 데드라인 안에서.
     **주당 최대 3회 실행 상한**(`MAX_RUNS_PER_WEEK`, 근무기록 행 수로 셈 — 성공·실패·예외 모두 1회) → 소진 시 다음 주 월요일 재개.
+- **업메리 상담 신청(리드) → 메타 전환(2026-10 대표님 요청)**: CTA가 카톡뿐이라 광고 성과를 못 재서 만든 것.
+  - 폼: `src/lib/leadFormSnippet.ts`가 아임웹 "코드" 블록용 HTML을 만든다(대시보드 "폼 설치 → 폼 코드 복사"가 Supabase 주소·
+    공개 키·픽셀 ID를 채워 줌). 이름·전화·타로 경험·하루 시간·필수 동의(국외 이전 고지 포함) + URL의 utm_*·fbclid(첫 방문 값을
+    localStorage에 기억) + _fbc/_fbp. 제출 = Supabase `leads`에 **공개 키로 직접 insert**(return=minimal) + 픽셀 `Lead`
+    (eventID = 리드 ID) → 완료 페이지 이동(주소 없으면 그 자리에 카톡 채널 추가 버튼). 카톡 문의 링크는 보조로 남김.
+  - `leads` RLS = **insert만**(조건으로 상태·전송 기록 조작 차단), 읽기·수정 정책 없음 → 목록·상태 변경은 `api/radar-refresh.ts`
+    (본문 `action: 'leads' | 'lead-status'`, 앱 비밀번호 필수)가 service 키로 처리(`api/_lib/leads.ts`). 화면은 `LeadsPanel.tsx`
+    (리드를 localStorage에 저장하지 않음). 상태: 신청 → 카톡 대화 → 통화 완료 → 결제 / 이탈(`src/types/lead.ts`).
+  - 크론 `meta-capi`(07시대, `[task].ts`): 안 보낸 것만 메타 전환 API로 — 신청 `Lead`(event_id=리드 ID, 픽셀과 중복 제거)·
+    통화 완료 `Contact`·결제 `Purchase`(금액 KRW, 결제로 바꿀 때 금액 필수). 전화번호는 82 국가번호 붙여 SHA-256. 7일 지난 건
+    메타가 안 받아 처리됨 표시. 실패하면 표시 안 하고 다음 날 재시도. 근무기록엔 **건수만**(이름·전화 원문 금지).
+    env `META_PIXEL_ID`·`META_CAPI_TOKEN`(없으면 건너뜀), 선택 `META_TEST_EVENT_CODE`(이벤트 관리자 테스트)·`META_GRAPH_VERSION`(기본 v23.0).
 - **데이터 흐름**: 크론이 **Supabase**에 쓰고, 브라우저는 **localStorage**를 읽는다 →
   화면 진입 시 `remoteSync`가 당겨온다(그래서 방금 크론 결과가 안 보이면 새로고침/탭 재진입).
 
@@ -156,6 +168,8 @@ npm run lint                             # 4) oxlint
 - Supabase SQL(1회): `alter table radar_snapshots add column if not exists daily_revenue jsonb not null default '[]';`
   그리고 `content_feedback` 테이블(이미 생성됨). 스키마는 `db/schema.sql` 참고.
   마잘남 블로그 재설계용: `blog_keywords`·`blog_brain_reports` 테이블 + `brain_reports.extras` 컬럼(schema.sql 하단).
+- 업메리 상담 신청(리드): Supabase SQL로 `leads` 테이블+정책(schema.sql 맨 아래 블록) 1회 실행, Vercel env `META_PIXEL_ID`·
+  `META_CAPI_TOKEN` 등록, 아임웹에 폼 페이지(코드 블록)·완료 페이지 만들기, 메타 광고 링크에 UTM을 붙여 폼 페이지로 바로 연결.
 - 선택 env(마잘남 블로그): `BLOG_CTA_LINK`(진단 폼, 없으면 자리표시자), 네이버 A모드용
   `NAVER_SEARCH_CLIENT_ID/SECRET`(검색API — 신규 발급은 네이버 클라우드로 이전됨),
   `NAVER_AD_API_KEY/SECRET_KEY/CUSTOMER_ID`(검색광고 키워드도구).

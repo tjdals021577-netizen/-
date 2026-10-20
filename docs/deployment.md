@@ -29,6 +29,9 @@ Vercel 프로젝트를 처음 만들 때는 `claude/video-editing-workflow-9yj1z
 | `ANTHROPIC_API_KEY` | `/api/cron/*`와 `/api/claude-proxy`가 서버에서 직접 Claude 호출할 때 사용 | Anthropic 콘솔 |
 | `CRON_SECRET` | Vercel Cron이 자동으로 `Authorization: Bearer $CRON_SECRET`을 붙여 호출 — 외부에서 함부로 못 부르게 막는 용도 | 아무 랜덤 문자열 (레포에 없음, 직접 생성) |
 | `VITE_APP_PASSWORD` | (선택) 앱 전체 비밀번호 게이트. 안 넣으면 게이트 자체가 꺼짐 | 원하는 문자열 |
+| `META_PIXEL_ID` | 업메리 상담 신청 폼의 픽셀 + 전환 API 대상(2026-10). 없으면 폼은 저장만, 크론은 건너뜀 | 메타 이벤트 관리자 → 데이터 소스 → 픽셀 ID |
+| `META_CAPI_TOKEN` | 메타 전환 API 액세스 토큰 — 서버(`meta-capi` 크론)만 사용 | 이벤트 관리자 → 설정 → 전환 API → 액세스 토큰 생성 |
+| `META_TEST_EVENT_CODE` | (선택) 테스트 이벤트 코드 — 넣어두면 이벤트 관리자 "테스트 이벤트"에만 보임. 확인 끝나면 지울 것 | 이벤트 관리자 → 테스트 이벤트 |
 
 **주의**: `VITE_` 접두사가 붙은 값은 빌드 시 클라이언트 번들에 그대로 노출된다(원래 그렇게 설계됨 —
 `VITE_SUPABASE_ANON_KEY`는 공개돼도 되는 키). `VITE_` 없는 값(`SUPABASE_SERVICE_ROLE_KEY`,
