@@ -13,6 +13,7 @@ const AGENT_LABEL_KO: Record<string, string> = {
   remix: '리믹서',
   coach: '코치',
   radar: '레이더',
+  ad: '애드',
 }
 
 function parseBriefing(raw: unknown): MorningBriefing {

@@ -52,6 +52,7 @@ const AGENTS: AgentMeta[] = [
   { key: 'buzz', name: '버즈', primaryTag: '마잘남 스레드 글쓰기', secondaryTag: '전자책 반영', colorVar: '--ch-thread', initial: '버', limit: '15분', dispatchable: true, group: 'chat' },
   { key: 'remix', name: '리믹서', primaryTag: '유튜브 대본 기획', secondaryTag: '성과 분석 겸직', colorVar: '--ch-yt', initial: '리', limit: '20분', dispatchable: true, group: 'chat' },
   { key: 'brain', name: '브레인', primaryTag: '시장·트렌드 리서치', secondaryTag: '검색은 여기만', colorVar: '--agent-a', initial: '브', limit: '10분', dispatchable: true, group: 'chat' },
+  { key: 'ad', name: '애드', primaryTag: '업메리 광고 운영', secondaryTag: '매주 월 자동 · 승인 후 실행', colorVar: '--accent', initial: '애', limit: '5분', dispatchable: true, group: 'chat' },
   // 자동 — 손 안 대도 알아서 도는 2명(대화 불가)
   { key: 'morning', name: '모닝', primaryTag: '아침 카톡 요약', secondaryTag: '매일 8시 자동', colorVar: '--agent-h', initial: '모', limit: '10분', dispatchable: false, group: 'auto' },
   { key: 'radar', name: '레이더', primaryTag: '방문자·통계 수집', secondaryTag: '매일 새벽 자동', colorVar: '--agent-g', initial: '레', limit: '10분', dispatchable: false, group: 'auto' },
@@ -469,7 +470,9 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
         // "모두에게"도 각 에이전트가 독립적으로 되묻거나 실행하도록 한다 —
         // 역할마다 판단이 다를 수 있어서(예: 같은 지시라도 라이터는 바로
         // 실행 가능한데 리믹서는 벤치마킹 대상이 애매해 되물어야 할 수 있음).
+        // 애드는 광고 운영 담당이라 콘텐츠 "모두에게" 지시에서는 뺀다(대표님이 애드를 골라 직접 시킬 때만).
         const targets = DISPATCHABLE_AGENTS.filter((agent) => {
+          if (agent === 'ad') return false
           const requiredChannel = AGENT_CHANNEL_REQUIREMENT[agent]
           return !requiredChannel || BRAND_CHANNELS[brand].includes(requiredChannel)
         })
@@ -528,7 +531,7 @@ export function TeamChatScreen({ brand }: { brand: Brand }) {
 
   return (
     <div>
-      <PreviewBanner message="내가 시키는 팀원은 4명 — 라이터(블로그)·버즈(스레드)·리믹서(유튜브)·브레인(리서치). 왼쪽에서 팀원(또는 전체 보기)을 고르면 대화 대상이 그쪽으로 고정돼, 메시지가 엉뚱한 사람에게 들어가지 않아요. 모닝·레이더는 손 안 대도 매일 자동으로 돌고, 성과 분석은 각 채널 탭의 '내 콘텐츠 분석'에서 실행합니다." />
+      <PreviewBanner message="내가 시키는 팀원은 5명 — 라이터(블로그)·버즈(스레드)·리믹서(유튜브)·브레인(리서치)·애드(업메리 광고 — 매주 월요일 자동, 광고 변경은 결재함 승인 후에만). 왼쪽에서 팀원(또는 전체 보기)을 고르면 대화 대상이 그쪽으로 고정돼, 메시지가 엉뚱한 사람에게 들어가지 않아요. 모닝·레이더는 손 안 대도 매일 자동으로 돌고, 성과 분석은 각 채널 탭의 '내 콘텐츠 분석'에서 실행합니다." />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr_240px]">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">

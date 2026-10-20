@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { PreviewBanner } from './PreviewBanner'
-import { getApprovalQueue, reviewItem, clearFailedPending, syncApprovalsFromSupabase } from '../../lib/approvalStore'
+import {
+  getApprovalQueue,
+  reviewItem,
+  clearFailedPending,
+  syncApprovalsFromSupabase,
+  applyServerReview,
+  executeAdActionRemote,
+  isAdActionItem,
+} from '../../lib/approvalStore'
 import type { ApprovalAgent, ApprovalItem, ApprovalStatus } from '../../types/approval'
 import type { Brand } from '../../types/brand'
 
@@ -8,6 +16,7 @@ const AGENT_LABEL: Record<ApprovalAgent, string> = {
   writer: '라이터 · 블로그',
   buzz: '버즈 · 스레드',
   remix: '리믹서 · 유튜브 기획',
+  ad: '애드 · 광고',
 }
 
 const TABS: { id: ApprovalStatus; label: string }[] = [
@@ -83,7 +92,29 @@ function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => v
   const [reason, setReason] = useState('')
   const [copied, setCopied] = useState(false)
 
-  function handleApprove() {
+  const isAdAction = isAdActionItem(item)
+  const [executing, setExecuting] = useState(false)
+  const [execMessage, setExecMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  async function handleApprove() {
+    // 애드 [실행 대기] 항목은 승인 = 메타에 실제 반영. 서버가 실행에 성공했을 때만 승인 처리한다.
+    if (isAdAction) {
+      setExecuting(true)
+      setExecMessage(null)
+      try {
+        const r = await executeAdActionRemote(item.id)
+        setExecMessage({ ok: r.ok, text: r.message })
+        if (r.ok) {
+          applyServerReview(item.id, { status: 'approved', contentHtml: r.contentHtml })
+          onChange()
+        }
+      } catch (err) {
+        setExecMessage({ ok: false, text: err instanceof Error ? err.message : String(err) })
+      } finally {
+        setExecuting(false)
+      }
+      return
+    }
     reviewItem(item.id, 'approved')
     onChange()
   }
@@ -147,10 +178,12 @@ function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => v
           <div className="flex shrink-0 gap-1.5">
             <button
               type="button"
-              onClick={handleApprove}
-              className="rounded-lg bg-[var(--done)] px-3 py-1.5 text-[12px] font-bold text-white transition hover:opacity-90"
+              onClick={() => void handleApprove()}
+              disabled={executing}
+              title={isAdAction ? '승인하면 메타 광고에 바로 반영돼요' : undefined}
+              className="rounded-lg bg-[var(--done)] px-3 py-1.5 text-[12px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
             >
-              승인
+              {isAdAction ? (executing ? '메타에 반영 중…' : '승인 · 메타에 반영') : '승인'}
             </button>
             <button
               type="button"
@@ -162,6 +195,10 @@ function ApprovalRow({ item, onChange }: { item: ApprovalItem; onChange: () => v
           </div>
         )}
       </div>
+
+      {execMessage && (
+        <p className={`mt-2 text-[12px] font-bold ${execMessage.ok ? 'text-[var(--done)]' : 'text-[var(--open)]'}`}>{execMessage.text}</p>
+      )}
 
       {rejecting && (
         <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">

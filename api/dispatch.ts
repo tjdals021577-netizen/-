@@ -29,6 +29,7 @@ import { sendJson, sendText } from './_lib/cronHandler.js'
 import { fetchLatestBrainReport, formatBrainFindings, insertBrainReport } from './_lib/blogStore.js'
 import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from './_lib/majalnamBlogPipeline.js'
 import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from '../src/agents/blogRuleCheck.js'
+import { executeAdAction, runAdAgent } from './_lib/adAgent.js'
 
 // 웹서치·긴 채점까지 안전하게 끝내기 위해 Vercel 상한(300초)으로 명시한다.
 export const maxDuration = 300
@@ -36,8 +37,8 @@ export const maxDuration = 300
 const DAILY_BUDGET_USD = 5
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
-type DispatchableAgent = 'writer' | 'buzz' | 'remix' | 'brain'
-const VALID_AGENTS: DispatchableAgent[] = ['writer', 'buzz', 'remix', 'brain']
+type DispatchableAgent = 'writer' | 'buzz' | 'remix' | 'brain' | 'ad'
+const VALID_AGENTS: DispatchableAgent[] = ['writer', 'buzz', 'remix', 'brain', 'ad']
 
 interface DispatchBody {
   agent: DispatchableAgent
@@ -432,6 +433,24 @@ async function runBrainJob(apiKey: string, body: DispatchBody, startedAt: string
   return research.ok ? `발견 ${report.findings.length}건` : research.note
 }
 
+// 애드(업메리 광고 운영) — 팀채팅 수동 실행. 업메리 전용. 결과는 결재함(리포트 + 실행 대기 항목)과 같은 근무기록 id.
+async function runAdJob(apiKey: string, body: DispatchBody, startedAt: string): Promise<string> {
+  if (body.brand !== '업메리') {
+    const note = '애드는 업메리 메타·당근 광고 전용이에요. 상단 브랜드를 업메리로 바꿔 다시 말씀해 주세요.'
+    await writeWorkLog({ logId: body.logId, agent: 'ad', brand: body.brand, kind: '수동 지시(팀 채팅)', status: 'attention', statusLabel: '보류', startedAt, ended: true, note, detailHtml: note })
+    return note
+  }
+  const r = await runAdAgent({
+    apiKey,
+    instruction: body.instruction,
+    deadline: Date.parse(startedAt) + 280_000,
+    logId: body.logId,
+    startedAt,
+    kind: '수동 지시(팀 채팅)',
+  })
+  return r.summary
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method !== 'POST') {
     sendText(res, 405, 'POST만 지원합니다.')
@@ -448,11 +467,26 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
-  let body: DispatchBody
+  let body: DispatchBody & { action?: string; approvalId?: string }
   try {
-    body = JSON.parse(await readBody(req)) as DispatchBody
+    body = JSON.parse(await readBody(req)) as DispatchBody & { action?: string; approvalId?: string }
   } catch {
     sendText(res, 400, '잘못된 요청 본문입니다.')
+    return
+  }
+
+  // 애드 — 결재함에서 대표님이 승인한 광고 변경(끄기·예산)만 메타 마케팅 API로 실행한다(AI 호출 없음).
+  // 승인 항목은 서버가 Supabase에서 다시 읽고(브라우저가 보낸 내용은 믿지 않음), 실행 직전에 학습 중 여부·현재 예산을 다시 확인한다.
+  if (body.action === 'ad-execute') {
+    if (typeof body.approvalId !== 'string' || !body.approvalId) {
+      sendText(res, 400, 'approvalId가 없습니다.')
+      return
+    }
+    try {
+      sendJson(res, 200, await executeAdAction(body.approvalId))
+    } catch (err) {
+      sendJson(res, 500, { ok: false, message: err instanceof Error ? err.message : String(err) })
+    }
     return
   }
   if (!VALID_AGENTS.includes(body.agent) || !BRANDS.includes(body.brand) || !body.logId) {
@@ -501,6 +535,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (body.agent === 'writer') summary = await runWriter(apiKey, body, startedAt, date)
     else if (body.agent === 'buzz') summary = await runBuzz(apiKey, body, startedAt, date)
     else if (body.agent === 'remix') summary = await runRemixJob(apiKey, body, startedAt, date)
+    else if (body.agent === 'ad') summary = await runAdJob(apiKey, body, startedAt)
     else summary = await runBrainJob(apiKey, body, startedAt)
     sendJson(res, 200, { ok: true, summary })
   } catch (err) {

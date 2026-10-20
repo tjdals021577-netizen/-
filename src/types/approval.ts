@@ -2,7 +2,7 @@ import type { Brand } from './brand.js'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 
-export type ApprovalAgent = 'writer' | 'buzz' | 'remix'
+export type ApprovalAgent = 'writer' | 'buzz' | 'remix' | 'ad'
 
 export interface ApprovalItem {
   id: string

@@ -146,3 +146,35 @@ export function reviewItem(
   writeAll(items)
   syncToSupabase('approval_queue', items[idx])
 }
+
+// 서버가 이미 Supabase에 반영한 결재 결과(애드 광고 변경 실행)를 로컬에만 맞춘다 — 다시 올리면
+// 서버가 붙인 실행 결과(content_html)를 옛 내용으로 덮어쓸 수 있어서 동기화하지 않는다.
+export function applyServerReview(id: string, patch: { status: ApprovalStatus; contentHtml?: string }): void {
+  const items = readAll()
+  const idx = items.findIndex((i) => i.id === id)
+  if (idx === -1) return
+  items[idx] = {
+    ...items[idx],
+    status: patch.status,
+    reviewedAt: new Date().toISOString(),
+    contentHtml: patch.contentHtml ?? items[idx].contentHtml,
+  }
+  writeAll(items)
+}
+
+// 애드의 [실행 대기] 항목(광고 끄기·예산 변경)인지 — 승인하면 서버가 메타에 실행한다.
+export function isAdActionItem(item: ApprovalItem): boolean {
+  return item.agent === 'ad' && item.contentHtml.includes('<!--ADACTION:') && !item.contentHtml.includes('ADACTION-DONE')
+}
+
+export async function executeAdActionRemote(id: string): Promise<{ ok: boolean; message: string; contentHtml?: string }> {
+  const password = import.meta.env.VITE_APP_PASSWORD
+  const res = await fetch('/api/dispatch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(password ? { 'X-App-Password': password } : {}) },
+    body: JSON.stringify({ action: 'ad-execute', approvalId: id }),
+  })
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; contentHtml?: string }
+  if (!res.ok && !data.message) return { ok: false, message: `서버 오류 (${res.status})` }
+  return { ok: !!data.ok, message: data.message ?? '', contentHtml: data.contentHtml }
+}

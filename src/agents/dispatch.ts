@@ -21,9 +21,9 @@ import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from './b
 
 const BLOG_ROLES: BlogRole[] = ['seo', 'copywriting', 'experience']
 
-export type DispatchableAgent = 'writer' | 'buzz' | 'remix' | 'brain'
+export type DispatchableAgent = 'writer' | 'buzz' | 'remix' | 'brain' | 'ad'
 
-export const DISPATCHABLE_AGENTS: DispatchableAgent[] = ['writer', 'buzz', 'remix', 'brain']
+export const DISPATCHABLE_AGENTS: DispatchableAgent[] = ['writer', 'buzz', 'remix', 'brain', 'ad']
 
 // 팀 채팅의 "일 시키기"에서 호출하는 경량 실행기 — 각 컴포저의 내부 상태는
 // 건드리지 않고, 같은 생성·채점 로직만 재사용해 근무기록에 결과를 남긴다.
@@ -220,6 +220,11 @@ export async function dispatchJob(params: {
         sourceWorkLogId: logId,
       })
       return
+    }
+
+    if (agent === 'ad') {
+      // 애드는 메타 광고 계정·리드(서버 전용 키)가 필요해 서버(/api/dispatch)에서만 돈다.
+      throw new Error('애드는 서버에서만 실행돼요 — 팀채팅에서 다시 요청해 주세요.')
     }
 
     // brain — researchMarketResilient는 예외를 던지지 않고 항상 리포트를 돌려준다

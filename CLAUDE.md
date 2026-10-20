@@ -66,7 +66,7 @@ npm run lint                             # 4) oxlint
 - **Vercel Hobby = 서버리스 함수 12개 한도(현재 12개 꽉 참).** `api/` 아래 `_`로 시작하지 않는
   새 .ts 파일을 만들면 배포가 전부 실패한다 → 새 기능은 기존 함수 안에 넣거나 `api/_lib/`에.
   가벼운 크론을 더 붙일 땐 **`api/cron/[task].ts`(동적 경로, 함수 1개)**에 작업 이름으로 추가하고 vercel.json에
-  `/api/cron/<작업 이름>`을 넣는다(현재: cleanup · upmery-blog · upmery-blog-polish · meta-capi).
+  `/api/cron/<작업 이름>`을 넣는다(현재: cleanup · upmery-blog · upmery-blog-polish · meta-capi · ad-weekly).
 - **Hobby 크론은 정해진 분이 아니라 "그 시간대 안 아무 때나" 실행된다** → 순서가 중요한 단계(1단계 글쓰기 → 2단계 다듬기)는
   시간대를 1시간 이상 띄운다.
 - Claude 모델은 **assistant prefill 미지원** — `assistantPrefill`은 무시된다(JSON은 지시+extractJson).
@@ -171,6 +171,18 @@ npm run lint                             # 4) oxlint
   - 채널 = 리드 `utm_source` 소문자 통일 후 meta / daangn / threads / instagram / 기타(별칭은 `channelOf`). 통화 = 통화 완료 이상(결제 포함).
     메타 광고별 신청은 `utm_content`를 광고 ID 또는 광고 이름과 맞춤 → 메타 URL 매개변수에 `utm_content={{ad.id}}` 권장.
     합계 줄은 비용 데이터가 있는 유료 채널만(무료 유입을 섞으면 신청당 비용·ROAS가 부풀려짐).
+- **애드 — 업메리 광고 운영 팀원(2026-10 대표님 요청)**: 목적 단 하나 = **결제당 비용 낮추기**. 매주 월 09시대 자동
+  (`[task].ts` `ad-weekly`, 이번 주 리포트 있으면 건너뜀) + 팀채팅 수동(업메리 전용, "모두에게"에선 빠짐). `api/_lib/adAgent.ts`.
+  - [검증된 사실] = 광고 대시보드 숫자(radar_snapshots meta_ads·daangn_ads) + leads + 메타 광고 세트·광고 상태(`fetchMetaAdStructure`)를
+    코드로 만든 텍스트(`buildAdFacts`). 분석(Sonnet `medium`) → 끌 광고 / 늘릴 광고(세트 일 예산) / 새 소재 방향, 근거 숫자 1줄.
+  - 코드 가드(`guardAnalysis`): **학습 중(최근 7일 이내 수정·생성 또는 메타 LEARNING) 세트와 그 안 광고는 제안에서 뺌**, 예산은 **±20%로 자름**
+    (100원 단위, 현재 예산 쪽으로), 일 예산 없는 세트(CBO·기간 예산)는 뺌, 근거 숫자가 사실 밖이면 "확인 필요" 표시.
+  - 문구(Sonnet `high`) 5세트(헤드라인 + 본문 3줄, 랜딩 = 상담 신청 폼 `UPMERY_AD_LANDING`) → 줄표 자동 수정 → **금지어 코드 검사**
+    (`src/agents/adRuleCheck.ts`: 수익·금액 주장 / 읽는 사람 상황 단정 / 보장·100%·확실) + 채점(Haiku `medium`, 심사 안전성·후킹·랜딩 일치·
+    명확성·AI 티, 세트당 100) → 걸렸거나 85 미만이면 **1회 고쳐 쓰기(high)** → 그래도 금지어가 남은 세트는 결재함에 안 올림.
+  - 결재함 = 리포트 1건 + **[실행 대기]** 항목(끄기·예산)마다 1건(HTML 주석 `ADACTION:`). **광고 변경은 자동 실행 안 함** — 결재함에서
+    그 항목을 승인할 때만 `api/dispatch.ts`(본문 `action: 'ad-execute'`) → `executeAdAction`이 Supabase에서 항목을 다시 읽고, 실행 직전
+    학습 중 여부·현재 예산을 다시 확인해 메타 마케팅 API로 실행(7일 지난 제안은 실행 안 함, 성공해야 승인 처리). 토큰에 **ads_management** 필요.
 - **데이터 흐름**: 크론이 **Supabase**에 쓰고, 브라우저는 **localStorage**를 읽는다 →
   화면 진입 시 `remoteSync`가 당겨온다(그래서 방금 크론 결과가 안 보이면 새로고침/탭 재진입).
 
@@ -178,6 +190,8 @@ npm run lint                             # 4) oxlint
 - Supabase SQL(1회): `alter table radar_snapshots add column if not exists daily_revenue jsonb not null default '[]';`
   그리고 `content_feedback` 테이블(이미 생성됨). 스키마는 `db/schema.sql` 참고.
   마잘남 블로그 재설계용: `blog_keywords`·`blog_brain_reports` 테이블 + `brain_reports.extras` 컬럼(schema.sql 하단).
+- 애드가 광고를 실제로 끄고·예산을 바꾸려면 `META_ACCESS_TOKEN`에 ads_read + **ads_management** 권한(시스템 사용자 토큰 권장).
+  광고 문구의 랜딩 설명(`UPMERY_AD_LANDING`, `src/agents/adPrompts.ts`)은 아임웹 신청 페이지 문구를 바꾸면 같이 맞출 것.
 - 업메리 광고 카드: Vercel env `META_AD_ACCOUNT_ID`·`META_ACCESS_TOKEN`(마케팅 API ads_read) 등록, 메타 광고 URL 매개변수
   `utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.id}}`, 당근 광고 링크엔 `utm_source=daangn`,
   당근 CSV는 설정 화면에서 주기적으로 올리기.

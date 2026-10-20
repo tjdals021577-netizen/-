@@ -4,6 +4,8 @@
 //   cleanup             — 매주 월 03시대: 오래된 블로그 사진 정리(예전 api/cron/cleanup.ts, 주소 그대로)
 //   upmery-blog         — 매일 04시대: 업메리 블로그 1단계(키워드 → 깊게 쓰기 → 자동 수정 → 결재함 "채점 대기")
 //   upmery-blog-polish  — 매일 07시대: 업메리 블로그 2단계(채점 → 미달이면 고쳐 쓰기 → 재채점 → 같은 글 업데이트)
+//   ad-weekly           — 매주 월 09시대: 애드(업메리 광고 운영) 주간 분석 + 다음 행동 제안 + 광고 문구 → 결재함
+//                         (광고 변경은 결재함 승인 때만 실행). 이번 주 리포트가 이미 있으면 건너뜀.
 //   meta-capi           — 매일 07시대(레이더와 같은 시간대): 업메리 상담 신청(리드)의 신청·통화 완료·결제를
 //                         메타 전환 API로 전송(아직 안 보낸 것만, 전화번호는 해시). 키·테이블 없으면 건너뜀.
 // Hobby 크론은 "그 시간대 안 아무 때나" 실행되므로 1단계(04시대)와 2단계(07시대)는 시간대를 띄워 둔다.
@@ -13,6 +15,7 @@ import { runCleanup } from '../_lib/cleanupTask.js'
 import { runDailyBlogDraftOnce } from '../_lib/blogDailyDraft.js'
 import { runMajalnamBlogPolish } from '../_lib/majalnamBlogPolish.js'
 import { sendLeadConversions } from '../_lib/leads.js'
+import { runAdWeeklyOnce } from '../_lib/adAgent.js'
 
 export const maxDuration = 300
 
@@ -46,6 +49,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     sendText(res, 500, 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
+    return
+  }
+  if (task === 'ad-weekly') {
+    sendJson(res, 200, { ok: true, task, result: await runAdWeeklyOnce(apiKey, startedAt) })
     return
   }
   if (task === 'upmery-blog') {
