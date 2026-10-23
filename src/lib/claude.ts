@@ -35,6 +35,17 @@ const DEFAULT_TIMEOUT_MS = 260_000
 
 export class ClaudeCallError extends Error {}
 
+// Anthropic 계정 쪽 문제(크레딧 소진)는 코드로 못 고친다 — 원문 영어 JSON 대신 대표님이 바로 할 일을 알려준다
+// (2026-10 실제로 "credit balance is too low" 400이 업메리 블로그·라이터 오류로 그대로 떴다).
+export const CREDIT_EMPTY_MESSAGE =
+  'Anthropic API 크레딧이 부족해 멈췄어요(코드 오류 아님). console.anthropic.com → Settings → Billing에서 충전하면 다음 실행부터 다시 돌아요.'
+
+function friendlyApiError(err: unknown): unknown {
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+  if (/credit balance is too low/i.test(msg)) return new ClaudeCallError(CREDIT_EMPTY_MESSAGE)
+  return err
+}
+
 // 대표님이 팀채팅에서 "취소"를 눌렀을 때 던지는 전용 오류 — 일반 실패(오류)와
 // 구분해서, 근무기록에 "오류"가 아니라 "취소됨"으로 남기고 사용자에게도 겁주는
 // 에러 문구 대신 담백한 안내를 보여주기 위함.
@@ -133,7 +144,7 @@ async function createMessageViaProxy(
     })
     const data = await res.json()
     if (!res.ok) {
-      throw new ClaudeCallError(typeof data.error === 'string' ? data.error : `서버 오류 (${res.status})`)
+      throw friendlyApiError(new ClaudeCallError(typeof data.error === 'string' ? data.error : `서버 오류 (${res.status})`))
     }
     return data as ProxyResponse
   } catch (err) {
@@ -178,7 +189,7 @@ async function createMessage(
         `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
       )
     }
-    throw err
+    throw friendlyApiError(err)
   }
 }
 
@@ -207,7 +218,7 @@ async function createMessageStreamingDirect(
         `${Math.round(timeoutMs / 1000)}초 안에 응답이 없어 중단했습니다. 잠시 후 다시 시도해주세요.`,
       )
     }
-    throw err
+    throw friendlyApiError(err)
   }
 }
 
