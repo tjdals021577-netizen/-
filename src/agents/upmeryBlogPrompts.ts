@@ -8,6 +8,7 @@ import type { RubricCriterion } from '../types/domain.js'
 import type { BlogRole } from '../types/blog.js'
 import type { ReaderStage } from '../types/blogBrain.js'
 import { CTA_LINK_PLACEHOLDER } from './majalnamBlogPrompts.js'
+import { formatReviewVaultFacts } from './upmeryReviews.js'
 
 // 홈페이지의 카카오톡 채널 상담 링크(공개 링크). Vercel 환경변수 BLOG_CTA_LINK_UPMERY가 있으면 그걸 쓴다
 // (나중에 앱 링크로 통일하면 환경변수만 바꾸면 된다).
@@ -101,7 +102,9 @@ export const UPMERY_VERIFIED_FACTS = `[검증된 사실 — 글에 쓸 수 있�
 - 스마트스토어, 블로그, 쿠팡, 포스팅까지 강의비로만 1,000만 원 넘게 썼고 자격증도 돈 주고 세 개 땄다. 통장은 그대로 0원이었다.
 - 타로를 못 봐서가 아니라 손님이 없어서였다. 그래서 글 쓰는 법, 계정 키우는 법, 문의를 결제로 넘기는 법을 따로 팠다.
 - 제일 힘들었던 건 돈이 아니라 "자료에 다 있으니까 보고 하세요", "다른 분들은 알아서 잘하던데요?" 같은 말과 결제 후 잠수였다. 그건 교육이 아니라 방치였다. 나는 절대 저렇게 안 가르치겠다고 다짐했다.
-- 처음엔 부업으로 시작했는데 지금은 본업이 됐다.`
+- 처음엔 부업으로 시작했는데 지금은 본업이 됐다.
+
+${formatReviewVaultFacts()}`
 
 const WRITER_STATIC = `당신은 네이버 블로그 상위노출과 "문의를 만드는 글"을 동시에 설계하는 카피라이터다.
 타로 부업 수익화 1:1 컨설팅을 하는 대표의 블로그 글을 쓴다. 독자는 부업이 필요한 주부·직장인·대학생, 또는 타로를 볼 줄 알지만 손님이 없어 수익이 안 나는 사람이다.

@@ -7,6 +7,7 @@ import { getBlogBrandConfig } from '../../src/agents/blogBrandConfig.js'
 import { makeDefaultChecklist } from '../../src/types/calendar.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 import type { Brand } from '../../src/types/brand.js'
+import { pickUpmeryTopic, UPMERY_TOPIC_KIND_LABEL, usedReviewIdsFromNotes, type UpmeryDailyTopic } from '../../src/agents/upmeryTopicBank.js'
 
 const KIND = '주간 스케줄 자동 기획'
 
@@ -32,20 +33,49 @@ async function todaysPhotoCount(date: string, brand: Brand): Promise<number> {
   }
 }
 
+// 업메리 후기 사례글로 이미 쓴 후기 ID — 근무기록 메모의 "후기 r001" 표시로 센다(다듬기 단계도 같은 표시를 남김).
+async function usedUpmeryReviewIds(): Promise<Set<string>> {
+  try {
+    const rows = await supabaseSelect<{ note: string | null }>(
+      'work_log',
+      `agent=eq.writer&brand=eq.${encodeURIComponent('업메리')}&note=like.${encodeURIComponent('*후기 r*')}&select=note&limit=1000`,
+    )
+    return usedReviewIdsFromNotes(rows.map((r) => r.note ?? ''))
+  } catch {
+    return new Set()
+  }
+}
+
 export async function runDailyBlogDraft(apiKey: string, brand: Brand, date: string): Promise<string> {
-  const topic = todaysTopic(brand)
+  // 업메리는 주제 은행(후기 사례글 주 4 · 질문 · 정보 · 대표 이야기)에서, 마잘남은 기존 주제 순환에서.
+  const plan: UpmeryDailyTopic | null = brand === '업메리' ? pickUpmeryTopic(date, await usedUpmeryReviewIds()) : null
+  const topic = plan?.topic ?? todaysTopic(brand)
   const photoCount = await todaysPhotoCount(date, brand)
+  const reviewPhoto = plan?.review
+    ? `후기 캡처 1장(${plan.review.imageAlt}) — 수강생이 한 말을 인용한 바로 옆에 "[📸 첨부 사진: 후기 캡처]"로 배치(이름·연락처는 이미 가려 둠). 나머지 사진 추천은 평소대로.`
+    : ''
   const result = await runMajalnamBlogPipeline({
     apiKey,
     brand,
     mode: 'draft',
     topic,
     date,
+    keyContent: plan?.keyContent,
     // 대표님이 올린 사진은 설명이 없으니 장수만 알려주고 배치 위치만 표시하게 한다.
     photos:
-      photoCount > 0
-        ? `대표님이 오늘 올린 사진 ${photoCount}장(설명 없음) — 사진 추천 지점 중 어울리는 곳에 "[📸 첨부 사진: 대표님 사진 N번]"으로 배치`
-        : undefined,
+      [
+        reviewPhoto,
+        photoCount > 0
+          ? `대표님이 오늘 올린 사진 ${photoCount}장(설명 없음) — 사진 추천 지점 중 어울리는 곳에 "[📸 첨부 사진: 대표님 사진 N번]"으로 배치`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n') || undefined,
+    topicInfo: plan
+      ? `${UPMERY_TOPIC_KIND_LABEL[plan.kind]}${plan.review ? ` (후기 ${plan.review.id})` : ''}${plan.note ? ` — ${plan.note}` : ''}`
+      : undefined,
+    reviewId: plan?.review?.id,
+    attachments: plan?.review ? [{ src: plan.review.image, alt: plan.review.imageAlt }] : undefined,
   })
   const { draft, keyword } = result
   const scoreNote = '1단계(깊게 쓰기) 완료 — 채점·다듬기 예정'
@@ -63,7 +93,7 @@ export async function runDailyBlogDraft(apiKey: string, brand: Brand, date: stri
     status_label: '완료',
     started_at: nowIso,
     ended_at: nowIso,
-    note: `${scoreNote} · ${kwNote} · 사진 ${photoCount}장`,
+    note: `${scoreNote} · ${kwNote} · 사진 ${photoCount}장${plan ? ` · ${UPMERY_TOPIC_KIND_LABEL[plan.kind]}` : ''}${plan?.review ? ` · 후기 ${plan.review.id}` : ''}`,
     detail_html: html,
   })
   await supabaseInsert('approval_queue', {

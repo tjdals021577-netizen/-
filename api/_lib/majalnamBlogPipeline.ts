@@ -45,6 +45,10 @@ export interface MajalnamBlogResult {
   photos?: string
   // true = 06:00 1단계 결과(아직 채점 전) — 08시대에 polishMajalnamBlog가 이어서 처리한다.
   pendingPolish?: boolean
+  // 업메리 주제 은행(2026-10): 글 종류·쓴 후기 ID·결재함에 같이 보여 줄 가린 후기 사진.
+  topicInfo?: string
+  reviewId?: string
+  attachments?: { src: string; alt: string }[]
 }
 
 // AI는 소제목 수·글자 수를 스스로 정확히 못 센다(2026-10 실사용: 소제목 6개·1,615자). 지시 맨 끝에
@@ -215,6 +219,9 @@ export async function runMajalnamBlogPipeline(params: {
   feedback?: string
   mode?: 'full' | 'draft'
   brand?: Brand
+  topicInfo?: string
+  reviewId?: string
+  attachments?: { src: string; alt: string }[]
 }): Promise<MajalnamBlogResult> {
   const { apiKey, topic, date, keyContent, photos, previousDraft, feedback, mode = 'full', brand = '마잘남' } = params
   const cfg = getBlogBrandConfig(brand)
@@ -270,6 +277,9 @@ export async function runMajalnamBlogPipeline(params: {
     topic,
     keyContent,
     photos,
+    topicInfo: params.topicInfo,
+    reviewId: params.reviewId,
+    attachments: params.attachments,
   }
   if (draftOnly) {
     return { ...base, draft: first.draft, reviews: [], autoFixes: first.fixes, pendingPolish: true }
@@ -374,6 +384,7 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
     ` · 독자 단계 ${keyword.readerStage}` +
     ` · 검색량 ${keyword.searchVolume === null ? '미확인' : keyword.searchVolume.toLocaleString('ko-KR')}` +
     (keywordFallback ? ' (⚠️키워드 단계 실패 — 기본값)' : '') +
+    (result.topicInfo ? `<br/><b>📝 글 종류</b> ${result.topicInfo}` : '') +
     `<br/><small>선정 이유: ${keyword.reason || '-'} · 리서치: ${researchWeek ? `${researchWeek} blog-brain 반영` : '아직 없음'}` +
     ` · 작성 깊이: ${writerEffort === 'high' ? '깊게' : writerEffort === 'medium' ? '보통(정상)' : writerEffort === 'low' ? '가볍게(1차 실패 후 재시도 — 품질 확인 필요)' : '-'}${writerSeconds ? ` · 첫 글쓰기 ${writerSeconds}초` : ''}</small>`
   const photoHtml = draft.photoPlacements.length
@@ -396,5 +407,16 @@ export function buildMajalnamBlogHtml(result: MajalnamBlogResult): string {
   const postHtml =
     `<div ${NAVER_TITLE_ATTR} style="font-size:17px;font-weight:700;margin:6px 0 10px">${titleEsc}</div>` +
     `<div ${NAVER_POST_ATTR} style="border:1px solid #e5e5e5;border-radius:10px;padding:18px 12px;background:#fff">${renderNaverBody(draft.body, markCta)}</div>`
-  return `${checkHtml}${kwLine}<br/><br/>${postHtml}${photoHtml}<br/><br/>${reviewHtml}${result.pendingPolish ? encodeBlogState(result) : ''}`
+  // 후기 사례글이면 가린 후기 캡처를 같이 보여 주고 저장 버튼을 단다(네이버엔 대표님이 직접 넣음 — 자동 발행 안 함).
+  const attachHtml = result.attachments?.length
+    ? `<br/><br/><b>📎 이 글에 넣을 후기 사진</b> <small>(이름·연락처·프로필은 가린 상태 — 저장해서 본문의 "첨부 사진" 자리에 넣어 주세요)</small><br/>` +
+      result.attachments
+        .map(
+          (a) =>
+            `<div style="display:inline-block;margin:6px 8px 0 0;text-align:center"><img src="${a.src}" alt="${a.alt.replace(/"/g, '&quot;')}" style="max-width:220px;border:1px solid #e5e5e5;border-radius:8px"/>` +
+            `<br/><a href="${a.src}" download style="font-size:12px">사진 저장</a></div>`,
+        )
+        .join('')
+    : ''
+  return `${checkHtml}${kwLine}<br/><br/>${postHtml}${attachHtml}${photoHtml}<br/><br/>${reviewHtml}${result.pendingPolish ? encodeBlogState(result) : ''}`
 }

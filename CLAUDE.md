@@ -111,6 +111,13 @@ npm run lint                             # 4) oxlint
       env `BLOG_CTA_LINK_UPMERY`로 교체 가능). 수익 글이라 면책 문장(`UPMERY_DISCLAIMER`) 필수 — 없으면 자동 추가.
       공용 1단계 작업 `api/_lib/blogDailyDraft.ts`(마잘남 content-schedule도 이걸 씀).
       일정: 업메리 1단계 **04시대**(`/api/cron/upmery-blog`) → 2단계 **07시대**(`/api/cron/upmery-blog-polish`).
+      **주제 은행 + 후기 보관함(2026-10-25, 대표님 "주제가 항상 걱정, 후기 많음")** — 업메리는 고정 7주제 순환 대신
+      `src/agents/upmeryTopicBank.ts`: 요일별 글 종류(일·월·수·금 **후기 사례글**, 화 질문 답변, 목 키워드 정보, 토 대표 이야기, AI 호출 없이 코드로 선택).
+      후기 사례글 날엔 `src/agents/upmeryReviews.ts`(`UPMERY_REVIEWS`)에서 **아직 안 쓴 후기 1건**을 꺼내 [핵심 내용]으로 넘기고, 쓴 후기는
+      근무기록 메모 "후기 r001"로 표시(2단계 다듬기도 유지) → 재사용 안 함. 후기가 떨어지면 질문 답변글 + 결재함에 "후기 더 보내 달라" 안내.
+      후기는 **대표님이 이 Claude Code 채팅(구독)으로 캡처를 보내면 Claude가 읽고 정리**(서버 AI가 캡처를 읽지 않음 — API 0원):
+      이름·전화·카톡 ID·프로필 사진 가림 확인, 메타데이터 제거 후 `public/reviews/upmery-rNNN.png`, 배열 맨 뒤에 다음 번호로 추가.
+      보관함 내용은 `UPMERY_VERIFIED_FACTS`에 자동으로 붙어 검증된 사실이 된다. 결재함엔 가린 후기 사진 + "사진 저장" 버튼(네이버엔 대표님이 직접).
       팀채팅 라이터도 업메리면 같은 파이프라인. **주간 blog-brain도 업메리 포함**(`UPMERY_BLOG_BRAIN_SYSTEM` = 마잘남 원문 3번에서
       브랜드 내용만 교체, 키워드는 `UPMERY_CORE_KEYWORDS`) — brain 크론이 두 브랜드를 병렬로 분석, 각자 글쓰기에 반영.
       **채점 공정성(2026-10)**: 채점 AI에 `measureForReview`(코드 실측 — 메인 키워드·횟수·제목 위치·독자 단계·글자 수·소제목·

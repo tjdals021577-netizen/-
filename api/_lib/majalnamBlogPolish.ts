@@ -46,7 +46,9 @@ export async function runMajalnamBlogPolish(apiKey: string, deadline: number, br
   const note =
     `${reviewed ? `${avg.toFixed(1)}점 ${passed ? '통과' : '미달'}` : '채점 실패 — 글은 정상'}` +
     ` · 키워드 "${result.keyword.mainKeyword}" ${result.keyword.readerStage}` +
-    (rewroteNote ? ` · ${rewroteNote}` : '')
+    (rewroteNote ? ` · ${rewroteNote}` : '') +
+    // 후기 사례글이면 쓴 후기 번호를 남긴다 — 다음 날 같은 후기를 다시 고르지 않게(upmeryTopicBank).
+    (result.reviewId ? ` · 후기 ${result.reviewId}` : '')
 
   // 대표님이 그사이 승인·반려했으면 결재함은 건드리지 않는다(위 select에서 pending만 골랐지만 한 번 더).
   await supabaseUpdate('approval_queue', `id=eq.${encodeURIComponent(target.id)}&status=eq.pending`, {
