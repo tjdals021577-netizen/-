@@ -471,9 +471,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
-  let body: DispatchBody & { action?: string; approvalId?: string; topicKey?: string }
+  let body: DispatchBody & { action?: string; approvalId?: string; topicKey?: string; force?: boolean }
   try {
-    body = JSON.parse(await readBody(req)) as DispatchBody & { action?: string; approvalId?: string; topicKey?: string }
+    body = JSON.parse(await readBody(req)) as DispatchBody & { action?: string; approvalId?: string; topicKey?: string; force?: boolean }
   } catch {
     sendText(res, 400, '잘못된 요청 본문입니다.')
     return
@@ -495,7 +495,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
   // 업메리 블로그 "주제 목록" 요청(2026-10-25) — ① 고른 주제로 1단계(깊게 쓰기) → 결재함 항목 id 반환,
   // ② 화면이 그 id로 2단계(채점·고쳐 쓰기)를 바로 이어서 부른다. 함수 한 번 300초 안에 각각 끝난다.
-  // 업메리 "검색 많은 주제" — 읽기(저장된 최신 목록) / 지금 새로 뽑기(키워드도구 + 싼 모델 1회).
+  // 업메리 "검색 많은 주제" — 읽기(저장된 최신 목록) / 새로 뽑기(키워드도구 + 싼 모델 1회). force: false면 이번 주 것이 있을 때 건너뜀(화면 자동 뽑기용).
   if (body.action === 'upmery-keyword-topics') {
     sendJson(res, 200, { ok: true, hasKeys: hasNaverAdKeys(), report: await getLatestUpmeryKeywordTopics() })
     return
@@ -510,7 +510,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       // 예산 조회 실패는 best-effort.
     }
     try {
-      const message = await runUpmeryKeywordTopicsOnce(apiKey, { force: true, deadline: Date.now() + 270_000 })
+      const message = await runUpmeryKeywordTopicsOnce(apiKey, { force: body.force !== false, deadline: Date.now() + 270_000 })
       sendJson(res, 200, { ok: true, message, hasKeys: hasNaverAdKeys(), report: await getLatestUpmeryKeywordTopics() })
     } catch (err) {
       sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })

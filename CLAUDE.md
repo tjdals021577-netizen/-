@@ -114,7 +114,10 @@ npm run lint                             # 4) oxlint
       일정: 업메리 1단계 **04시대**(`/api/cron/upmery-blog`) → 2단계 **07시대**(`/api/cron/upmery-blog-polish`).
       **2026-10-25부터 매일 자동 쓰기 꺼짐**(`UPMERY_BLOG_AUTO = false`, `src/lib/weeklySchedule.ts` — 대표님 "주제 리스트에서 골라
       내가 요청하면 써지게"). 04시대 크론은 건너뛰고, **블로그 탭 맨 위 "🗒️ 주제 목록"**(`src/components/UpmeryTopicList.tsx`,
-      업메리 블로그일 때만)에서 오늘 추천(`pickUpmeryTopic`)·후기 사례글·질문 답변·정보·대표 이야기·직접 입력 중 골라 "이 주제로 쓰기" →
+      업메리 블로그일 때만)에서 골라 "이 주제로 쓰기" →
+      (**2026-10-25 대표님 "기존 주제 없애고 새로 뽑은 걸로"**: 화면 주제는 ① 🔎 검색 많은 주제 ② 후기 사례글 ③ 직접 입력뿐. 손으로 만든
+      질문·정보·멘토님 이야기 목록은 화면에서 뺐고 배열은 예전 "주제 qa:3" 표시·자동 크론 대비로만 남김. 오늘 추천 = 안 쓴 검색 주제 1순위 →
+      없으면 안 쓴 후기. 이번 주 검색 목록이 없거나 6일 지났으면 화면을 열 때 자동으로 뽑음(`force: false`)) →
       `api/dispatch.ts` `action: 'upmery-blog-write'`(`topicKey` → `runUpmeryBlogForTopic`, 1단계 high, `approvalId` 반환) →
       화면이 이어서 `action: 'upmery-blog-polish'`(그 `approvalId`만 채점·고쳐 쓰기). 화면을 닫아 2단계를 못 했으면 07시대 다듬기 크론이
       최근 3일 안의 대기 글을 마무리한다. 주제 키 = `review:r002`·`qa:3`·`info:0`·`story:5`·`custom:…`(`planFromKey`), 쓴 주제는

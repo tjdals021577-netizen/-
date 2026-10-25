@@ -1,21 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  listUpmeryTopics,
-  pickUpmeryTopic,
-  UPMERY_TOPIC_KIND_LABEL,
-  usedReviewIdsFromNotes,
-  usedTopicKeysFromNotes,
-  type UpmeryTopicOption,
-} from '../agents/upmeryTopicBank'
+import { listUpmeryTopics, usedTopicKeysFromNotes } from '../agents/upmeryTopicBank'
 import { getWorkLog, syncWorkLogFromSupabase } from '../lib/workLog'
 import { syncApprovalsFromSupabase } from '../lib/approvalStore'
-import { kstDateKey, kstNow } from '../lib/weeklySchedule'
 import type { KeywordTopicReport } from '../agents/upmeryKeywordTopics'
 
 // 업메리 블로그 "주제 목록"(2026-10-25 대표님: "주제 리스트 뽑으면 내가 요청할 때 그거대로 써지게").
 // 매일 자동으로 쓰지 않고, 여기서 고른 주제로 서버가 1단계(깊게 쓰기) → 2단계(채점·고쳐 쓰기)를 돌려 결재함에 올린다.
 // 이미 쓴 주제는 근무기록 메모("후기 r001"·"주제 qa:3")로 "썼음" 표시 — AI 호출 없이 코드로.
-// 맨 위 "검색 많은 주제"는 매주 네이버 키워드도구 실제 검색량으로 뽑은 목록(api/_lib/upmeryKeywordTopics.ts).
+// 주제는 두 곳에서만 나온다(2026-10-25 대표님 "기존 주제 없애고 새로 뽑은 걸로"):
+//   ① 검색 많은 주제 — 매주 네이버 키워드도구 실제 검색량으로 뽑은 목록(api/_lib/upmeryKeywordTopics.ts). 이번 주 목록이
+//      없으면 화면을 열 때 자동으로 뽑는다(서버가 이번 주 것이 있으면 건너뜀).
+//   ② 후기 사례글 — 후기 보관함(upmeryReviews). 예전에 손으로 만든 질문·정보·멘토님 이야기 목록은 화면에서 뺐다
+//      (upmeryTopicBank 배열은 이미 쓴 글의 "주제 qa:3" 표시·자동 크론 대비로 남겨 둠).
+// 오늘 추천 = 아직 안 쓴 검색 주제 1순위 → 없으면 아직 안 쓴 후기.
 
 type Phase = { key: string; step: 'write' | 'polish' } | null
 
@@ -33,8 +30,6 @@ async function postDispatch(body: Record<string, unknown>): Promise<DispatchResu
   return data
 }
 
-const GROUPS: UpmeryTopicOption['kind'][] = ['review', 'qa', 'info', 'story']
-
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 
 export function UpmeryTopicList() {
@@ -51,7 +46,11 @@ export function UpmeryTopicList() {
     let alive = true
     postDispatch({ action: 'upmery-keyword-topics' })
       .then((d) => {
-        if (alive) setKw({ hasKeys: !!d.hasKeys, report: d.report ?? null })
+        if (!alive) return
+        setKw({ hasKeys: !!d.hasKeys, report: d.report ?? null })
+        // 키가 있는데 목록이 없거나 일주일이 지났으면 바로 뽑는다(대표님이 버튼을 안 눌러도 되게).
+        const stale = !d.report || Date.now() - Date.parse(d.report.createdAt) > 6 * 86_400_000
+        if (d.hasKeys && stale) void refreshKeywords(false)
       })
       .catch(() => undefined)
     syncWorkLogFromSupabase()
@@ -65,16 +64,29 @@ export function UpmeryTopicList() {
   }, [])
 
   const used = useMemo(() => usedTopicKeysFromNotes(notes), [notes])
-  const today = useMemo(() => pickUpmeryTopic(kstDateKey(kstNow()), usedReviewIdsFromNotes(notes)), [notes])
-  const topics = useMemo(() => listUpmeryTopics(), [])
-  const remainingReviews = topics.filter((t) => t.kind === 'review' && !used.has(t.key)).length
+  const reviews = useMemo(() => listUpmeryTopics().filter((t) => t.kind === 'review'), [])
+  const remainingReviews = reviews.filter((t) => !used.has(t.key)).length
+  const kwRows = (kw?.report?.topics ?? []).map((t) => ({
+    key: `kw:${t.keyword}`,
+    writeKey: `kw:${t.keyword}|${t.phrase}|${t.topic}`,
+    topic: t.topic,
+    detail: `"${t.phrase}" 월 ${fmt(t.volume)}회 · 상위 글 ${t.strength}${
+      t.topChars !== null ? `(평균 ${fmt(t.topChars)}자${t.topPhotos !== null ? `·사진 ${t.topPhotos}장` : ''})` : ''
+    } · 독자 ${t.stage}${t.why ? ` · ${t.why}` : ''}`,
+  }))
+  const nextKw = kwRows.find((t) => !used.has(t.key))
+  const nextReview = reviews.find((t) => !used.has(t.key))
+  const today = nextKw
+    ? { label: '검색 많은 주제', row: nextKw }
+    : nextReview
+      ? { label: '후기 사례글', row: nextReview }
+      : null
 
-  async function refreshKeywords() {
-    if (kwBusy) return
+  async function refreshKeywords(force = true) {
     setKwBusy(true)
     setKwMsg('')
     try {
-      const d = await postDispatch({ action: 'upmery-keyword-topics-refresh' })
+      const d = await postDispatch({ action: 'upmery-keyword-topics-refresh', force })
       if (!d.ok) throw new Error(d.error ?? '검색 많은 주제를 못 뽑았어요.')
       setKw({ hasKeys: !!d.hasKeys, report: d.report ?? null })
       setKwMsg(d.message ?? '')
@@ -141,7 +153,7 @@ export function UpmeryTopicList() {
     <div className="space-y-3">
       <p className="text-[12px] text-[var(--text-muted)]">
         고르면 바로 글을 써서 결재함에 올려요(쓰기 최대 4분 → 채점·다듬기 최대 5분). 기다리는 동안 다른 탭에 가도 서버는 계속 써요.
-        후기 사례글은 남은 후기 {remainingReviews}건.
+        주제는 네이버 실제 검색량으로 매주 새로 뽑은 것과 후기 보관함(남은 후기 {remainingReviews}건)에서만 나와요.
       </p>
 
       {phase && (
@@ -156,13 +168,24 @@ export function UpmeryTopicList() {
       )}
 
       <div className="rounded-lg border border-[var(--accent)] p-3">
+        <p className="mb-1 text-[12px] font-bold text-[var(--accent)]">⭐ 오늘 추천{today ? ` · ${today.label}` : ''}</p>
+        {today ? (
+          <ul>{renderRow(today.row)}</ul>
+        ) : (
+          <p className="text-[11px] text-[var(--text-muted)]">
+            {kwBusy ? '검색 많은 주제를 뽑는 중이에요…' : '추천할 주제가 아직 없어요 — 검색 많은 주제를 뽑거나 후기를 보내 주세요.'}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-[var(--border)] p-3">
         <div className="mb-1 flex items-center justify-between gap-2">
           <p className="text-[12px] font-bold text-[var(--accent)]">🔎 검색 많은 주제 (네이버 실제 검색량)</p>
           {kw?.hasKeys && (
             <button
               type="button"
               disabled={kwBusy || !!phase}
-              onClick={() => void refreshKeywords()}
+              onClick={() => void refreshKeywords(true)}
               className="shrink-0 text-[11px] text-[var(--text-muted)] underline disabled:opacity-40"
             >
               {kwBusy ? '뽑는 중…(최대 4분)' : '지금 새로 뽑기'}
@@ -176,37 +199,18 @@ export function UpmeryTopicList() {
             네이버 검색광고 API 키를 Vercel에 넣으면(NAVER_AD_API_KEY · NAVER_AD_SECRET_KEY · NAVER_AD_CUSTOMER_ID) 매주 여기에 검색량 순 주제가 떠요.
           </p>
         ) : !kw.report ? (
-          <p className="text-[11px] text-[var(--text-muted)]">아직 이번 주 목록이 없어요 — 매일 오전 10시대에 자동으로 뽑거나 "지금 새로 뽑기"를 눌러 주세요.</p>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            {kwBusy ? '네이버 검색량을 받아 주제를 뽑는 중이에요(1~4분)…' : '아직 이번 주 목록이 없어요 — "지금 새로 뽑기"를 눌러 주세요.'}
+          </p>
         ) : (
           <>
             <p className="mb-1 text-[11px] text-[var(--text-muted)]">
               {kw.report.week} · {kw.report.note}. 점수 = 월 검색량(300~5,000이 올라가기 좋은 구간) × 상위 글 강도(상위 3개 글의 글자·사진 수).
             </p>
-            <ul>
-              {kw.report.topics
-                .filter((t) => showUsed || !used.has(`kw:${t.keyword}`))
-                .map((t) =>
-                  renderRow({
-                    key: `kw:${t.keyword}`,
-                    writeKey: `kw:${t.keyword}|${t.phrase}|${t.topic}`,
-                    topic: t.topic,
-                    detail: `"${t.phrase}" 월 ${fmt(t.volume)}회 · 상위 글 ${t.strength}${
-                      t.topChars !== null ? `(평균 ${fmt(t.topChars)}자${t.topPhotos !== null ? `·사진 ${t.topPhotos}장` : ''})` : ''
-                    } · 독자 ${t.stage}${t.why ? ` · ${t.why}` : ''}`,
-                  }),
-                )}
-            </ul>
+            <ul>{kwRows.filter((t) => showUsed || !used.has(t.key)).map((t) => renderRow(t))}</ul>
           </>
         )}
         {kwMsg && <p className="mt-1 text-[11px] text-[var(--text-muted)]">{kwMsg}</p>}
-      </div>
-
-      <div className="rounded-lg border border-[var(--accent)] p-3">
-        <p className="mb-1 text-[12px] font-bold text-[var(--accent)]">⭐ 오늘 추천 · {UPMERY_TOPIC_KIND_LABEL[today.kind]}</p>
-        {today.note && <p className="mb-1 text-[11px] text-[var(--text-muted)]">{today.note}</p>}
-        <ul>
-          {renderRow({ key: today.key, topic: today.topic, hasPhoto: (today.review?.images.length ?? 0) > 0 })}
-        </ul>
       </div>
 
       <div className="flex gap-2">
@@ -232,20 +236,16 @@ export function UpmeryTopicList() {
         이미 쓴 주제도 보기
       </label>
 
-      {GROUPS.map((kind) => {
-        const rows = topics.filter((t) => t.kind === kind && (showUsed || !used.has(t.key)))
+      {(() => {
+        const rows = reviews.filter((t) => showUsed || !used.has(t.key))
         if (rows.length === 0) return null
         return (
-          <details key={kind} open={kind === 'review'} className="rounded-lg border border-[var(--border)] px-3 py-2">
-            <summary className="cursor-pointer text-[13px] font-bold text-[var(--text)]">
-              {UPMERY_TOPIC_KIND_LABEL[kind]} ({rows.length})
-            </summary>
-            <ul className="mt-1">
-              {rows.map((t) => renderRow(t))}
-            </ul>
+          <details open className="rounded-lg border border-[var(--border)] px-3 py-2">
+            <summary className="cursor-pointer text-[13px] font-bold text-[var(--text)]">후기 사례글 ({rows.length})</summary>
+            <ul className="mt-1">{rows.map((t) => renderRow(t))}</ul>
           </details>
         )
-      })}
+      })()}
     </div>
   )
 }
