@@ -97,7 +97,7 @@ const UPMERY: BlogBrandConfig = {
   ctaEnvKey: 'BLOG_CTA_LINK_UPMERY',
   ctaDefault: UPMERY_CTA_DEFAULT,
   disclaimer: UPMERY_DISCLAIMER,
-  impactExamples: { intro: '20분 3만 원, 22시간 만에 첫 문의, 통장 0원', heading: '## 강의비 1,000만 원 쓰고 알게 된 것' },
+  impactExamples: { intro: '20분 3만 원, 22시간 만에 첫 문의, 통장 0원', heading: '## 멘토님이 강의비 1,000만 원 쓰고 안 것' },
 }
 
 export function getBlogBrandConfig(brand: Brand): BlogBrandConfig {

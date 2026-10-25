@@ -6,7 +6,8 @@
 ## 이 프로젝트가 뭔가
 업메리·마잘남 **두 브랜드를 위한 AI 콘텐츠 운영 플랫폼**. (README.md는 초기 "3인 영상
 편집 심사위원회" 시절 설명이라 현재와 다름 — 실제 현황은 이 파일과 `docs/`를 기준으로 볼 것.)
-- **업메리**(퀸퀸 타로): 타로 부업 수익화 1:1 컨설팅(대표가 현직 타로 상담사) — 블로그만 운영.
+- **업메리**(퀸퀸 타로): 타로 부업 수익화 1:1 컨설팅 — 블로그만 운영. 사람: **멘토님**(현직 타로 상담사, 홈페이지의 "저" — 93년생·1급·강의비 1,000만 원·12개월 할부)과
+  **메인 강사님**(다른 분, 확인된 경력·숫자 아직 없음). **대표님 본인 이야기가 아님**(2026-10-25 정정) — 업메리 블로그·광고 문구는 "저희 업메리"가 멘토님을 3인칭(이름 없이 "멘토님")으로 소개하는 회사 시점. 후기 캡처의 노란 말풍선(답장) = 멘토님.
 - **마잘남**: 스레드 마케팅 대행 에이전시 — 스레드 + 블로그 + 유튜브 운영.
 - 스택: React + Vite + TypeScript(프론트) · Vercel 서버리스(`api/`) · Supabase · Anthropic Claude.
 
@@ -107,7 +108,7 @@ npm run lint                             # 4) oxlint
       팀채팅은 `mode: 'full'`(보통으로 한 번에).
     - **업메리 블로그(2026-10, 대표님 "마잘남처럼 똑같이")**: 같은 파이프라인에 브랜드 설정만 바꿔 끼운다 —
       `src/agents/blogBrandConfig.ts`(`getBlogBrandConfig`) + `src/agents/upmeryBlogPrompts.ts`(대표님 홈페이지 2개에서 뽑은
-      말투·`UPMERY_VERIFIED_FACTS`·수강생 기록·독자 단계·키워드·주제·채점표). CTA = 카카오톡 채널(`UPMERY_CTA_DEFAULT`,
+      말투(`UPMERY_BLOG_PERSONA` = 회사 시점 "업메리 말투", `[멘토님 이야기]`)·`UPMERY_VERIFIED_FACTS`·수강생 기록·독자 단계·키워드·주제·채점표). CTA = 카카오톡 채널(`UPMERY_CTA_DEFAULT`,
       env `BLOG_CTA_LINK_UPMERY`로 교체 가능). 수익 글이라 면책 문장(`UPMERY_DISCLAIMER`) 필수 — 없으면 자동 추가.
       공용 1단계 작업 `api/_lib/blogDailyDraft.ts`(마잘남 content-schedule도 이걸 씀).
       일정: 업메리 1단계 **04시대**(`/api/cron/upmery-blog`) → 2단계 **07시대**(`/api/cron/upmery-blog-polish`).
