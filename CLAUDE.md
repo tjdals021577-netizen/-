@@ -138,7 +138,8 @@ npm run lint                             # 4) oxlint
     - `morning`(08:00, 모닝 브리핑 + 카톡 발송): `{ "path": "/api/cron/morning", "schedule": "0 23 * * *" }`
     - `agency`(07:30, 스레드 대행 클라이언트 자동 시안, 2026-10 대표님 지시로 중단):
       `{ "path": "/api/cron/agency", "schedule": "30 22 * * *" }` — 대행 탭 "오늘 초안 생성"(수동)은 계속 가능
-  - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일. 업메리 블로그는 여기선 OFF — 대신 `[task].ts`의 upmery-blog가 매일 쓴다.
+  - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일 — **2026-10-25부터 일시 중단**(`MAJALNAM_BLOG_AUTO = false`,
+    대표님 "잠깐 꺼줘". 다시 켜려면 true로 바꿔 배포. 팀채팅 라이터 수동은 계속 가능, 주간 blog-brain 분석은 그대로 돈다). 업메리 블로그는 여기선 OFF — 대신 `[task].ts`의 upmery-blog가 매일 쓴다.
     **유튜브는 일시정지** — `YOUTUBE_ACTIVE = false`면 월·수·금 유튜브 기획과 content-brain(유튜브 소재 리서치)이
     함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
     일시정지 동안 팀채팅을 열 때마다 "유튜브 기획은 언제 다시 들어가시나요?" 알림 카드가 뜬다

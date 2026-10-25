@@ -19,9 +19,12 @@ export interface ScheduledSlot {
 // 팀채팅에서 리믹서에게 직접 시키는 유튜브 기획은 이 스위치와 상관없이 언제든 된다.
 export const YOUTUBE_ACTIVE = false
 
-const BLOG_EVERYDAY: ScheduledSlot[] = [
-  { brand: '마잘남', channel: 'blog' },
-]
+// ★ 마잘남 블로그 매일 자동 스위치(2026-10-25 대표님: "마잘남 블로그 자동 하루 하나씩 써지는 것 잠깐 꺼줘").
+// false면 06시대 content-schedule이 마잘남 블로그를 쓰지 않는다(08시대 다듬기도 할 글이 없어 그냥 넘어감).
+// 팀채팅에서 라이터에게 직접 시키는 마잘남 블로그는 이 스위치와 상관없이 언제든 된다. 다시 켜려면 true로 바꿔 배포.
+export const MAJALNAM_BLOG_AUTO = false
+
+const BLOG_EVERYDAY: ScheduledSlot[] = MAJALNAM_BLOG_AUTO ? [{ brand: '마잘남', channel: 'blog' }] : []
 const MAJALNAM_YT: ScheduledSlot[] = YOUTUBE_ACTIVE ? [{ brand: '마잘남', channel: 'youtube' }] : []
 const WEEKLY_SCHEDULE: Record<number, ScheduledSlot[]> = {
   0: [...BLOG_EVERYDAY], // 일
