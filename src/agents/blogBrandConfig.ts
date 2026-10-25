@@ -1,5 +1,6 @@
 // 블로그 자동화 브랜드 설정 — 같은 파이프라인(키워드 → 글쓰기 → 자동 수정 → 채점 → 고쳐 쓰기)을
 // 브랜드별 내용(프롬프트·말투·검증된 사실·키워드·주제·채점표)만 바꿔 끼워 쓴다(2026-10 업메리 추가).
+import { UPMERY_VOLUME_FILTER } from './upmeryKeywordTopics.js'
 import type { SystemBlock } from '../lib/claude.js'
 import type { RubricCriterion } from '../types/domain.js'
 import type { BlogRole } from '../types/blog.js'
@@ -45,6 +46,8 @@ export interface BlogBrandConfig {
   brand: Brand
   topics: string[]
   coreKeywords: string[]
+  // 키워드 단계에 넘길 검색량 표의 범위(키워드도구 연관 키워드 중 이 브랜드와 상관있는 것만).
+  volumeFilter: RegExp
   keywordSystem: string
   // 주간 상위노출 분석(blog-brain) 프롬프트.
   blogBrainSystem: string
@@ -66,6 +69,7 @@ const MAJALNAM: BlogBrandConfig = {
   brand: '마잘남',
   topics: MAJALNAM_BLOG_TOPICS,
   coreKeywords: MAJALNAM_CORE_KEYWORDS,
+  volumeFilter: /스레드|SNS|마케팅|인스타|브랜딩/,
   keywordSystem: KEYWORD_SYSTEM,
   blogBrainSystem: BLOG_BRAIN_SYSTEM,
   writerSystem: buildMajalnamWriterSystem,
@@ -81,6 +85,8 @@ const UPMERY: BlogBrandConfig = {
   brand: '업메리',
   topics: UPMERY_BLOG_TOPICS,
   coreKeywords: UPMERY_CORE_KEYWORDS,
+  // 예전엔 마잘남 범위(스레드·마케팅)로만 걸러서 업메리는 키가 있어도 검색량이 늘 '없음'이었다(2026-10-25 수정).
+  volumeFilter: UPMERY_VOLUME_FILTER,
   keywordSystem: UPMERY_KEYWORD_SYSTEM,
   blogBrainSystem: UPMERY_BLOG_BRAIN_SYSTEM,
   writerSystem: buildUpmeryWriterSystem,

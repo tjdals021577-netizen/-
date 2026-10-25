@@ -8,6 +8,7 @@
     { "path": "/api/cron/hooks", "schedule": "0 23 * * *" },
     { "path": "/api/cron/brain", "schedule": "0 0 * * *" },
     { "path": "/api/cron/ad-weekly", "schedule": "10 0 * * 1" },
+    { "path": "/api/cron/upmery-keywords", "schedule": "20 1 * * *" },
     { "path": "/api/cron/cleanup", "schedule": "0 18 * * 0" }
   ]
 }

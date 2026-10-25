@@ -10,26 +10,32 @@ import {
 import { getWorkLog, syncWorkLogFromSupabase } from '../lib/workLog'
 import { syncApprovalsFromSupabase } from '../lib/approvalStore'
 import { kstDateKey, kstNow } from '../lib/weeklySchedule'
+import type { KeywordTopicReport } from '../agents/upmeryKeywordTopics'
 
 // 업메리 블로그 "주제 목록"(2026-10-25 대표님: "주제 리스트 뽑으면 내가 요청할 때 그거대로 써지게").
 // 매일 자동으로 쓰지 않고, 여기서 고른 주제로 서버가 1단계(깊게 쓰기) → 2단계(채점·고쳐 쓰기)를 돌려 결재함에 올린다.
 // 이미 쓴 주제는 근무기록 메모("후기 r001"·"주제 qa:3")로 "썼음" 표시 — AI 호출 없이 코드로.
+// 맨 위 "검색 많은 주제"는 매주 네이버 키워드도구 실제 검색량으로 뽑은 목록(api/_lib/upmeryKeywordTopics.ts).
 
 type Phase = { key: string; step: 'write' | 'polish' } | null
 
-async function postDispatch(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; message?: string; approvalId?: string }> {
+type DispatchResult = { ok?: boolean; error?: string; message?: string; approvalId?: string; hasKeys?: boolean; report?: KeywordTopicReport | null }
+
+async function postDispatch(body: Record<string, unknown>): Promise<DispatchResult> {
   const password = import.meta.env.VITE_APP_PASSWORD
   const res = await fetch('/api/dispatch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(password ? { 'X-App-Password': password } : {}) },
     body: JSON.stringify(body),
   })
-  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string; approvalId?: string }
+  const data = (await res.json().catch(() => ({}))) as DispatchResult
   if (!res.ok && !data.error) data.error = `서버 오류 (${res.status})`
   return data
 }
 
 const GROUPS: UpmeryTopicOption['kind'][] = ['review', 'qa', 'info', 'story']
+
+const fmt = (n: number) => n.toLocaleString('ko-KR')
 
 export function UpmeryTopicList() {
   const [notes, setNotes] = useState<string[]>(() => getWorkLog('writer', '업메리').map((e) => e.note))
@@ -37,9 +43,17 @@ export function UpmeryTopicList() {
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [custom, setCustom] = useState('')
   const [showUsed, setShowUsed] = useState(false)
+  const [kw, setKw] = useState<{ hasKeys: boolean; report: KeywordTopicReport | null } | null>(null)
+  const [kwBusy, setKwBusy] = useState(false)
+  const [kwMsg, setKwMsg] = useState('')
 
   useEffect(() => {
     let alive = true
+    postDispatch({ action: 'upmery-keyword-topics' })
+      .then((d) => {
+        if (alive) setKw({ hasKeys: !!d.hasKeys, report: d.report ?? null })
+      })
+      .catch(() => undefined)
     syncWorkLogFromSupabase()
       .catch(() => undefined)
       .then(() => {
@@ -54,6 +68,22 @@ export function UpmeryTopicList() {
   const today = useMemo(() => pickUpmeryTopic(kstDateKey(kstNow()), usedReviewIdsFromNotes(notes)), [notes])
   const topics = useMemo(() => listUpmeryTopics(), [])
   const remainingReviews = topics.filter((t) => t.kind === 'review' && !used.has(t.key)).length
+
+  async function refreshKeywords() {
+    if (kwBusy) return
+    setKwBusy(true)
+    setKwMsg('')
+    try {
+      const d = await postDispatch({ action: 'upmery-keyword-topics-refresh' })
+      if (!d.ok) throw new Error(d.error ?? '검색 많은 주제를 못 뽑았어요.')
+      setKw({ hasKeys: !!d.hasKeys, report: d.report ?? null })
+      setKwMsg(d.message ?? '')
+    } catch (err) {
+      setKwMsg(err instanceof Error ? err.message : String(err))
+    } finally {
+      setKwBusy(false)
+    }
+  }
 
   async function write(key: string, label: string) {
     if (phase) return
@@ -80,9 +110,11 @@ export function UpmeryTopicList() {
     }
   }
 
-  function renderRow(t: { key: string; topic: string; detail?: string; hasPhoto?: boolean }) {
+  // writeKey: 서버에 넘길 키가 "썼음" 확인 키와 다를 때("kw:키워드|띄어쓴 키워드|제목" vs "kw:키워드").
+  function renderRow(t: { key: string; topic: string; detail?: string; hasPhoto?: boolean; writeKey?: string }) {
     const done = used.has(t.key)
-    const running = phase?.key === t.key
+    const wk = t.writeKey ?? t.key
+    const running = phase?.key === wk
     return (
       <li key={t.key} className="flex items-start justify-between gap-2 border-t border-[var(--border)] py-2 first:border-t-0">
         <div className="min-w-0">
@@ -96,7 +128,7 @@ export function UpmeryTopicList() {
         <button
           type="button"
           disabled={!!phase}
-          onClick={() => void write(t.key, t.topic)}
+          onClick={() => void write(wk, t.topic)}
           className="shrink-0 rounded-full border border-[var(--accent)] px-3 py-1 text-[12px] font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {running ? (phase?.step === 'write' ? '쓰는 중…' : '다듬는 중…') : '이 주제로 쓰기'}
@@ -122,6 +154,52 @@ export function UpmeryTopicList() {
           {result.text}
         </p>
       )}
+
+      <div className="rounded-lg border border-[var(--accent)] p-3">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <p className="text-[12px] font-bold text-[var(--accent)]">🔎 검색 많은 주제 (네이버 실제 검색량)</p>
+          {kw?.hasKeys && (
+            <button
+              type="button"
+              disabled={kwBusy || !!phase}
+              onClick={() => void refreshKeywords()}
+              className="shrink-0 text-[11px] text-[var(--text-muted)] underline disabled:opacity-40"
+            >
+              {kwBusy ? '뽑는 중…(최대 4분)' : '지금 새로 뽑기'}
+            </button>
+          )}
+        </div>
+        {kw === null ? (
+          <p className="text-[11px] text-[var(--text-muted)]">불러오는 중…</p>
+        ) : !kw.hasKeys && !kw.report ? (
+          <p className="text-[11px] text-[var(--text-muted)]">
+            네이버 검색광고 API 키를 Vercel에 넣으면(NAVER_AD_API_KEY · NAVER_AD_SECRET_KEY · NAVER_AD_CUSTOMER_ID) 매주 여기에 검색량 순 주제가 떠요.
+          </p>
+        ) : !kw.report ? (
+          <p className="text-[11px] text-[var(--text-muted)]">아직 이번 주 목록이 없어요 — 매일 오전 10시대에 자동으로 뽑거나 "지금 새로 뽑기"를 눌러 주세요.</p>
+        ) : (
+          <>
+            <p className="mb-1 text-[11px] text-[var(--text-muted)]">
+              {kw.report.week} · {kw.report.note}. 점수 = 월 검색량(300~5,000이 올라가기 좋은 구간) × 상위 글 강도(상위 3개 글의 글자·사진 수).
+            </p>
+            <ul>
+              {kw.report.topics
+                .filter((t) => showUsed || !used.has(`kw:${t.keyword}`))
+                .map((t) =>
+                  renderRow({
+                    key: `kw:${t.keyword}`,
+                    writeKey: `kw:${t.keyword}|${t.phrase}|${t.topic}`,
+                    topic: t.topic,
+                    detail: `"${t.phrase}" 월 ${fmt(t.volume)}회 · 상위 글 ${t.strength}${
+                      t.topChars !== null ? `(평균 ${fmt(t.topChars)}자${t.topPhotos !== null ? `·사진 ${t.topPhotos}장` : ''})` : ''
+                    } · 독자 ${t.stage}${t.why ? ` · ${t.why}` : ''}`,
+                  }),
+                )}
+            </ul>
+          </>
+        )}
+        {kwMsg && <p className="mt-1 text-[11px] text-[var(--text-muted)]">{kwMsg}</p>}
+      </div>
 
       <div className="rounded-lg border border-[var(--accent)] p-3">
         <p className="mb-1 text-[12px] font-bold text-[var(--accent)]">⭐ 오늘 추천 · {UPMERY_TOPIC_KIND_LABEL[today.kind]}</p>

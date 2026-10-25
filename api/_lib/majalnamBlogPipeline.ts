@@ -226,6 +226,8 @@ export async function runMajalnamBlogPipeline(params: {
   // 근무기록 메모에 남길 주제 표시("후기 r002" · "주제 qa:3") — 2단계 다듬기가 메모를 다시 쓸 때도 붙인다.
   noteTag?: string
   attachments?: { src: string; alt: string }[]
+  // 검색량이 확인된 메인 키워드(업메리 "검색 많은 주제") — 키워드 단계가 이걸 그대로 쓰게 한다.
+  mainKeyword?: string
 }): Promise<MajalnamBlogResult> {
   const { apiKey, topic, date, keyContent, photos, previousDraft, feedback, mode = 'full', brand = '마잘남' } = params
   const cfg = getBlogBrandConfig(brand)
@@ -241,19 +243,25 @@ export async function runMajalnamBlogPipeline(params: {
     // (자기 자신의 키워드가 제외돼 엉뚱한 키워드로 바뀌는 것 방지).
     isRevision ? Promise.resolve([]) : getRecentMainKeywords(brand),
     getWeekStageCounts(brand),
-    fetchKeywordVolumes(cfg.coreKeywords),
+    fetchKeywordVolumes(cfg.coreKeywords, cfg.volumeFilter),
     getLatestBlogBrain(brand),
   ])
 
   // 2번 키워드 생성 — 재수정이면 직전 글 제목을 주제로 삼아 그 글의 키워드를 다시 잡는다.
+  const fixedKeyword = !isRevision ? params.mainKeyword?.trim() : undefined
   const { keyword, fallback } = await generateBlogKeywords({
     apiKey,
-    topic: previousDraft && feedback ? previousDraft.title : topic,
+    topic: previousDraft && feedback
+      ? previousDraft.title
+      : fixedKeyword
+        ? `${topic}\n[메인 키워드 지정] "${fixedKeyword}" — 네이버 검색량이 확인된 키워드. mainKeyword는 반드시 이것 그대로.`
+        : topic,
     keywordVolumes,
     recentKeywords,
     stageCounts,
     system: cfg.keywordSystem,
   })
+  if (fixedKeyword && keyword.mainKeyword.replace(/\s+/g, '') !== fixedKeyword.replace(/\s+/g, '')) keyword.mainKeyword = fixedKeyword
   // 새 글일 때만 이력에 남긴다(재수정까지 세면 주간 단계 비율이 왜곡됨).
   if (!isRevision) await saveBlogKeyword({ date, brand, keyword })
 

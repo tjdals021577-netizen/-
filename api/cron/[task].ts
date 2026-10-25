@@ -8,6 +8,8 @@
 //                         (광고 변경은 결재함 승인 때만 실행). 이번 주 리포트가 이미 있으면 건너뜀.
 //   meta-capi           — 매일 07시대(레이더와 같은 시간대): 업메리 상담 신청(리드)의 신청·통화 완료·결제를
 //                         메타 전환 API로 전송(아직 안 보낸 것만, 전화번호는 해시). 키·테이블 없으면 건너뜀.
+//   upmery-keywords     — 매일 10시대: 업메리 "검색 많은 주제"(네이버 키워드도구 검색량 → 업메리 손님 키워드 → 상위 글 실측).
+//                         이번 주 것이 있으면 건너뜀, 네이버 검색광고 키가 없으면 건너뜀(AI 0원).
 // Hobby 크론은 "그 시간대 안 아무 때나" 실행되므로 1단계(04시대)와 2단계(07시대)는 시간대를 띄워 둔다.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { requireCronAuth, haltIfPaused, sendJson, sendText } from '../_lib/cronHandler.js'
@@ -17,6 +19,7 @@ import { runMajalnamBlogPolish } from '../_lib/majalnamBlogPolish.js'
 import { sendLeadConversions } from '../_lib/leads.js'
 import { UPMERY_BLOG_AUTO } from '../../src/lib/weeklySchedule.js'
 import { runAdWeeklyOnce } from '../_lib/adAgent.js'
+import { runUpmeryKeywordTopicsOnce } from '../_lib/upmeryKeywordTopics.js'
 
 export const maxDuration = 300
 
@@ -54,6 +57,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
   if (task === 'ad-weekly') {
     sendJson(res, 200, { ok: true, task, result: await runAdWeeklyOnce(apiKey, startedAt) })
+    return
+  }
+  if (task === 'upmery-keywords') {
+    try {
+      sendJson(res, 200, { ok: true, task, result: await runUpmeryKeywordTopicsOnce(apiKey) })
+    } catch (err) {
+      sendJson(res, 200, { ok: false, task, result: err instanceof Error ? err.message : String(err) })
+    }
     return
   }
   if (task === 'upmery-blog') {

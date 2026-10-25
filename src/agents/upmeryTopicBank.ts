@@ -5,13 +5,14 @@
 // 목록 주제는 모두 [검증된 사실]·[대표 에피소드] 범위 안에서 쓸 수 있는 것만 — 새 주제를 넣을 때도 그 기준으로.
 import { reviewKeyContent, UPMERY_REVIEWS, type UpmeryReview } from './upmeryReviews.js'
 
-export type UpmeryTopicKind = 'review' | 'qa' | 'info' | 'story' | 'custom'
+export type UpmeryTopicKind = 'review' | 'qa' | 'info' | 'story' | 'keyword' | 'custom'
 
 export const UPMERY_TOPIC_KIND_LABEL: Record<UpmeryTopicKind, string> = {
   review: '후기 사례글',
   qa: '질문 답변글',
   info: '키워드 정보글',
   story: '대표 이야기',
+  keyword: '검색 많은 주제',
   custom: '직접 입력 주제',
 }
 
@@ -76,6 +77,8 @@ export interface UpmeryDailyTopic {
   review?: UpmeryReview
   // 결재함 상자에 남길 안내(예: 후기 보관함 소진).
   note?: string
+  // 검색량이 확인된 메인 키워드("검색 많은 주제") — 키워드 단계가 그대로 쓴다.
+  mainKeyword?: string
 }
 
 function dayNumber(dateKst: string): number {
@@ -123,6 +126,14 @@ export function planFromKey(key: string): UpmeryDailyTopic | null {
     const r = UPMERY_REVIEWS.find((x) => x.id === rest)
     return r ? reviewPlan(r) : null
   }
+  if (kind === 'kw') {
+    // "kw:키워드|띄어쓴 키워드|주제 제목" — 이번 주 검색 많은 주제(upmeryKeywordTopics). 근무기록엔 "주제 kw:키워드".
+    const [kw, phrase, ...rest2] = rest.split('|')
+    const keyword = (kw ?? '').replace(/\s+/g, '').slice(0, 40)
+    const topic = rest2.join('|').trim().slice(0, 120)
+    if (!keyword || !topic) return null
+    return { key: `kw:${keyword}`, kind: 'keyword', topic, mainKeyword: (phrase ?? '').trim().slice(0, 40) || keyword }
+  }
   if (kind === 'custom') {
     const topic = rest.slice(0, 120)
     return topic ? { key: `custom:${topic}`, kind: 'custom', topic } : null
@@ -137,7 +148,7 @@ export function planFromKey(key: string): UpmeryDailyTopic | null {
 
 export interface UpmeryTopicOption {
   key: string
-  kind: Exclude<UpmeryTopicKind, 'custom'>
+  kind: Exclude<UpmeryTopicKind, 'custom' | 'keyword'>
   topic: string
   detail?: string
   hasPhoto?: boolean
@@ -157,11 +168,12 @@ export function listUpmeryTopics(): UpmeryTopicOption[] {
   ]
 }
 
-// 근무기록 메모에서 이미 쓴 주제 ID — "주제 qa:3"(목록 주제)·"후기 r001"(후기) 표시를 읽는다.
+// 근무기록 메모에서 이미 쓴 주제 ID — "주제 qa:3"(목록 주제)·"주제 kw:타로부업"(검색 많은 주제)·"후기 r001"(후기) 표시를 읽는다.
 export function usedTopicKeysFromNotes(notes: string[]): Set<string> {
   const keys = new Set<string>()
   for (const n of notes) {
     for (const m of n.matchAll(/주제 ((?:qa|info|story):\d+)/g)) keys.add(m[1])
+    for (const m of n.matchAll(/주제 (kw:[^\s·]+)/g)) keys.add(m[1])
     for (const m of n.matchAll(/후기 (r\d{3,})/g)) keys.add(`review:${m[1]}`)
   }
   return keys

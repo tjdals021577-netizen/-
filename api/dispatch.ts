@@ -32,6 +32,8 @@ import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from '../
 import { executeAdAction, runAdAgent } from './_lib/adAgent.js'
 import { runUpmeryBlogForTopic } from './_lib/blogDailyDraft.js'
 import { runMajalnamBlogPolish } from './_lib/majalnamBlogPolish.js'
+import { getLatestUpmeryKeywordTopics, runUpmeryKeywordTopicsOnce } from './_lib/upmeryKeywordTopics.js'
+import { hasNaverAdKeys } from './_lib/naverBlogData.js'
 
 // 웹서치·긴 채점까지 안전하게 끝내기 위해 Vercel 상한(300초)으로 명시한다.
 export const maxDuration = 300
@@ -493,6 +495,29 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
   // 업메리 블로그 "주제 목록" 요청(2026-10-25) — ① 고른 주제로 1단계(깊게 쓰기) → 결재함 항목 id 반환,
   // ② 화면이 그 id로 2단계(채점·고쳐 쓰기)를 바로 이어서 부른다. 함수 한 번 300초 안에 각각 끝난다.
+  // 업메리 "검색 많은 주제" — 읽기(저장된 최신 목록) / 지금 새로 뽑기(키워드도구 + 싼 모델 1회).
+  if (body.action === 'upmery-keyword-topics') {
+    sendJson(res, 200, { ok: true, hasKeys: hasNaverAdKeys(), report: await getLatestUpmeryKeywordTopics() })
+    return
+  }
+  if (body.action === 'upmery-keyword-topics-refresh') {
+    try {
+      if ((await getTodaySpendUsd()) >= DAILY_BUDGET_USD) {
+        sendJson(res, 429, { ok: false, error: `오늘 예산 한도($${DAILY_BUDGET_USD})를 초과했습니다. 내일 다시 시도해주세요.` })
+        return
+      }
+    } catch {
+      // 예산 조회 실패는 best-effort.
+    }
+    try {
+      const message = await runUpmeryKeywordTopicsOnce(apiKey, { force: true, deadline: Date.now() + 270_000 })
+      sendJson(res, 200, { ok: true, message, hasKeys: hasNaverAdKeys(), report: await getLatestUpmeryKeywordTopics() })
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+    return
+  }
+
   if (body.action === 'upmery-blog-write' || body.action === 'upmery-blog-polish') {
     try {
       if ((await getTodaySpendUsd()) >= DAILY_BUDGET_USD) {

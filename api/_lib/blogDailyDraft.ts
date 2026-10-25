@@ -91,6 +91,7 @@ async function runBlogDraftWithPlan(p: {
     topic,
     date,
     keyContent: plan?.keyContent,
+    mainKeyword: plan?.mainKeyword,
     // 대표님이 올린 사진은 설명이 없으니 장수만 알려주고 배치 위치만 표시하게 한다.
     photos:
       [

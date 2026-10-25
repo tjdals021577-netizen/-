@@ -66,7 +66,7 @@ npm run lint                             # 4) oxlint
 - **Vercel Hobby = 서버리스 함수 12개 한도(현재 12개 꽉 참).** `api/` 아래 `_`로 시작하지 않는
   새 .ts 파일을 만들면 배포가 전부 실패한다 → 새 기능은 기존 함수 안에 넣거나 `api/_lib/`에.
   가벼운 크론을 더 붙일 땐 **`api/cron/[task].ts`(동적 경로, 함수 1개)**에 작업 이름으로 추가하고 vercel.json에
-  `/api/cron/<작업 이름>`을 넣는다(현재: cleanup · upmery-blog · upmery-blog-polish · meta-capi · ad-weekly).
+  `/api/cron/<작업 이름>`을 넣는다(현재: cleanup · upmery-blog · upmery-blog-polish · meta-capi · ad-weekly · upmery-keywords).
 - **Hobby 크론은 정해진 분이 아니라 "그 시간대 안 아무 때나" 실행된다** → 순서가 중요한 단계(1단계 글쓰기 → 2단계 다듬기)는
   시간대를 1시간 이상 띄운다.
 - Claude 모델은 **assistant prefill 미지원** — `assistantPrefill`은 무시된다(JSON은 지시+extractJson).
@@ -118,6 +118,15 @@ npm run lint                             # 4) oxlint
       화면이 이어서 `action: 'upmery-blog-polish'`(그 `approvalId`만 채점·고쳐 쓰기). 화면을 닫아 2단계를 못 했으면 07시대 다듬기 크론이
       최근 3일 안의 대기 글을 마무리한다. 주제 키 = `review:r002`·`qa:3`·`info:0`·`story:5`·`custom:…`(`planFromKey`), 쓴 주제는
       근무기록 메모 "후기 rNNN"·"주제 qa:3"으로 "썼음" 표시(`usedTopicKeysFromNotes`). **목록 순서를 바꾸면 키가 어긋나니 새 주제는 맨 뒤에만 추가.**
+      **🔎 검색 많은 주제(2026-10-25, 대표님 "진짜 사람을 모아 올 주제?")** — 주제 목록 맨 위. `api/_lib/upmeryKeywordTopics.ts` +
+      `src/agents/upmeryKeywordTopics.ts`: 네이버 검색광고 키워드도구(`fetchKeywordVolumeRows`, 시드 `UPMERY_KEYWORD_SEEDS` 15개 → 5개씩 3회)
+      실제 월 검색량 → 코드 거르기(업메리 범위 + 운세 "보러 온" 사람·도박·대출 제외) → **Haiku 1회**가 업메리 손님 키워드만 골라 제목
+      (목록에 없는 키워드는 버리고 검색량은 코드가 붙임) → 네이버 블로그 상위 3개 글 실측(글자·사진)으로 상위 글 강도(약함·보통·탄탄·미확인)
+      → 점수 = min(검색량,5000) × 구간(300~5,000 우대) × 강도. 저장은 `blog_brain_reports`(brand `업메리 검색주제`, 새 테이블 없음).
+      크론 `upmery-keywords`(매일 10시대, 이번 주 것 있으면 건너뜀) + 화면 "지금 새로 뽑기"(`dispatch` `upmery-keyword-topics-refresh`).
+      **네이버 검색광고 키(`NAVER_AD_*`)가 없으면 아무것도 안 함(AI 0원)**. 키 = `kw:키워드|띄어쓴 키워드|제목` → 메인 키워드를 그 키워드로
+      고정(`runMajalnamBlogPipeline`의 `mainKeyword`), 근무기록 "주제 kw:키워드". 그리고 키워드 단계 검색량 표가 브랜드별
+      `volumeFilter`로 걸러진다(예전엔 마잘남 범위로만 걸러 업메리는 키가 있어도 늘 '없음'이었음).
       **주제 은행 + 후기 보관함(2026-10-25, 대표님 "주제가 항상 걱정, 후기 많음")** — 업메리는 고정 7주제 순환 대신
       `src/agents/upmeryTopicBank.ts`: 요일별 글 종류(일·월·수·금 **후기 사례글**, 화 질문 답변, 목 키워드 정보, 토 대표 이야기, AI 호출 없이 코드로 선택).
       후기 사례글 날엔 `src/agents/upmeryReviews.ts`(`UPMERY_REVIEWS`)에서 **아직 안 쓴 후기 1건**을 꺼내 [핵심 내용]으로 넘기고, 쓴 후기는
@@ -217,7 +226,7 @@ npm run lint                             # 4) oxlint
   `META_CAPI_TOKEN` 등록, 아임웹에 폼 페이지(코드 블록)·완료 페이지 만들기, 메타 광고 링크에 UTM을 붙여 폼 페이지로 바로 연결.
 - 선택 env(마잘남 블로그): `BLOG_CTA_LINK`(진단 폼, 없으면 자리표시자), 네이버 A모드용
   `NAVER_SEARCH_CLIENT_ID/SECRET`(검색API — 신규 발급은 네이버 클라우드로 이전됨),
-  `NAVER_AD_API_KEY/SECRET_KEY/CUSTOMER_ID`(검색광고 키워드도구).
+  `NAVER_AD_API_KEY/SECRET_KEY/CUSTOMER_ID`(검색광고 키워드도구 — **업메리 "검색 많은 주제"에 필요**, searchad.naver.com 도구 → API 사용 관리, 무료).
 - Vercel 환경변수(배포/로컬 실행에 필요): `docs/deployment.md`에 전체 목록.
   핵심: `ANTHROPIC_API_KEY`, `SUPABASE_*`, `VITE_SUPABASE_*`, `CRON_SECRET`, `GA4_*`,
   `IMWEB_*`, `YOUTUBE_API_KEY`, `YOUTUBE_CHANNEL_ID_*`, `THREADS_ACCESS_TOKEN_*`, `VITE_APP_PASSWORD`.

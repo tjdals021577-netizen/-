@@ -13,6 +13,7 @@
 import { createHmac } from 'node:crypto'
 import { callClaudeJsonWithWebSearch, type UsageCallback } from '../../src/lib/claude.js'
 import type { OfficialNotice, TopPostData } from '../../src/types/blogBrain.js'
+import { volumeOf, type KeywordVolumeRow } from '../../src/agents/upmeryKeywordTopics.js'
 
 const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -255,51 +256,64 @@ async function naverBlogSearch(keyword: string, display: number): Promise<{ titl
 
 // ── 검색량: 네이버 검색광고 API(키워드도구) ──
 // HMAC-SHA256 서명: base64(HMAC(secret, `${timestamp}.GET./keywordstool`)).
-// 키가 없거나 실패하면 '없음'을 돌려준다(키워드 프롬프트가 검색량 없이 진행).
-export async function fetchKeywordVolumes(hints: string[]): Promise<string> {
-  if (!hasNaverAdKeys()) return '없음'
-  try {
-    const timestamp = String(Date.now())
-    const uri = '/keywordstool'
-    const signature = createHmac('sha256', process.env.NAVER_AD_SECRET_KEY ?? '')
-      .update(`${timestamp}.GET.${uri}`)
-      .digest('base64')
-    // 키워드도구 hintKeywords는 공백을 허용하지 않고 최대 5개.
-    const hintParam = hints
-      .map((h) => h.replace(/\s+/g, ''))
-      .filter(Boolean)
-      .slice(0, 5)
-      .map(encodeURIComponent)
-      .join(',')
-    const res = await fetchWithTimeout(
-      `https://api.searchad.naver.com${uri}?hintKeywords=${hintParam}&showDetail=1`,
-      {
-        headers: {
-          'X-Timestamp': timestamp,
-          'X-API-KEY': process.env.NAVER_AD_API_KEY ?? '',
-          'X-Customer': process.env.NAVER_AD_CUSTOMER_ID ?? '',
-          'X-Signature': signature,
+// 힌트 5개씩 나눠 부르고(키워드도구 한도) 연관 키워드 전체를 돌려준다. 키가 없으면 빈 목록 + 이유.
+export async function fetchKeywordVolumeRows(hints: string[]): Promise<{ rows: KeywordVolumeRow[]; error?: string }> {
+  if (!hasNaverAdKeys()) return { rows: [], error: '네이버 검색광고 키 없음' }
+  const clean = hints.map((h) => h.replace(/\s+/g, '')).filter(Boolean)
+  const chunks: string[][] = []
+  for (let i = 0; i < clean.length; i += 5) chunks.push(clean.slice(i, i + 5))
+  const rows: KeywordVolumeRow[] = []
+  const errors: string[] = []
+  for (const chunk of chunks) {
+    try {
+      const timestamp = String(Date.now())
+      const uri = '/keywordstool'
+      const signature = createHmac('sha256', process.env.NAVER_AD_SECRET_KEY ?? '')
+        .update(`${timestamp}.GET.${uri}`)
+        .digest('base64')
+      const res = await fetchWithTimeout(
+        `https://api.searchad.naver.com${uri}?hintKeywords=${chunk.map(encodeURIComponent).join(',')}&showDetail=1`,
+        {
+          headers: {
+            'X-Timestamp': timestamp,
+            'X-API-KEY': process.env.NAVER_AD_API_KEY ?? '',
+            'X-Customer': process.env.NAVER_AD_CUSTOMER_ID ?? '',
+            'X-Signature': signature,
+          },
         },
-      },
-      10_000,
-    )
-    if (!res.ok) return '없음'
-    const data = (await res.json()) as {
-      keywordList?: { relKeyword?: string; monthlyPcQcCnt?: number | string; monthlyMobileQcCnt?: number | string; compIdx?: string }[]
+        10_000,
+      )
+      if (!res.ok) {
+        errors.push(`키워드도구 ${res.status}`)
+        continue
+      }
+      const data = (await res.json()) as {
+        keywordList?: { relKeyword?: string; monthlyPcQcCnt?: number | string; monthlyMobileQcCnt?: number | string; compIdx?: string }[]
+      }
+      for (const k of data.keywordList ?? []) {
+        if (!k.relKeyword) continue
+        const pc = volumeOf(k.monthlyPcQcCnt)
+        const mobile = volumeOf(k.monthlyMobileQcCnt)
+        rows.push({ keyword: k.relKeyword, pc, mobile, total: pc + mobile, comp: k.compIdx ?? '-' })
+      }
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err))
     }
-    // "< 10"처럼 문자열로 오는 저검색 키워드는 5로 간주(정렬용).
-    const n = (v: number | string | undefined) => (typeof v === 'number' ? v : 5)
-    const rows = (data.keywordList ?? [])
-      .filter((k) => k.relKeyword && /스레드|SNS|마케팅|인스타|브랜딩/.test(k.relKeyword))
-      .sort((a, b) => n(b.monthlyPcQcCnt) + n(b.monthlyMobileQcCnt) - (n(a.monthlyPcQcCnt) + n(a.monthlyMobileQcCnt)))
-      .slice(0, 40)
-    if (rows.length === 0) return '없음'
-    return rows
-      .map((k) => `${k.relKeyword} / ${k.monthlyPcQcCnt ?? '-'} / ${k.monthlyMobileQcCnt ?? '-'} / ${k.compIdx ?? '-'}`)
-      .join('\n')
-  } catch {
-    return '없음'
   }
+  return { rows, error: errors.length > 0 ? errors.join(' · ') : undefined }
+}
+
+// 글마다 메인 키워드를 고를 때 넘기는 검색량 표(브랜드 범위 filter로 거름). 키가 없거나 실패하면 '없음'
+// (키워드 프롬프트가 검색량 없이 진행).
+export async function fetchKeywordVolumes(hints: string[], filter: RegExp = /스레드|SNS|마케팅|인스타|브랜딩/): Promise<string> {
+  const { rows: all } = await fetchKeywordVolumeRows(hints)
+  const seen = new Set<string>()
+  const rows = all
+    .filter((k) => filter.test(k.keyword) && !seen.has(k.keyword) && seen.add(k.keyword))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 40)
+  if (rows.length === 0) return '없음'
+  return rows.map((k) => `${k.keyword} / ${k.pc} / ${k.mobile} / ${k.comp}`).join('\n')
 }
 
 // ── 웹서치 수집기(B 모드의 상위글 + 공식 공지) ──
@@ -322,7 +336,7 @@ export function extractNaverBlogUrls(html: string, limit: number): string[] {
   return out
 }
 
-async function naverSearchPageTop(keyword: string, limit: number): Promise<string[]> {
+export async function naverSearchPageTop(keyword: string, limit: number): Promise<string[]> {
   const q = encodeURIComponent(keyword)
   const targets: { url: string; ua: string }[] = [
     { url: `https://m.search.naver.com/search.naver?ssc=tab.m_blog.all&query=${q}`, ua: MOBILE_UA },
