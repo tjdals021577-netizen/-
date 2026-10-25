@@ -15,15 +15,19 @@ interface ApprovalRow {
   source_work_log_id: string | null
 }
 
-export async function runMajalnamBlogPolish(apiKey: string, deadline: number, brand: Brand = '마잘남'): Promise<string> {
-  const today = kstDateKey(kstNow())
+// approvalId를 주면 그 글만(블로그 탭 "주제 목록"에서 요청한 글 — 화면이 1단계 직후 바로 부른다).
+// 없으면(크론) 최근 3일 안의 다듬기 전 글 중 가장 최근 것 — 요청형 글을 화면을 닫아 못 다듬었어도 다음 크론이 마무리한다.
+export async function runMajalnamBlogPolish(apiKey: string, deadline: number, brand: Brand = '마잘남', approvalId?: string): Promise<string> {
+  const since = kstDateKey(new Date(kstNow().getTime() - 2 * 86_400_000))
   const rows = await supabaseSelect<ApprovalRow>(
     'approval_queue',
-    `brand=eq.${encodeURIComponent(brand)}&agent=eq.writer` +
-      `&created_at=gte.${today}T00:00:00%2B09:00&order=created_at.desc&select=id,status,content_html,source_work_log_id`,
+    approvalId
+      ? `id=eq.${encodeURIComponent(approvalId)}&select=id,status,content_html,source_work_log_id`
+      : `brand=eq.${encodeURIComponent(brand)}&agent=eq.writer` +
+          `&created_at=gte.${since}T00:00:00%2B09:00&order=created_at.desc&select=id,status,content_html,source_work_log_id`,
   )
   const target = rows.find((r) => r.status === 'pending' && r.content_html.includes('MJBLOG-STATE:'))
-  if (!target) return '오늘 다듬을 1단계 초안 없음(이미 처리됐거나 06:00 글쓰기 실패)'
+  if (!target) return approvalId ? '이미 다듬은 글이에요(또는 결재함에서 처리됨)' : '다듬을 1단계 초안 없음(이미 처리됐거나 글쓰기 실패)'
   const state = decodeBlogState(target.content_html)
   if (!state) return '1단계 초안 상태를 읽지 못함'
 
@@ -48,7 +52,7 @@ export async function runMajalnamBlogPolish(apiKey: string, deadline: number, br
     ` · 키워드 "${result.keyword.mainKeyword}" ${result.keyword.readerStage}` +
     (rewroteNote ? ` · ${rewroteNote}` : '') +
     // 후기 사례글이면 쓴 후기 번호를 남긴다 — 다음 날 같은 후기를 다시 고르지 않게(upmeryTopicBank).
-    (result.reviewId ? ` · 후기 ${result.reviewId}` : '')
+    (result.noteTag ? ` · ${result.noteTag}` : result.reviewId ? ` · 후기 ${result.reviewId}` : '')
 
   // 대표님이 그사이 승인·반려했으면 결재함은 건드리지 않는다(위 select에서 pending만 골랐지만 한 번 더).
   await supabaseUpdate('approval_queue', `id=eq.${encodeURIComponent(target.id)}&status=eq.pending`, {

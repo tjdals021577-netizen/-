@@ -7,7 +7,13 @@ import { getBlogBrandConfig } from '../../src/agents/blogBrandConfig.js'
 import { makeDefaultChecklist } from '../../src/types/calendar.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 import type { Brand } from '../../src/types/brand.js'
-import { pickUpmeryTopic, UPMERY_TOPIC_KIND_LABEL, usedReviewIdsFromNotes, type UpmeryDailyTopic } from '../../src/agents/upmeryTopicBank.js'
+import {
+  pickUpmeryTopic,
+  planFromKey,
+  UPMERY_TOPIC_KIND_LABEL,
+  usedReviewIdsFromNotes,
+  type UpmeryDailyTopic,
+} from '../../src/agents/upmeryTopicBank.js'
 
 const KIND = '주간 스케줄 자동 기획'
 
@@ -49,11 +55,35 @@ async function usedUpmeryReviewIds(): Promise<Set<string>> {
 export async function runDailyBlogDraft(apiKey: string, brand: Brand, date: string): Promise<string> {
   // 업메리는 주제 은행(후기 사례글 주 4 · 질문 · 정보 · 대표 이야기)에서, 마잘남은 기존 주제 순환에서.
   const plan: UpmeryDailyTopic | null = brand === '업메리' ? pickUpmeryTopic(date, await usedUpmeryReviewIds()) : null
+  return (await runBlogDraftWithPlan({ apiKey, brand, date, plan, kind: KIND })).message
+}
+
+// 블로그 탭 "주제 목록"에서 대표님이 고른 주제로 1단계(깊게 쓰기)를 바로 실행 — api/dispatch.ts가 부른다(2026-10-25).
+// 다듬기(2단계)는 화면이 이어서 api/dispatch.ts(action 'upmery-blog-polish')로 같은 결재함 항목을 넘겨 실행한다.
+export async function runUpmeryBlogForTopic(apiKey: string, topicKey: string): Promise<{ message: string; approvalId: string }> {
+  const plan = planFromKey(topicKey)
+  if (!plan) throw new Error('알 수 없는 주제예요. 주제 목록을 새로고침해 주세요.')
+  return runBlogDraftWithPlan({ apiKey, brand: '업메리', date: kstDateKey(kstNow()), plan, kind: '주제 목록 요청' })
+}
+
+async function runBlogDraftWithPlan(p: {
+  apiKey: string
+  brand: Brand
+  date: string
+  plan: UpmeryDailyTopic | null
+  kind: string
+}): Promise<{ message: string; approvalId: string }> {
+  const { apiKey, brand, date, plan } = p
   const topic = plan?.topic ?? todaysTopic(brand)
   const photoCount = await todaysPhotoCount(date, brand)
+  const reviewImages = plan?.review?.images ?? []
   const reviewPhoto = plan?.review
-    ? `후기 캡처 1장(${plan.review.imageAlt}) — 수강생이 한 말을 인용한 바로 옆에 "[📸 첨부 사진: 후기 캡처]"로 배치(이름·연락처는 이미 가려 둠). 나머지 사진 추천은 평소대로.`
+    ? reviewImages.length > 0
+      ? `후기 캡처 ${reviewImages.length}장(${reviewImages.map((i) => i.alt).join(' / ')}) — 수강생이 한 말을 인용한 바로 옆에 "[📸 첨부 사진: 후기 캡처]"로 배치(이름·연락처는 이미 가려 둠). 나머지 사진 추천은 평소대로.`
+      : `후기 캡처 원본은 대표님이 갖고 있음 — 수강생이 한 말을 인용한 바로 옆에 "[📸 첨부 사진: 후기 캡처 — 이름·프로필 가려서]"로 자리만 표시. 나머지 사진 추천은 평소대로.`
     : ''
+  // 근무기록 메모에 남길 주제 표시 — 후기는 "후기 r002", 목록 주제는 "주제 qa:3"(주제 목록의 "썼음" 표시).
+  const noteTag = plan?.review ? `후기 ${plan.review.id}` : plan && plan.kind !== 'custom' ? `주제 ${plan.key}` : undefined
   const result = await runMajalnamBlogPipeline({
     apiKey,
     brand,
@@ -75,7 +105,8 @@ export async function runDailyBlogDraft(apiKey: string, brand: Brand, date: stri
       ? `${UPMERY_TOPIC_KIND_LABEL[plan.kind]}${plan.review ? ` (후기 ${plan.review.id})` : ''}${plan.note ? ` — ${plan.note}` : ''}`
       : undefined,
     reviewId: plan?.review?.id,
-    attachments: plan?.review ? [{ src: plan.review.image, alt: plan.review.imageAlt }] : undefined,
+    noteTag,
+    attachments: reviewImages.length > 0 ? reviewImages : undefined,
   })
   const { draft, keyword } = result
   const scoreNote = '1단계(깊게 쓰기) 완료 — 채점·다듬기 예정'
@@ -88,16 +119,17 @@ export async function runDailyBlogDraft(apiKey: string, brand: Brand, date: stri
     id: logId,
     agent: 'writer',
     brand,
-    kind: KIND,
+    kind: p.kind,
     status: 'done',
     status_label: '완료',
     started_at: nowIso,
     ended_at: nowIso,
-    note: `${scoreNote} · ${kwNote} · 사진 ${photoCount}장${plan ? ` · ${UPMERY_TOPIC_KIND_LABEL[plan.kind]}` : ''}${plan?.review ? ` · 후기 ${plan.review.id}` : ''}`,
+    note: `${scoreNote} · ${kwNote} · 사진 ${photoCount}장${plan ? ` · ${UPMERY_TOPIC_KIND_LABEL[plan.kind]}` : ''}${noteTag ? ` · ${noteTag}` : ''}`,
     detail_html: html,
   })
+  const approvalId = makeId()
   await supabaseInsert('approval_queue', {
-    id: makeId(),
+    id: approvalId,
     agent: 'writer',
     brand,
     title: draft.title,
@@ -115,13 +147,13 @@ export async function runDailyBlogDraft(apiKey: string, brand: Brand, date: stri
     channel: 'blog',
     title: draft.title,
     status: 'open',
-    note: `${scoreNote} (자동 기획) · ${kwNote} · 발행 전 [경험 삽입] 채우기`,
+    note: `${scoreNote} (${p.kind === KIND ? '자동 기획' : '주제 목록 요청'}) · ${kwNote} · 발행 전 [경험 삽입] 채우기`,
     content_html: html,
     checklist: makeDefaultChecklist(true),
     created_at: nowIso,
     source_work_log_id: logId,
   })
-  return `${brand} 블로그: ${scoreNote} · ${kwNote}`
+  return { message: `${brand} 블로그: ${scoreNote} · ${kwNote}`, approvalId }
 }
 
 // 크론용 — 하루 1번만(성공·실패 상관없이 오늘 기록이 있으면 건너뜀), 실패하면 근무기록에 남긴다

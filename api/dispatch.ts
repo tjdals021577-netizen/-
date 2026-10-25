@@ -30,6 +30,8 @@ import { fetchLatestBrainReport, formatBrainFindings, insertBrainReport } from '
 import { runMajalnamBlogPipeline, buildMajalnamBlogHtml } from './_lib/majalnamBlogPipeline.js'
 import { buildBlogCheckHtml, REVIEW_FAILED_LABEL, REVIEW_FAILED_NOTE } from '../src/agents/blogRuleCheck.js'
 import { executeAdAction, runAdAgent } from './_lib/adAgent.js'
+import { runUpmeryBlogForTopic } from './_lib/blogDailyDraft.js'
+import { runMajalnamBlogPolish } from './_lib/majalnamBlogPolish.js'
 
 // 웹서치·긴 채점까지 안전하게 끝내기 위해 Vercel 상한(300초)으로 명시한다.
 export const maxDuration = 300
@@ -467,9 +469,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
-  let body: DispatchBody & { action?: string; approvalId?: string }
+  let body: DispatchBody & { action?: string; approvalId?: string; topicKey?: string }
   try {
-    body = JSON.parse(await readBody(req)) as DispatchBody & { action?: string; approvalId?: string }
+    body = JSON.parse(await readBody(req)) as DispatchBody & { action?: string; approvalId?: string; topicKey?: string }
   } catch {
     sendText(res, 400, '잘못된 요청 본문입니다.')
     return
@@ -489,6 +491,37 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
     return
   }
+  // 업메리 블로그 "주제 목록" 요청(2026-10-25) — ① 고른 주제로 1단계(깊게 쓰기) → 결재함 항목 id 반환,
+  // ② 화면이 그 id로 2단계(채점·고쳐 쓰기)를 바로 이어서 부른다. 함수 한 번 300초 안에 각각 끝난다.
+  if (body.action === 'upmery-blog-write' || body.action === 'upmery-blog-polish') {
+    try {
+      if ((await getTodaySpendUsd()) >= DAILY_BUDGET_USD) {
+        sendJson(res, 429, { ok: false, error: `오늘 예산 한도($${DAILY_BUDGET_USD})를 초과했습니다. 내일 다시 시도해주세요.` })
+        return
+      }
+    } catch {
+      // 예산 조회 실패는 best-effort.
+    }
+    try {
+      if (body.action === 'upmery-blog-write') {
+        if (typeof body.topicKey !== 'string' || !body.topicKey) {
+          sendJson(res, 400, { ok: false, error: '주제를 골라 주세요.' })
+          return
+        }
+        sendJson(res, 200, { ok: true, ...(await runUpmeryBlogForTopic(apiKey, body.topicKey)) })
+      } else {
+        if (typeof body.approvalId !== 'string' || !body.approvalId) {
+          sendJson(res, 400, { ok: false, error: 'approvalId가 없습니다.' })
+          return
+        }
+        sendJson(res, 200, { ok: true, message: await runMajalnamBlogPolish(apiKey, Date.now() + 280_000, '업메리', body.approvalId) })
+      }
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+    return
+  }
+
   if (!VALID_AGENTS.includes(body.agent) || !BRANDS.includes(body.brand) || !body.logId) {
     sendText(res, 400, 'agent·brand·logId가 올바르지 않습니다.')
     return

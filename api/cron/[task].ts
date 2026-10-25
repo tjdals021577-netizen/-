@@ -15,6 +15,7 @@ import { runCleanup } from '../_lib/cleanupTask.js'
 import { runDailyBlogDraftOnce } from '../_lib/blogDailyDraft.js'
 import { runMajalnamBlogPolish } from '../_lib/majalnamBlogPolish.js'
 import { sendLeadConversions } from '../_lib/leads.js'
+import { UPMERY_BLOG_AUTO } from '../../src/lib/weeklySchedule.js'
 import { runAdWeeklyOnce } from '../_lib/adAgent.js'
 
 export const maxDuration = 300
@@ -56,6 +57,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
   if (task === 'upmery-blog') {
+    if (!UPMERY_BLOG_AUTO) {
+      sendJson(res, 200, { ok: true, task, result: '업메리 블로그 자동 작성 꺼짐(UPMERY_BLOG_AUTO) — 블로그 탭 주제 목록에서 요청할 때만 씀' })
+      return
+    }
     sendJson(res, 200, { ok: true, task, result: await runDailyBlogDraftOnce(apiKey, '업메리') })
     return
   }

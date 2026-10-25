@@ -5,6 +5,7 @@ import { ThreadComposer } from '../ThreadComposer'
 import { RemixComposer } from '../RemixComposer'
 import { BrainPanel } from '../BrainPanel'
 import { CoachPanel } from '../CoachPanel'
+import { UpmeryTopicList } from '../UpmeryTopicList'
 import {
   getEntries,
   syncEntriesFromSupabase,
@@ -715,6 +716,13 @@ export function ChannelWorkspaceScreen({ brand, channel }: { brand: Brand; chann
       />
 
       <div className="space-y-4">
+        {brand === '업메리' && channel === 'blog' && (
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <p className="mb-2.5 text-[13px] font-bold text-[var(--text)]">🗒️ 주제 목록 — 골라서 오늘 글 쓰기</p>
+            <UpmeryTopicList />
+          </section>
+        )}
+
         <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <p className="mb-2.5 text-[13px] font-bold text-[var(--text)]">📅 이번 주 일정</p>
           <WeekStrip brand={brand} channel={channel} />

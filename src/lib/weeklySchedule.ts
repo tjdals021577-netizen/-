@@ -24,6 +24,11 @@ export const YOUTUBE_ACTIVE = false
 // 팀채팅에서 라이터에게 직접 시키는 마잘남 블로그는 이 스위치와 상관없이 언제든 된다. 다시 켜려면 true로 바꿔 배포.
 export const MAJALNAM_BLOG_AUTO = false
 
+// ★ 업메리 블로그 매일 자동(04시대 api/cron/[task].ts upmery-blog) 스위치(2026-10-25 대표님: "주제 목록에서 골라
+// 내가 요청하면 글 써지게"). false면 자동으로 쓰지 않고, 블로그 탭 "주제 목록"에서 고른 주제만 쓴다.
+// 07시대 다듬기 크론은 그대로 — 요청한 글을 화면을 닫아 못 다듬었으면 다음 날 아침에 마무리한다.
+export const UPMERY_BLOG_AUTO = false
+
 const BLOG_EVERYDAY: ScheduledSlot[] = MAJALNAM_BLOG_AUTO ? [{ brand: '마잘남', channel: 'blog' }] : []
 const MAJALNAM_YT: ScheduledSlot[] = YOUTUBE_ACTIVE ? [{ brand: '마잘남', channel: 'youtube' }] : []
 const WEEKLY_SCHEDULE: Record<number, ScheduledSlot[]> = {

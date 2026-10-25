@@ -48,6 +48,8 @@ export interface MajalnamBlogResult {
   // 업메리 주제 은행(2026-10): 글 종류·쓴 후기 ID·결재함에 같이 보여 줄 가린 후기 사진.
   topicInfo?: string
   reviewId?: string
+  // 근무기록 메모에 남길 주제 표시("후기 r002" · "주제 qa:3") — 2단계 다듬기가 메모를 다시 쓸 때도 붙인다.
+  noteTag?: string
   attachments?: { src: string; alt: string }[]
 }
 
@@ -221,6 +223,8 @@ export async function runMajalnamBlogPipeline(params: {
   brand?: Brand
   topicInfo?: string
   reviewId?: string
+  // 근무기록 메모에 남길 주제 표시("후기 r002" · "주제 qa:3") — 2단계 다듬기가 메모를 다시 쓸 때도 붙인다.
+  noteTag?: string
   attachments?: { src: string; alt: string }[]
 }): Promise<MajalnamBlogResult> {
   const { apiKey, topic, date, keyContent, photos, previousDraft, feedback, mode = 'full', brand = '마잘남' } = params
@@ -279,6 +283,7 @@ export async function runMajalnamBlogPipeline(params: {
     photos,
     topicInfo: params.topicInfo,
     reviewId: params.reviewId,
+    noteTag: params.noteTag,
     attachments: params.attachments,
   }
   if (draftOnly) {

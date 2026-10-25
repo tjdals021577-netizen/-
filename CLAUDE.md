@@ -111,12 +111,22 @@ npm run lint                             # 4) oxlint
       env `BLOG_CTA_LINK_UPMERY`로 교체 가능). 수익 글이라 면책 문장(`UPMERY_DISCLAIMER`) 필수 — 없으면 자동 추가.
       공용 1단계 작업 `api/_lib/blogDailyDraft.ts`(마잘남 content-schedule도 이걸 씀).
       일정: 업메리 1단계 **04시대**(`/api/cron/upmery-blog`) → 2단계 **07시대**(`/api/cron/upmery-blog-polish`).
+      **2026-10-25부터 매일 자동 쓰기 꺼짐**(`UPMERY_BLOG_AUTO = false`, `src/lib/weeklySchedule.ts` — 대표님 "주제 리스트에서 골라
+      내가 요청하면 써지게"). 04시대 크론은 건너뛰고, **블로그 탭 맨 위 "🗒️ 주제 목록"**(`src/components/UpmeryTopicList.tsx`,
+      업메리 블로그일 때만)에서 오늘 추천(`pickUpmeryTopic`)·후기 사례글·질문 답변·정보·대표 이야기·직접 입력 중 골라 "이 주제로 쓰기" →
+      `api/dispatch.ts` `action: 'upmery-blog-write'`(`topicKey` → `runUpmeryBlogForTopic`, 1단계 high, `approvalId` 반환) →
+      화면이 이어서 `action: 'upmery-blog-polish'`(그 `approvalId`만 채점·고쳐 쓰기). 화면을 닫아 2단계를 못 했으면 07시대 다듬기 크론이
+      최근 3일 안의 대기 글을 마무리한다. 주제 키 = `review:r002`·`qa:3`·`info:0`·`story:5`·`custom:…`(`planFromKey`), 쓴 주제는
+      근무기록 메모 "후기 rNNN"·"주제 qa:3"으로 "썼음" 표시(`usedTopicKeysFromNotes`). **목록 순서를 바꾸면 키가 어긋나니 새 주제는 맨 뒤에만 추가.**
       **주제 은행 + 후기 보관함(2026-10-25, 대표님 "주제가 항상 걱정, 후기 많음")** — 업메리는 고정 7주제 순환 대신
       `src/agents/upmeryTopicBank.ts`: 요일별 글 종류(일·월·수·금 **후기 사례글**, 화 질문 답변, 목 키워드 정보, 토 대표 이야기, AI 호출 없이 코드로 선택).
       후기 사례글 날엔 `src/agents/upmeryReviews.ts`(`UPMERY_REVIEWS`)에서 **아직 안 쓴 후기 1건**을 꺼내 [핵심 내용]으로 넘기고, 쓴 후기는
       근무기록 메모 "후기 r001"로 표시(2단계 다듬기도 유지) → 재사용 안 함. 후기가 떨어지면 질문 답변글 + 결재함에 "후기 더 보내 달라" 안내.
       후기는 **대표님이 이 Claude Code 채팅(구독)으로 캡처를 보내면 Claude가 읽고 정리**(서버 AI가 캡처를 읽지 않음 — API 0원):
       이름·전화·카톡 ID·프로필 사진 가림 확인, 메타데이터 제거 후 `public/reviews/upmery-rNNN.png`, 배열 맨 뒤에 다음 번호로 추가.
+      사진은 `images` 배열(여러 장 가능, 없으면 `NO_PHOTO` — 글엔 "후기 캡처 — 이름·프로필 가려서" 자리만 표시). 현재 r001~r024,
+      사진 파일은 r001~r009만(r010~r024는 작업 도중에 받은 캡처라 파일로 저장되지 않음 — 대표님이 다시 보내면 붙일 것).
+      같은 사람 후기는 `caution`에 묶어 표시(글에서 다른 사람처럼 쓰지 않게).
       보관함 내용은 `UPMERY_VERIFIED_FACTS`에 자동으로 붙어 검증된 사실이 된다. 결재함엔 가린 후기 사진 + "사진 저장" 버튼(네이버엔 대표님이 직접).
       팀채팅 라이터도 업메리면 같은 파이프라인. **주간 blog-brain도 업메리 포함**(`UPMERY_BLOG_BRAIN_SYSTEM` = 마잘남 원문 3번에서
       브랜드 내용만 교체, 키워드는 `UPMERY_CORE_KEYWORDS`) — brain 크론이 두 브랜드를 병렬로 분석, 각자 글쓰기에 반영.
@@ -137,7 +147,7 @@ npm run lint                             # 4) oxlint
 - **`src/lib/`** — 상태 저장(localStorage 기반) + `claude.ts`(프록시 호출·프롬프트 캐싱
   `cachedSystem`·**취소 `cancelActiveClaudeCalls`**), `agentChatStore.ts`(메모리·직전 결과물),
   `budgetGuard.ts`, `remoteSync.ts`, `calendarStore`/`approvalStore`/`workLog`/`brainStore`/`contentFeedbackStore`.
-- **`api/cron/`** — 서버 자동화(KST): `upmery-blog` 04시대, `content-schedule` 06:00(마잘남 블로그 1단계),
+- **`api/cron/`** — 서버 자동화(KST): `upmery-blog` 04시대(지금 꺼짐 — `UPMERY_BLOG_AUTO`), `content-schedule` 06:00(마잘남 블로그 1단계),
   `upmery-blog-polish` 07시대, `meta-capi` 07시대(업메리 리드 → 메타 전환), `hooks` 08시대(시트 동기화 + 마잘남 블로그 2단계),
   `radar` 07:50, `brain` 매일 09:00(주 1회 분량, 아래 참고), `cleanup`(월) 03:00. 스케줄은 `vercel.json`.
   - 2026-10 대표님 비용 절감으로 **스케줄에서 뺀 크론**(파일은 그대로 — vercel.json에 한 줄 추가하면 다시 켜짐):
@@ -146,7 +156,7 @@ npm run lint                             # 4) oxlint
     - `agency`(07:30, 스레드 대행 클라이언트 자동 시안, 2026-10 대표님 지시로 중단):
       `{ "path": "/api/cron/agency", "schedule": "30 22 * * *" }` — 대행 탭 "오늘 초안 생성"(수동)은 계속 가능
   - 주간(`src/lib/weeklySchedule.ts`): 마잘남 블로그 매일 — **2026-10-25부터 일시 중단**(`MAJALNAM_BLOG_AUTO = false`,
-    대표님 "잠깐 꺼줘". 다시 켜려면 true로 바꿔 배포. 팀채팅 라이터 수동은 계속 가능, 주간 blog-brain 분석은 그대로 돈다). 업메리 블로그는 여기선 OFF — 대신 `[task].ts`의 upmery-blog가 매일 쓴다.
+    대표님 "잠깐 꺼줘". 다시 켜려면 true로 바꿔 배포. 팀채팅 라이터 수동은 계속 가능, 주간 blog-brain 분석은 그대로 돈다). 업메리 블로그는 여기선 OFF — `[task].ts`의 upmery-blog 담당인데 그것도 `UPMERY_BLOG_AUTO = false`라 지금은 주제 목록 요청으로만 쓴다.
     **유튜브는 일시정지** — `YOUTUBE_ACTIVE = false`면 월·수·금 유튜브 기획과 content-brain(유튜브 소재 리서치)이
     함께 멈춘다. 대표님이 "유튜브 실행"하면 이 값만 true로 바꿔 배포(팀채팅 리믹서 수동 기획은 항상 가능).
     일시정지 동안 팀채팅을 열 때마다 "유튜브 기획은 언제 다시 들어가시나요?" 알림 카드가 뜬다

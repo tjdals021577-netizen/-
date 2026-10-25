@@ -5,13 +5,14 @@
 // 목록 주제는 모두 [검증된 사실]·[대표 에피소드] 범위 안에서 쓸 수 있는 것만 — 새 주제를 넣을 때도 그 기준으로.
 import { reviewKeyContent, UPMERY_REVIEWS, type UpmeryReview } from './upmeryReviews.js'
 
-export type UpmeryTopicKind = 'review' | 'qa' | 'info' | 'story'
+export type UpmeryTopicKind = 'review' | 'qa' | 'info' | 'story' | 'custom'
 
 export const UPMERY_TOPIC_KIND_LABEL: Record<UpmeryTopicKind, string> = {
   review: '후기 사례글',
   qa: '질문 답변글',
   info: '키워드 정보글',
   story: '대표 이야기',
+  custom: '직접 입력 주제',
 }
 
 // 요일별(KST, 0=일) 글 종류 — 후기 4 · 질문 1 · 정보 1 · 이야기 1.
@@ -67,6 +68,8 @@ export const UPMERY_STORY_TOPICS = [
 ]
 
 export interface UpmeryDailyTopic {
+  // 주제 ID — "review:r002" · "qa:3" · "info:0" · "story:5" · "custom:…". 근무기록 메모에 남겨 "썼음" 표시에 쓴다.
+  key: string
   kind: UpmeryTopicKind
   topic: string
   keyContent?: string
@@ -90,12 +93,7 @@ export function pickUpmeryTopic(dateKst: string, usedReviewIds: Set<string>): Up
   if (kind === 'review') {
     const next = UPMERY_REVIEWS.find((r) => !usedReviewIds.has(r.id))
     if (next) {
-      return {
-        kind,
-        topic: `수강생 후기: ${next.headline}`,
-        keyContent: reviewKeyContent(next),
-        review: next,
-      }
+      return reviewPlan(next)
     }
     kind = 'qa'
     note = '후기 보관함에 아직 안 쓴 후기가 없어 오늘은 질문 답변글로 썼어요 — 후기를 더 보내 주세요.'
@@ -104,7 +102,69 @@ export function pickUpmeryTopic(dateKst: string, usedReviewIds: Set<string>): Up
   // 들어오므로(주 최대 5번) "주차×5 + 그 주 몇 번째 자리"로 연속 번호를 매겨 16개를 3주 넘게 안 겹치게 쓴다.
   const list = kind === 'qa' ? UPMERY_QA_TOPICS : kind === 'info' ? UPMERY_INFO_TOPICS : UPMERY_STORY_TOPICS
   const idx = (kind === 'qa' ? week * QA_CAPABLE_WEEKDAYS.length + QA_CAPABLE_WEEKDAYS.indexOf(weekday) : week) % list.length
-  return { kind, topic: list[idx], note }
+  return { key: `${kind}:${idx}`, kind, topic: list[idx], note }
+}
+
+function reviewPlan(r: UpmeryReview): UpmeryDailyTopic {
+  return { key: `review:${r.id}`, kind: 'review', topic: `수강생 후기: ${r.headline}`, keyContent: reviewKeyContent(r), review: r }
+}
+
+function listOf(kind: 'qa' | 'info' | 'story'): string[] {
+  return kind === 'qa' ? UPMERY_QA_TOPICS : kind === 'info' ? UPMERY_INFO_TOPICS : UPMERY_STORY_TOPICS
+}
+
+// 블로그 탭 "주제 목록"에서 고른 주제 ID → 글쓰기 계획. 모르는 ID면 null.
+export function planFromKey(key: string): UpmeryDailyTopic | null {
+  const i = key.indexOf(':')
+  if (i < 0) return null
+  const kind = key.slice(0, i)
+  const rest = key.slice(i + 1).trim()
+  if (kind === 'review') {
+    const r = UPMERY_REVIEWS.find((x) => x.id === rest)
+    return r ? reviewPlan(r) : null
+  }
+  if (kind === 'custom') {
+    const topic = rest.slice(0, 120)
+    return topic ? { key: `custom:${topic}`, kind: 'custom', topic } : null
+  }
+  if (kind === 'qa' || kind === 'info' || kind === 'story') {
+    const idx = Number(rest)
+    const list = listOf(kind)
+    return Number.isInteger(idx) && idx >= 0 && idx < list.length ? { key: `${kind}:${idx}`, kind, topic: list[idx] } : null
+  }
+  return null
+}
+
+export interface UpmeryTopicOption {
+  key: string
+  kind: Exclude<UpmeryTopicKind, 'custom'>
+  topic: string
+  detail?: string
+  hasPhoto?: boolean
+}
+
+// 주제 목록 전체(화면용) — 후기는 보관함 순서, 나머지는 목록 순서.
+export function listUpmeryTopics(): UpmeryTopicOption[] {
+  return [
+    ...UPMERY_REVIEWS.map((r) => ({
+      key: `review:${r.id}`,
+      kind: 'review' as const,
+      topic: r.headline,
+      detail: r.angle,
+      hasPhoto: r.images.length > 0,
+    })),
+    ...(['qa', 'info', 'story'] as const).flatMap((kind) => listOf(kind).map((topic, i) => ({ key: `${kind}:${i}`, kind, topic }))),
+  ]
+}
+
+// 근무기록 메모에서 이미 쓴 주제 ID — "주제 qa:3"(목록 주제)·"후기 r001"(후기) 표시를 읽는다.
+export function usedTopicKeysFromNotes(notes: string[]): Set<string> {
+  const keys = new Set<string>()
+  for (const n of notes) {
+    for (const m of n.matchAll(/주제 ((?:qa|info|story):\d+)/g)) keys.add(m[1])
+    for (const m of n.matchAll(/후기 (r\d{3,})/g)) keys.add(`review:${m[1]}`)
+  }
+  return keys
 }
 
 // 근무기록 메모에서 이미 쓴 후기 ID를 뽑는다("후기 r001" 형식).
