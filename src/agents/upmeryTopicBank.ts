@@ -3,12 +3,13 @@
 //   후기 사례글(주 4) · 질문 답변글(주 1) · 키워드 정보글(주 1) · 멘토님 이야기(주 1)
 // 후기 사례글 날엔 아직 안 쓴 후기 1건(upmeryReviews)을 꺼내 쓰고, 후기가 다 떨어지면 질문 답변글로 대신한다.
 // 목록 주제는 모두 [검증된 사실]·[멘토님 이야기] 범위 안에서 쓸 수 있는 것만 — 새 주제를 넣을 때도 그 기준으로.
-import { reviewKeyContent, UPMERY_REVIEWS, type UpmeryReview } from './upmeryReviews.js'
+import { reviewKeyContent, UPMERY_REVIEWS, type UpmeryFocus, type UpmeryReview } from './upmeryReviews.js'
 
-export type UpmeryTopicKind = 'review' | 'qa' | 'info' | 'story' | 'keyword' | 'custom'
+export type UpmeryTopicKind = 'review' | 'edu' | 'qa' | 'info' | 'story' | 'keyword' | 'custom'
 
 export const UPMERY_TOPIC_KIND_LABEL: Record<UpmeryTopicKind, string> = {
   review: '후기 사례글',
+  edu: '교육 과정',
   qa: '질문 답변글',
   info: '키워드 정보글',
   story: '멘토님 이야기',
@@ -68,6 +69,45 @@ export const UPMERY_STORY_TOPICS = [
   '지금도 매일 상담하는 현직 멘토님이 수강생 옆에 직접 붙는 이유',
 ]
 
+// 🎓 교육 과정(2026-10-28 대표님 "업메리가 수강생 실시간 교육을 어떻게 하는지 보여 주는 섹션, 교육 50 : 수익 50").
+// 각 주제는 [검증된 사실]의 1:1 컨설팅 내용 + 후기 보관함의 교육 장면(reviews)으로만 쓴다. 순서 = 키(edu:N) → 새 주제는 맨 뒤에만.
+export const UPMERY_EDU_TOPICS: { topic: string; reviews: string[] }[] = [
+  { topic: '업메리 1:1 교육은 이렇게 시작해요, 계정 세팅부터 첫 문의까지', reviews: ['r012', 'r016'] },
+  { topic: '홍보 글 첨삭, 수강생 글이 이렇게 바뀌어요', reviews: ['r011', 'r014'] },
+  { topic: '첫 문의가 오면 멘토님이 답장을 같이 써요', reviews: ['r008', 'r013'] },
+  { topic: '첫 상담이 엉망이었던 날, 그날 바로 받은 피드백', reviews: ['r017', 'r024'] },
+  { topic: '상담이 끝날 때마다 피드백, 처음 배운 사람을 혼자 두지 않으면', reviews: ['r004', 'r024'] },
+  { topic: '막히면 바로 보이스톡, 수강생 실시간 교육 장면', reviews: ['r025', 'r017'] },
+  { topic: '늦은 밤에도 물어볼 수 있는 교육, 기간·횟수·질문 무제한', reviews: ['r018', 'r010'] },
+  { topic: '타로 리딩보다 먼저 가르치는 것, 손님이 오는 길', reviews: ['r023', 'r015'] },
+  { topic: '단가 올리는 법과 단골 만드는 법도 같이 배워요', reviews: ['r019', 'r001'] },
+  { topic: '타로만 배우는 게 아니라 온라인에서 일하는 법을 배워요', reviews: ['r011', 'r025', 'r008'] },
+  { topic: '강의 듣고 혼자 남는 교육과 1:1로 같이 가는 교육의 차이', reviews: ['r012', 'r017'] },
+  { topic: '50대도, 휴대폰이 서툴러도 따라올 수 있게 가르치는 법', reviews: ['r025'] },
+]
+
+function eduPlan(idx: number): UpmeryDailyTopic | null {
+  const t = UPMERY_EDU_TOPICS[idx]
+  if (!t) return null
+  const scenes = t.reviews.map((id) => UPMERY_REVIEWS.find((r) => r.id === id)).filter((r): r is UpmeryReview => !!r)
+  const keyContent = [
+    '[교육 과정 글 — 아래 교육 장면 중에서 골라 순서대로 보여 준다(장면을 지어내지 않는다)]',
+    ...scenes.map(
+      (r) =>
+        `- [${r.id}] ${r.who}${r.process ? ` / 과정: ${r.process}` : ''} / 결과: ${r.result}${r.quotes[0] ? ` / 수강생이 한 말: "${r.quotes[0]}"` : ''}${r.reply ? ` / 멘토님 답장: "${r.reply}"` : ''}${r.caution ? ` / 주의: ${r.caution}` : ''}`,
+    ),
+    '- 수강생은 이름 없이 "수강생"·"10월 수강생"·"50대 수강생"처럼만.',
+  ].join('\n')
+  return {
+    key: `edu:${idx}`,
+    kind: 'edu',
+    topic: t.topic,
+    keyContent,
+    focus: '교육',
+    images: scenes.flatMap((r) => r.images).slice(0, 4),
+  }
+}
+
 export interface UpmeryDailyTopic {
   // 주제 ID — "review:r002" · "qa:3" · "info:0" · "story:5" · "custom:…". 근무기록 메모에 남겨 "썼음" 표시에 쓴다.
   key: string
@@ -79,6 +119,10 @@ export interface UpmeryDailyTopic {
   note?: string
   // 검색량이 확인된 메인 키워드("검색 많은 주제") — 키워드 단계가 그대로 쓴다.
   mainKeyword?: string
+  // 글의 축(교육·수익) — [핵심 내용] 맨 앞에 축 안내가 붙고, 근무기록에 "축 교육"으로 남아 비율을 센다. 직접 입력은 없음.
+  focus?: UpmeryFocus
+  // 결재함에 붙일 가린 후기 캡처(후기 사례글은 review.images, 교육 과정은 관련 장면의 사진).
+  images?: { src: string; alt: string }[]
 }
 
 function dayNumber(dateKst: string): number {
@@ -109,7 +153,7 @@ export function pickUpmeryTopic(dateKst: string, usedReviewIds: Set<string>): Up
 }
 
 function reviewPlan(r: UpmeryReview): UpmeryDailyTopic {
-  return { key: `review:${r.id}`, kind: 'review', topic: `수강생 후기: ${r.headline}`, keyContent: reviewKeyContent(r), review: r }
+  return { key: `review:${r.id}`, kind: 'review', topic: `수강생 후기: ${r.headline}`, keyContent: reviewKeyContent(r), review: r, focus: r.focus, images: r.images }
 }
 
 function listOf(kind: 'qa' | 'info' | 'story'): string[] {
@@ -127,12 +171,18 @@ export function planFromKey(key: string): UpmeryDailyTopic | null {
     return r ? reviewPlan(r) : null
   }
   if (kind === 'kw') {
-    // "kw:키워드|띄어쓴 키워드|주제 제목" — 이번 주 검색 많은 주제(upmeryKeywordTopics). 근무기록엔 "주제 kw:키워드".
+    // "kw:키워드|띄어쓴 키워드|축|주제 제목" — 이번 주 검색 많은 주제(upmeryKeywordTopics). 근무기록엔 "주제 kw:키워드".
+    // (축이 없는 예전 형식 "kw:키워드|띄어쓴 키워드|주제 제목"도 읽는다.)
     const [kw, phrase, ...rest2] = rest.split('|')
+    const focus = rest2[0] === '교육' || rest2[0] === '수익' ? (rest2.shift() as UpmeryFocus) : undefined
     const keyword = (kw ?? '').replace(/\s+/g, '').slice(0, 40)
     const topic = rest2.join('|').trim().slice(0, 120)
     if (!keyword || !topic) return null
-    return { key: `kw:${keyword}`, kind: 'keyword', topic, mainKeyword: (phrase ?? '').trim().slice(0, 40) || keyword }
+    return { key: `kw:${keyword}`, kind: 'keyword', topic, mainKeyword: (phrase ?? '').trim().slice(0, 40) || keyword, focus }
+  }
+  if (kind === 'edu') {
+    const idx = Number(rest)
+    return Number.isInteger(idx) ? eduPlan(idx) : null
   }
   if (kind === 'custom') {
     const topic = rest.slice(0, 120)
@@ -152,6 +202,7 @@ export interface UpmeryTopicOption {
   topic: string
   detail?: string
   hasPhoto?: boolean
+  focus?: UpmeryFocus
 }
 
 // 주제 목록 전체(화면용) — 후기는 보관함 순서, 나머지는 목록 순서.
@@ -163,6 +214,15 @@ export function listUpmeryTopics(): UpmeryTopicOption[] {
       topic: r.headline,
       detail: r.angle,
       hasPhoto: r.images.length > 0,
+      focus: r.focus,
+    })),
+    ...UPMERY_EDU_TOPICS.map((t, i) => ({
+      key: `edu:${i}`,
+      kind: 'edu' as const,
+      topic: t.topic,
+      detail: `실제 교육 장면 후기 ${t.reviews.length}건으로 써요`,
+      hasPhoto: t.reviews.some((id) => (UPMERY_REVIEWS.find((r) => r.id === id)?.images.length ?? 0) > 0),
+      focus: '교육' as const,
     })),
     ...(['qa', 'info', 'story'] as const).flatMap((kind) => listOf(kind).map((topic, i) => ({ key: `${kind}:${i}`, kind, topic }))),
   ]
@@ -172,7 +232,7 @@ export function listUpmeryTopics(): UpmeryTopicOption[] {
 export function usedTopicKeysFromNotes(notes: string[]): Set<string> {
   const keys = new Set<string>()
   for (const n of notes) {
-    for (const m of n.matchAll(/주제 ((?:qa|info|story):\d+)/g)) keys.add(m[1])
+    for (const m of n.matchAll(/주제 ((?:qa|info|story|edu):\d+)/g)) keys.add(m[1])
     for (const m of n.matchAll(/주제 (kw:[^\s·]+)/g)) keys.add(m[1])
     for (const m of n.matchAll(/후기 (r\d{3,})/g)) keys.add(`review:${m[1]}`)
   }
@@ -184,4 +244,22 @@ export function usedReviewIdsFromNotes(notes: string[]): Set<string> {
   const ids = new Set<string>()
   for (const n of notes) for (const m of n.matchAll(/후기 (r\d{3,})/g)) ids.add(m[1])
   return ids
+}
+
+// 최근 글의 축 비율 — 근무기록 메모의 "축 교육"·"축 수익"(최신순 notes에서 앞의 n편). 주제 목록이 부족한 축을 추천한다.
+export function recentFocusCounts(notesNewestFirst: string[], n = 10): Record<UpmeryFocus, number> {
+  const counts: Record<UpmeryFocus, number> = { 교육: 0, 수익: 0 }
+  let seen = 0
+  for (const note of notesNewestFirst) {
+    const m = note.match(/축 (교육|수익)/)
+    if (!m) continue
+    counts[m[1] as UpmeryFocus]++
+    if (++seen >= n) break
+  }
+  return counts
+}
+
+// 다음에 쓸 축 — 목표 교육 50 : 수익 50. 같으면 교육(대표님: "교육으로 홍보해야 믿는다").
+export function nextFocus(counts: Record<UpmeryFocus, number>): UpmeryFocus {
+  return counts.수익 < counts.교육 ? '수익' : '교육'
 }

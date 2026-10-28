@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { listUpmeryTopics, usedTopicKeysFromNotes } from '../agents/upmeryTopicBank'
+import { listUpmeryTopics, nextFocus, recentFocusCounts, usedTopicKeysFromNotes } from '../agents/upmeryTopicBank'
+import type { UpmeryFocus } from '../agents/upmeryReviews'
 import { getWorkLog, syncWorkLogFromSupabase } from '../lib/workLog'
 import { syncApprovalsFromSupabase } from '../lib/approvalStore'
 import type { KeywordTopicReport } from '../agents/upmeryKeywordTopics'
@@ -12,7 +13,9 @@ import type { KeywordTopicReport } from '../agents/upmeryKeywordTopics'
 //      없으면 화면을 열 때 자동으로 뽑는다(서버가 이번 주 것이 있으면 건너뜀).
 //   ② 후기 사례글 — 후기 보관함(upmeryReviews). 예전에 손으로 만든 질문·정보·멘토님 이야기 목록은 화면에서 뺐다
 //      (upmeryTopicBank 배열은 이미 쓴 글의 "주제 qa:3" 표시·자동 크론 대비로 남겨 둠).
-// 오늘 추천 = 아직 안 쓴 검색 주제 1순위 → 없으면 아직 안 쓴 후기.
+// ③ 🎓 교육 과정(2026-10-28 대표님 "교육 50 : 수익 50 — 교육으로 홍보해야 믿는다") — 업메리가 수강생을 실제로 어떻게
+//    가르치는지 보여 주는 주제(upmeryTopicBank UPMERY_EDU_TOPICS) + 교육 장면 후기.
+// 모든 주제는 축(교육·수익)이 있고, 근무기록 "축 교육"으로 최근 10편 비율을 세서 부족한 축을 오늘 추천한다.
 
 type Phase = { key: string; step: 'write' | 'polish' } | null
 
@@ -32,8 +35,18 @@ async function postDispatch(body: Record<string, unknown>): Promise<DispatchResu
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 
+// 최신 글 먼저(비율은 최근 10편으로 센다).
+function writerNotes(): string[] {
+  return getWorkLog('writer', '업메리')
+    .slice()
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .map((e) => e.note)
+}
+
+type Row = { key: string; topic: string; detail?: string; hasPhoto?: boolean; writeKey?: string; focus?: UpmeryFocus }
+
 export function UpmeryTopicList() {
-  const [notes, setNotes] = useState<string[]>(() => getWorkLog('writer', '업메리').map((e) => e.note))
+  const [notes, setNotes] = useState<string[]>(() => writerNotes())
   const [phase, setPhase] = useState<Phase>(null)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [custom, setCustom] = useState('')
@@ -56,7 +69,7 @@ export function UpmeryTopicList() {
     syncWorkLogFromSupabase()
       .catch(() => undefined)
       .then(() => {
-        if (alive) setNotes(getWorkLog('writer', '업메리').map((e) => e.note))
+        if (alive) setNotes(writerNotes())
       })
     return () => {
       alive = false
@@ -64,23 +77,30 @@ export function UpmeryTopicList() {
   }, [])
 
   const used = useMemo(() => usedTopicKeysFromNotes(notes), [notes])
-  const reviews = useMemo(() => listUpmeryTopics().filter((t) => t.kind === 'review'), [])
-  const remainingReviews = reviews.filter((t) => !used.has(t.key)).length
-  const kwRows = (kw?.report?.topics ?? []).map((t) => ({
+  const all = useMemo(() => listUpmeryTopics(), [])
+  const eduRows: Row[] = [...all.filter((t) => t.kind === 'edu'), ...all.filter((t) => t.kind === 'review' && t.focus === '교육')]
+  const incomeRows: Row[] = all.filter((t) => t.kind === 'review' && t.focus === '수익')
+  const remainingReviews = all.filter((t) => t.kind === 'review' && !used.has(t.key)).length
+  const kwRows: Row[] = (kw?.report?.topics ?? []).map((t) => ({
     key: `kw:${t.keyword}`,
-    writeKey: `kw:${t.keyword}|${t.phrase}|${t.topic}`,
+    writeKey: `kw:${t.keyword}|${t.phrase}|${t.focus ?? '수익'}|${t.topic}`,
     topic: t.topic,
+    focus: t.focus ?? '수익',
     detail: `"${t.phrase}" 월 ${fmt(t.volume)}회 · 상위 글 ${t.strength}${
       t.topChars !== null ? `(평균 ${fmt(t.topChars)}자${t.topPhotos !== null ? `·사진 ${t.topPhotos}장` : ''})` : ''
     } · 독자 ${t.stage}${t.why ? ` · ${t.why}` : ''}`,
   }))
-  const nextKw = kwRows.find((t) => !used.has(t.key))
-  const nextReview = reviews.find((t) => !used.has(t.key))
-  const today = nextKw
-    ? { label: '검색 많은 주제', row: nextKw }
-    : nextReview
-      ? { label: '후기 사례글', row: nextReview }
-      : null
+  // 최근 10편 축 비율 → 부족한 축의 주제를 오늘 추천(검색 주제 우선, 없으면 그 축의 교육 과정·후기).
+  const counts = useMemo(() => recentFocusCounts(notes), [notes])
+  const want = nextFocus(counts)
+  const unused = (rows: Row[]) => rows.filter((t) => !used.has(t.key))
+  const pool = [
+    ...unused(kwRows).filter((t) => t.focus === want),
+    ...unused(want === '교육' ? eduRows : incomeRows),
+    ...unused(kwRows),
+    ...unused(want === '교육' ? incomeRows : eduRows),
+  ]
+  const todayRow = pool[0]
 
   async function refreshKeywords(force = true) {
     setKwBusy(true)
@@ -117,13 +137,13 @@ export function UpmeryTopicList() {
       setResult({ ok: false, text: `${msg} — 잠시 뒤 결재함에 글이 없으면 다시 눌러 주세요.` })
     } finally {
       await Promise.all([syncWorkLogFromSupabase(), syncApprovalsFromSupabase()]).catch(() => undefined)
-      setNotes(getWorkLog('writer', '업메리').map((e) => e.note))
+      setNotes(writerNotes())
       setPhase(null)
     }
   }
 
   // writeKey: 서버에 넘길 키가 "썼음" 확인 키와 다를 때("kw:키워드|띄어쓴 키워드|제목" vs "kw:키워드").
-  function renderRow(t: { key: string; topic: string; detail?: string; hasPhoto?: boolean; writeKey?: string }) {
+  function renderRow(t: Row) {
     const done = used.has(t.key)
     const wk = t.writeKey ?? t.key
     const running = phase?.key === wk
@@ -131,6 +151,13 @@ export function UpmeryTopicList() {
       <li key={t.key} className="flex items-start justify-between gap-2 border-t border-[var(--border)] py-2 first:border-t-0">
         <div className="min-w-0">
           <p className={`text-[13px] ${done ? 'text-[var(--text-muted)]' : 'text-[var(--text)]'}`}>
+            {t.focus && (
+              <span
+                className={`mr-1.5 rounded px-1.5 py-0.5 text-[11px] font-semibold ${t.focus === '교육' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-[var(--surface-2,var(--border))] text-[var(--text-muted)]'}`}
+              >
+                {t.focus}
+              </span>
+            )}
             {t.hasPhoto && '📷 '}
             {t.topic}
             {done && <span className="ml-1.5 rounded bg-[var(--surface-2,var(--border))] px-1.5 py-0.5 text-[11px]">썼음</span>}
@@ -153,7 +180,8 @@ export function UpmeryTopicList() {
     <div className="space-y-3">
       <p className="text-[12px] text-[var(--text-muted)]">
         고르면 바로 글을 써서 결재함에 올려요(쓰기 최대 4분 → 채점·다듬기 최대 5분). 기다리는 동안 다른 탭에 가도 서버는 계속 써요.
-        주제는 네이버 실제 검색량으로 매주 새로 뽑은 것과 후기 보관함(남은 후기 {remainingReviews}건)에서만 나와요.
+        주제는 네이버 실제 검색량으로 매주 새로 뽑은 것, 교육 과정, 후기 보관함(남은 후기 {remainingReviews}건)에서 나와요.
+        모든 주제는 <b>교육</b> 또는 <b>수익</b> 글이고, 교육 5 : 수익 5가 되게 오늘 추천을 골라요.
       </p>
 
       {phase && (
@@ -168,9 +196,12 @@ export function UpmeryTopicList() {
       )}
 
       <div className="rounded-lg border border-[var(--accent)] p-3">
-        <p className="mb-1 text-[12px] font-bold text-[var(--accent)]">⭐ 오늘 추천{today ? ` · ${today.label}` : ''}</p>
-        {today ? (
-          <ul>{renderRow(today.row)}</ul>
+        <p className="mb-1 text-[12px] font-bold text-[var(--accent)]">⭐ 오늘 추천 · {want} 글</p>
+        <p className="mb-1 text-[11px] text-[var(--text-muted)]">
+          최근 {counts.교육 + counts.수익}편: 교육 {counts.교육} · 수익 {counts.수익} (목표 5 : 5) → 오늘은 {want} 글 차례예요.
+        </p>
+        {todayRow ? (
+          <ul>{renderRow(todayRow)}</ul>
         ) : (
           <p className="text-[11px] text-[var(--text-muted)]">
             {kwBusy ? '검색 많은 주제를 뽑는 중이에요…' : '추천할 주제가 아직 없어요 — 검색 많은 주제를 뽑거나 후기를 보내 주세요.'}
@@ -236,16 +267,21 @@ export function UpmeryTopicList() {
         이미 쓴 주제도 보기
       </label>
 
-      {(() => {
-        const rows = reviews.filter((t) => showUsed || !used.has(t.key))
-        if (rows.length === 0) return null
+      {[
+        { title: '🎓 교육 과정 — 업메리가 실제로 어떻게 가르치는지', rows: eduRows },
+        { title: '💰 후기 사례글 — 수강생이 실제로 낸 결과', rows: incomeRows },
+      ].map(({ title, rows }) => {
+        const shown = rows.filter((t) => showUsed || !used.has(t.key))
+        if (shown.length === 0) return null
         return (
-          <details open className="rounded-lg border border-[var(--border)] px-3 py-2">
-            <summary className="cursor-pointer text-[13px] font-bold text-[var(--text)]">후기 사례글 ({rows.length})</summary>
-            <ul className="mt-1">{rows.map((t) => renderRow(t))}</ul>
+          <details key={title} open className="rounded-lg border border-[var(--border)] px-3 py-2">
+            <summary className="cursor-pointer text-[13px] font-bold text-[var(--text)]">
+              {title} ({shown.length})
+            </summary>
+            <ul className="mt-1">{shown.map((t) => renderRow(t))}</ul>
           </details>
         )
-      })()}
+      })}
     </div>
   )
 }

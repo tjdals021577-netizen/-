@@ -7,6 +7,7 @@ import { getBlogBrandConfig } from '../../src/agents/blogBrandConfig.js'
 import { makeDefaultChecklist } from '../../src/types/calendar.js'
 import { kstNow, kstDateKey } from '../../src/lib/weeklySchedule.js'
 import type { Brand } from '../../src/types/brand.js'
+import { UPMERY_FOCUS_GUIDE } from '../../src/agents/upmeryBlogPrompts.js'
 import {
   pickUpmeryTopic,
   planFromKey,
@@ -76,21 +77,23 @@ async function runBlogDraftWithPlan(p: {
   const { apiKey, brand, date, plan } = p
   const topic = plan?.topic ?? todaysTopic(brand)
   const photoCount = await todaysPhotoCount(date, brand)
-  const reviewImages = plan?.review?.images ?? []
-  const reviewPhoto = plan?.review
+  const reviewImages = plan?.images ?? plan?.review?.images ?? []
+  const reviewPhoto = plan?.review || plan?.kind === 'edu'
     ? reviewImages.length > 0
       ? `후기 캡처 ${reviewImages.length}장(${reviewImages.map((i) => i.alt).join(' / ')}) — 수강생이 한 말을 인용한 바로 옆에 "[📸 첨부 사진: 후기 캡처]"로 배치(이름·연락처는 이미 가려 둠). 나머지 사진 추천은 평소대로.`
       : `후기 캡처 원본은 대표님이 갖고 있음 — 수강생이 한 말을 인용한 바로 옆에 "[📸 첨부 사진: 후기 캡처 — 이름·프로필 가려서]"로 자리만 표시. 나머지 사진 추천은 평소대로.`
     : ''
   // 근무기록 메모에 남길 주제 표시 — 후기는 "후기 r002", 목록 주제는 "주제 qa:3"(주제 목록의 "썼음" 표시).
-  const noteTag = plan?.review ? `후기 ${plan.review.id}` : plan && plan.kind !== 'custom' ? `주제 ${plan.key}` : undefined
+  // 글의 축("축 교육"·"축 수익")도 같이 남겨 주제 목록이 최근 비율(목표 5:5)을 센다.
+  const topicTag = plan?.review ? `후기 ${plan.review.id}` : plan && plan.kind !== 'custom' ? `주제 ${plan.key}` : undefined
+  const noteTag = [topicTag, plan?.focus ? `축 ${plan.focus}` : undefined].filter(Boolean).join(' · ') || undefined
   const result = await runMajalnamBlogPipeline({
     apiKey,
     brand,
     mode: 'draft',
     topic,
     date,
-    keyContent: plan?.keyContent,
+    keyContent: [plan?.focus ? UPMERY_FOCUS_GUIDE[plan.focus] : '', plan?.keyContent ?? ''].filter(Boolean).join('\n\n') || undefined,
     mainKeyword: plan?.mainKeyword,
     // 대표님이 올린 사진은 설명이 없으니 장수만 알려주고 배치 위치만 표시하게 한다.
     photos:
@@ -103,7 +106,7 @@ async function runBlogDraftWithPlan(p: {
         .filter(Boolean)
         .join('\n') || undefined,
     topicInfo: plan
-      ? `${UPMERY_TOPIC_KIND_LABEL[plan.kind]}${plan.review ? ` (후기 ${plan.review.id})` : ''}${plan.note ? ` — ${plan.note}` : ''}`
+      ? `${UPMERY_TOPIC_KIND_LABEL[plan.kind]}${plan.review ? ` (후기 ${plan.review.id})` : ''}${plan.focus ? ` · 축 ${plan.focus}` : ''}${plan.note ? ` — ${plan.note}` : ''}`
       : undefined,
     reviewId: plan?.review?.id,
     noteTag,

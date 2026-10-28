@@ -68,9 +68,11 @@ export const UPMERY_KEYWORD_TOPIC_SYSTEM = `너는 업메리(퀸퀸 타로) 네�
 - 제목은 그 키워드를 자연스러운 띄어쓰기로 넣고, 검색한 사람의 궁금증에 답하는 형태(25~40자). 숫자·금액·기간을 지어내지 않는다.
 - [이미 있는 주제]와 같은 내용은 피한다. 비슷한 키워드끼리는 하나만.
 - 독자 단계: ① 무관심(넓은 부업 탐색) ② 고민·비교 ③ 결정 직전.
+- 축(focus): "교육" = 검색자가 배우는 법·과정·방법을 궁금해함(타로 배우기, 상담사 되는 법, 홍보·상담 요령 등) /
+  "수익" = 벌이·부업 수입·실제로 버는지를 궁금해함. 업메리는 교육 50 : 수익 50으로 쓰니 두 축이 고르게 나오게 고른다.
 
 [출력] JSON 하나만:
-{"topics":[{"keyword":"목록의 키워드 그대로","phrase":"띄어쓰기한 키워드","topic":"주제 제목","stage":"①|②|③","why":"이 키워드 검색자가 업메리 손님인 이유 한 줄"}]}
+{"topics":[{"keyword":"목록의 키워드 그대로","phrase":"띄어쓰기한 키워드","topic":"주제 제목","stage":"①|②|③","focus":"교육|수익","why":"이 키워드 검색자가 업메리 손님인 이유 한 줄"}]}
 최대 20개. 고를 게 없으면 {"topics":[]}.`
 
 export function buildKeywordTopicUser(params: { rows: KeywordVolumeRow[]; existingTopics: string[]; recentKeywords: string[] }): string {
@@ -93,6 +95,8 @@ export interface KeywordTopic {
   phrase: string
   topic: string
   stage: '①' | '②' | '③'
+  // 글의 축(2026-10-28 교육 50 : 수익 50). 예전 목록엔 없을 수 있다.
+  focus?: '교육' | '수익'
   why: string
   volume: number
   // 네이버 블로그 검색 상위 글(최대 3개) 실측 평균 — 상위 글이 약할수록 내 글이 올라갈 틈이 크다.
@@ -121,7 +125,8 @@ export function parseKeywordTopics(raw: unknown, rows: KeywordVolumeRow[]): Omit
     const phrase = norm(phraseRaw) === norm(row.keyword) ? phraseRaw : row.keyword
     const stage = (['①', '②', '③'] as const).find((s) => s === String(o.stage ?? '').trim()) ?? '②'
     used.add(norm(row.keyword))
-    out.push({ keyword: row.keyword.replace(/\s+/g, ''), phrase, topic, stage, why: String(o.why ?? '').trim().slice(0, 120), volume: row.total })
+    const focus = o.focus === '교육' || o.focus === '수익' ? o.focus : '수익'
+    out.push({ keyword: row.keyword.replace(/\s+/g, ''), phrase, topic, stage, focus, why: String(o.why ?? '').trim().slice(0, 120), volume: row.total })
   }
   return out.slice(0, 20)
 }

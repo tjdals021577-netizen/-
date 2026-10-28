@@ -7,8 +7,13 @@
 // ★ 새 후기 추가 = 이 배열 맨 뒤에 다음 번호로. 사진은 가린 뒤 public/reviews/upmery-rNNN(.png|a.jpg …)로.
 // ★ 사진이 없는 후기(images: [])는 대화 중간에 보내 파일로 저장되지 않은 캡처 — 원본을 다시 받으면 넣는다.
 
+// 글의 축(2026-10-28 대표님 "교육 50 : 수익 50"): 교육 = 어떻게 가르치는지 과정이 중심인 후기,
+// 수익 = 입금·상담 결과가 중심인 후기. 블로그 탭 주제 목록이 최근 글의 비율을 보고 부족한 축을 추천한다.
+export type UpmeryFocus = '교육' | '수익'
+
 export interface UpmeryReview {
   id: string
+  focus: UpmeryFocus
   // 입금·대화 날짜(캡처에 보이는 것, 모르면 ''). 블로그엔 "10월 수강생"처럼 월 단위로만 쓴다.
   date: string
   // 누구인지(캡처·대표님 설명으로 알 수 있는 만큼만).
@@ -38,6 +43,7 @@ const NO_PHOTO = [] as { src: string; alt: string }[]
 export const UPMERY_REVIEWS: UpmeryReview[] = [
   {
     id: 'r001',
+    focus: '수익',
     date: '2026-03-25',
     who: '3월 수강생(이미 상담을 시작한 분)',
     result: '같은 손님에게 처음으로 재상담 요청을 받음 — 오픈채팅 송금으로 상담료 3만 원 입금(2026-03-25)',
@@ -50,6 +56,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r002',
+    focus: '수익',
     date: '2026-10-20',
     who: '10월 수강생, 아이를 키우는 엄마',
     before: '아이를 키우면서 할 수 있는 일이 없고, 나이 때문에 새로 배우는 것도 걱정이 많았음',
@@ -67,6 +74,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r003',
+    focus: '수익',
     date: '2026-10-17',
     who: '10월 수강생',
     result: '토요일 저녁 상담료 3만 원 입금 직후 상담 시작(2026-10-17)',
@@ -78,6 +86,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r004',
+    focus: '교육',
     date: '2026-10-22',
     who: '10월 수강생, 타로를 처음 배운 분(대표님 확인)',
     process:
@@ -96,6 +105,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r005',
+    focus: '수익',
     date: '2026-10-17',
     who: '10월 수강생',
     result: '30분 상담 요청, 상담료 5만 원 입금(2026-10-17)',
@@ -108,6 +118,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r006',
+    focus: '수익',
     date: '2026-02-11',
     who: '2월 상담료 입금 내역(누구 계정인지는 캡처로 확인 안 됨)',
     result: '2월 11일(수) 하루 오픈채팅 송금으로 상담료 62만 원 — 3만 원 상담이 연달아, 5만 원 상담도 섞여 입금',
@@ -122,6 +133,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r007',
+    focus: '수익',
     date: '2026-03-30',
     who: '3월 수강생',
     result: '3월 29일 밤 11시 19분 상담료 10만 원, 이어서 3월 30일 0시 22분 3만 원 입금',
@@ -134,6 +146,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r008',
+    focus: '교육',
     date: '',
     who: '첫 문의를 받은 수강생',
     process: '오픈채팅으로 문의 두 건이 오자 어떻게 답할지 몰라 멘토님에게 물어봄 → 멘토님이 첫 답장 문구를 그 자리에서 알려 줌',
@@ -146,6 +159,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r009',
+    focus: '수익',
     date: '2026-09-07',
     who: '9월 페이머니 입금 내역(홈페이지 수강생 기록 "일주일 만에 627만 원"과 같은 숫자)',
     result: '9월 6~12일 일주일 입금 합계 627만 원, 하루 최고 146만 원(9월 7일) — 상담 한 건 3만~10만 원',
@@ -157,6 +171,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r010',
+    focus: '수익',
     date: '2026-10-19',
     who: '10월 수강생',
     result: '월요일 아침 8시 13분 상담료 5만 원 입금(2026-10-19)',
@@ -168,6 +183,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r011',
+    focus: '교육',
     date: '',
     who: '홍보글 첨삭을 받은 수강생들(여러 분의 장면 모음)',
     process:
@@ -182,6 +198,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r012',
+    focus: '교육',
     date: '',
     who: '첫 글을 올린 수강생',
     process: '밤 10시 53분, 멘토님 확인을 받고 첫 홍보글을 올림 → 다음 날 오전 11시 통화로 교육 약속',
@@ -194,6 +211,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r013',
+    focus: '교육',
     date: '',
     who: '첫 문의를 받은 수강생들(여러 분의 장면 모음)',
     process: '홍보글을 올리자 첫날부터 문의가 옴 → 당황해서 멘토님에게 물어봄 → 멘토님이 응대 방법과 예약 시간을 바로 정해 줌',
@@ -207,6 +225,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r014',
+    focus: '수익',
     date: '',
     who: '홍보글 하나를 올린 수강생',
     result: '글 하나를 올린 날 오전 7시부터 낮 12시 21분 사이 문의 10건',
@@ -219,6 +238,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r015',
+    focus: '수익',
     date: '',
     who: '5년 전에 타로 상담을 했던 분(다시 시작하려는 분)',
     before: '5년 전에는 30분에 4만 원을 받았는데, 다시 하려니 플랫폼(엑스퍼트)뿐이고 손님은 안 오고 10분에 4,900원 같은 상담만 하니 일할 맛도 안 나고 자존감도 내려감',
@@ -231,6 +251,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r016',
+    focus: '수익',
     date: '2026-08-04',
     who: '8월 수강생',
     process: '가입한 지 하루 만에 계정 세팅을 하고 글을 올리니 문의가 몰림',
@@ -244,6 +265,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r017',
+    focus: '교육',
     date: '',
     who: '첫 상담을 마친 수강생',
     process: '첫 상담을 하고 "엉망진창"이라며 멘토님에게 옴 → 멘토님이 바로 보이스톡으로 7분 피드백(상담료는 미리 받고 시작하기, 처음부터 흐름 잡기)',
@@ -256,6 +278,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r018',
+    focus: '교육',
     date: '',
     who: '퇴근길에 연락한 수강생',
     result: '늦은 시간에도 연락해도 된다는 답을 받음',
@@ -267,6 +290,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r019',
+    focus: '수익',
     date: '',
     who: '재상담·연장을 처음 받은 수강생',
     process: '오후 3시 15분 상담 예약(상담료 3만 원) → 상담 후 손님이 연장을 원해 4만 5천 원 추가 입금 → 전화로 20분 더 상담',
@@ -279,6 +303,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r020',
+    focus: '수익',
     date: '2026-09-24',
     who: '7월에 타로를 처음 시작한 수강생(홈페이지 기록 "9월 24일 하루 95만 원"과 같은 날)',
     result: '9월 20~26일 매일 입금 — 하루 32만~95만 원, 9월 24일(목) 하루 95만 원',
@@ -290,6 +315,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r021',
+    focus: '수익',
     date: '2026-03-30',
     who: '3월 수강생',
     result: '3월 한 달 상담 수익 120만 원 달성(3월 30일 저녁에도 3만 원 상담 추가)',
@@ -302,6 +328,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r022',
+    focus: '수익',
     date: '2026-08-17',
     who: '8월 페이머니 달력(홈페이지 기록 "8월 1~17일 입금 547만 원"과 같은 숫자)',
     result: '8월 1~17일 매일 입금 — 하루 3만~87만 원, 8월 16일(일) 하루 87만 원',
@@ -314,6 +341,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r023',
+    focus: '수익',
     date: '2026-10-06',
     who: '타로를 처음 배운 분(대표님 확인: 5일 만에 수익화) — 일을 그만두고 아픈 강아지를 돌보며 집에서 할 일을 찾던 분',
     before: '"타로를 모르는 사람이 그걸 할 수가 있는 건가요?" — 일을 관두고 강아지가 아파 밖에서 일을 못 하는 상황, 집에서 강아지랑 있으면서 할 수 있는 일을 찾음',
@@ -327,6 +355,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r024',
+    focus: '교육',
     date: '2026-10-12',
     who: '타로를 처음 배운 분(대표님 확인: 7일 만에 수익화)',
     process: '첫 문의("20분 3만 원 신청하겠습니다") → 선예약이 차서 그날 밤 10시로 → 첫 상담 → 상담 마무리·연장 멘트를 멘토님이 바로 코칭("단호하게", "네 넹 금지, 가벼워 보여요") → 운전 중에도 문의가 이어짐',
@@ -339,6 +368,7 @@ export const UPMERY_REVIEWS: UpmeryReview[] = [
   },
   {
     id: 'r025',
+    focus: '교육',
     date: '',
     who: '50대 수강생(대표님 설명) — 글을 복사해서 보내는 것도 처음엔 어려워한 분',
     before: '시작하자마자 "저 할 수 있을까요?" 걱정이 많았고, 말귀를 못 알아들어 죄송하다고 함',
