@@ -73,7 +73,7 @@ export const UPMERY_STORY_TOPICS = [
 // 각 주제는 [검증된 사실]의 1:1 컨설팅 내용 + 후기 보관함의 교육 장면(reviews)으로만 쓴다. 순서 = 키(edu:N) → 새 주제는 맨 뒤에만.
 export const UPMERY_EDU_TOPICS: { topic: string; reviews: string[] }[] = [
   { topic: '업메리 1:1 교육은 이렇게 시작해요, 계정 세팅부터 첫 문의까지', reviews: ['r012', 'r016'] },
-  { topic: '홍보 글 첨삭, 수강생 글이 이렇게 바뀌어요', reviews: ['r011', 'r014'] },
+  { topic: '홍보 글 첨삭, 수강생 글이 이렇게 바뀌어요', reviews: ['r011', 'r026', 'r030', 'r014'] },
   { topic: '첫 문의가 오면 멘토님이 답장을 같이 써요', reviews: ['r008', 'r013'] },
   { topic: '첫 상담이 엉망이었던 날, 그날 바로 받은 피드백', reviews: ['r017', 'r024'] },
   { topic: '상담이 끝날 때마다 피드백, 처음 배운 사람을 혼자 두지 않으면', reviews: ['r004', 'r024'] },
@@ -84,6 +84,12 @@ export const UPMERY_EDU_TOPICS: { topic: string; reviews: string[] }[] = [
   { topic: '타로만 배우는 게 아니라 온라인에서 일하는 법을 배워요', reviews: ['r011', 'r025', 'r008'] },
   { topic: '강의 듣고 혼자 남는 교육과 1:1로 같이 가는 교육의 차이', reviews: ['r012', 'r017'] },
   { topic: '50대도, 휴대폰이 서툴러도 따라올 수 있게 가르치는 법', reviews: ['r025'] },
+  { topic: '"오늘 결제로 이어진 건 없어요?" 멘토님이 먼저 묻는 매일 확인', reviews: ['r028', 'r029'] },
+  { topic: '대면이냐 비대면이냐, 수익 구조까지 같이 따져 주는 방향 잡기', reviews: ['r028'] },
+  { topic: '"성격상 가격을 못 올려요" 단가 교육은 이렇게 해요', reviews: ['r027', 'r010'] },
+  { topic: '밤 12시에 끝나도 내일 시간까지 같이 정하는 1:1 교육', reviews: ['r029', 'r018'] },
+  { topic: '칭찬하고, 고치고, 5분 뒤 다시 보는 실시간 피드백의 하루', reviews: ['r030', 'r026'] },
+  { topic: '"무료 타로·천 원 타로 돌리라"는 교육과 업메리가 다른 점', reviews: ['r031', 'r015'] },
 ]
 
 function eduPlan(idx: number): UpmeryDailyTopic | null {
