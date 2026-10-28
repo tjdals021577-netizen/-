@@ -122,7 +122,8 @@ npm run lint                             # 4) oxlint
       모든 주제에 축(`focus` '교육'|'수익') — 후기는 `UpmeryReview.focus`(교육 장면 9건 r004·r008·r011·r012·r013·r017·r018·r024·r025),
       `UPMERY_EDU_TOPICS`(키 `edu:N`, 관련 후기 장면 id로 [핵심 내용]·사진 구성), 검색 주제는 Haiku가 focus를 붙임(키 `kw:키워드|띄어쓴|축|제목`).
       글쓰기 [핵심 내용] 맨 앞에 `UPMERY_FOCUS_GUIDE[축]`(교육 = 막힘→멘토님이 한 일→변화 장면 중심·수익 숫자 1개 이하 / 수익 = 결과 + 뒤의 교육 과정 소제목 필수),
-      글쓰기 [핵심 원리]에 "신뢰는 수익 숫자가 아니라 교육에서". 근무기록 메모 "축 교육"으로 최근 10편 비율(`recentFocusCounts`) → 부족한 축을
+      글쓰기 [핵심 원리]에 "신뢰는 수익 숫자가 아니라 교육에서"(대표님: "후기 사진은 이제 익숙해 — 어떻게 교육하고 케어하는지가 보여야"),
+      사진 추천·채점(전문성·사진 설득력)도 입금 캡처보다 교육·케어 장면 캡처(첨삭·피드백·보이스톡) 중심. 근무기록 메모 "축 교육"으로 최근 10편 비율(`recentFocusCounts`) → 부족한 축을
       오늘 추천(`nextFocus`, 같으면 교육). 화면 섹션: ⭐ 오늘 추천 · 🔎 검색 많은 주제 · 🎓 교육 과정 · 💰 후기 사례글(수익)) →
       `api/dispatch.ts` `action: 'upmery-blog-write'`(`topicKey` → `runUpmeryBlogForTopic`, 1단계 high, `approvalId` 반환) →
       화면이 이어서 `action: 'upmery-blog-polish'`(그 `approvalId`만 채점·고쳐 쓰기). 화면을 닫아 2단계를 못 했으면 07시대 다듬기 크론이
